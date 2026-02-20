@@ -1,70 +1,126 @@
-"""Asyncio TCP client for the telldusd daemon (via socat bridges)."""
+"""Asyncio TCP client for the telldusd daemon (via socat bridges).
+
+telldusd uses a text-based socket protocol (NOT binary framing):
+  - Strings are encoded as: ``<byte_length>:<utf8_text>`` (e.g. ``7:arctech``)
+  - Integers are encoded as: ``i<decimal_digits>s``       (e.g. ``i42s``)
+
+**Command socket** (port 50800):
+  Each command requires its own TCP connection because telldusd creates a
+  one-shot handler per UNIX-socket connection (reads one message, responds,
+  closes).  socat with ``fork`` maps each TCP connection to a fresh UNIX
+  connection, so we open a new TCP connection for every command.
+  Command responses are terminated by ``\\n``.
+
+**Event socket** (port 50801):
+  A single persistent TCP connection.  telldusd pushes events to all
+  connected clients.  Event messages use the same text encoding but are
+  **not** newline-terminated; they are self-delimiting because each token
+  starts with either a digit (string) or ``i`` (integer).
+
+Source of truth: ``telldus-core/common/Message.cpp`` for encoding,
+``telldus-core/service/ClientCommunicationHandler.cpp`` for commands,
+``telldus-core/service/EventUpdateManager.cpp`` for events.
+"""
 from __future__ import annotations
 
 import asyncio
 import logging
-import struct
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from .const import (
-    TELLDUSD_DEVICE_EVENT,
-    TELLDUSD_RAW_DEVICE_EVENT,
-    TELLDUSD_SENSOR_EVENT,
-    TELLSTICK_TEMPERATURE,
-    TELLSTICK_HUMIDITY,
-)
-
 _LOGGER = logging.getLogger(__name__)
 
-# Sensor data-type → unit mapping
-SENSOR_UNIT: dict[int, str] = {
-    TELLSTICK_TEMPERATURE: "°C",
-    TELLSTICK_HUMIDITY: "%",
-}
-
 
 # ---------------------------------------------------------------------------
-# Low-level message encoding / decoding (big-endian, UTF-8 strings)
-# Format used by telldus-core's socket protocol:
-#   string  → uint32 BE byte-length + UTF-8 bytes  (0xFFFFFFFF = null)
-#   int32   → 4 bytes BE signed
-# Each message is prefixed by a uint32 BE total size.
+# Text-based protocol encoding
 # ---------------------------------------------------------------------------
 
-def _encode_string(value: str) -> bytes:
+def _encode_string(value: str) -> str:
+    """Encode a string argument for the telldusd text protocol."""
     encoded = value.encode("utf-8")
-    return struct.pack(">I", len(encoded)) + encoded
+    return f"{len(encoded)}:{value}"
 
 
-def _encode_int32(value: int) -> bytes:
-    return struct.pack(">i", value)
+def _encode_int(value: int) -> str:
+    """Encode an integer argument for the telldusd text protocol."""
+    return f"i{value}s"
 
 
-def _decode_int32(data: bytes, pos: int) -> tuple[int, int]:
-    (val,) = struct.unpack_from(">i", data, pos)
-    return val, pos + 4
+def _build_command(function: str, args: list[str]) -> bytes:
+    """Build a complete command message as bytes ready to send."""
+    msg = _encode_string(function)
+    for arg in args:
+        msg += arg
+    return msg.encode("utf-8")
 
 
-def _decode_string(data: bytes, pos: int) -> tuple[str | None, int]:
-    (length,) = struct.unpack_from(">I", data, pos)
-    pos += 4
-    if length == 0xFFFFFFFF:
-        return None, pos
-    text = data[pos : pos + length].decode("utf-8", errors="replace")
-    return text, pos + length
+# ---------------------------------------------------------------------------
+# Text-based protocol decoding (async stream readers)
+# ---------------------------------------------------------------------------
+
+async def _read_token(reader: asyncio.StreamReader) -> tuple[str, Any]:
+    """Read one self-delimiting token from an asyncio stream.
+
+    Returns ``('int', int_value)`` or ``('str', str_value)``.
+    Raises ``asyncio.IncompleteReadError`` if the stream closes mid-token.
+    """
+    first = await reader.readexactly(1)
+    ch = chr(first[0])
+
+    if ch == "i":
+        # Integer: i<digits>s
+        digits = bytearray()
+        while True:
+            b = await reader.readexactly(1)
+            if b == b"s":
+                break
+            digits.extend(b)
+        return ("int", int(digits.decode("ascii")))
+
+    if ch.isdigit():
+        # String: <length>:<text>
+        length_str = ch
+        while True:
+            b = await reader.readexactly(1)
+            if b == b":":
+                break
+            length_str += chr(b[0])
+        length = int(length_str)
+        if length == 0:
+            return ("str", "")
+        text = await reader.readexactly(length)
+        return ("str", text.decode("utf-8", errors="replace"))
+
+    raise ValueError(f"Unexpected byte in telldusd protocol: {ch!r}")
 
 
-def _frame(payload: bytes) -> bytes:
-    return struct.pack(">I", len(payload)) + payload
+def _parse_int_response(data: str) -> int:
+    """Parse an integer response string like ``i42s``."""
+    data = data.strip()
+    if data.startswith("i") and data.endswith("s"):
+        return int(data[1:-1])
+    raise ValueError(f"Not an integer response: {data!r}")
 
 
-async def _read_frame(reader: asyncio.StreamReader) -> bytes:
-    """Read one length-prefixed frame from the stream."""
-    size_bytes = await reader.readexactly(4)
-    (size,) = struct.unpack(">I", size_bytes)
-    return await reader.readexactly(size)
+def _parse_string_response(data: str) -> str | None:
+    """Parse a string response like ``7:arctech``."""
+    data = data.strip()
+    if not data or not data[0].isdigit():
+        return None
+    idx = data.index(":")
+    length = int(data[:idx])
+    return data[idx + 1 : idx + 1 + length]
+
+
+# ---------------------------------------------------------------------------
+# Sensor data-type → unit mapping
+# ---------------------------------------------------------------------------
+
+SENSOR_UNIT: dict[int, str] = {
+    1: "°C",   # TELLSTICK_TEMPERATURE
+    2: "%",    # TELLSTICK_HUMIDITY
+}
 
 
 # ---------------------------------------------------------------------------
@@ -133,19 +189,16 @@ class TellStickController:
     command_port: int
     event_port: int
 
-    _cmd_reader: asyncio.StreamReader | None = field(default=None, init=False, repr=False)
-    _cmd_writer: asyncio.StreamWriter | None = field(default=None, init=False, repr=False)
     _event_reader: asyncio.StreamReader | None = field(default=None, init=False, repr=False)
+    _event_writer: asyncio.StreamWriter | None = field(default=None, init=False, repr=False)
     _event_task: asyncio.Task | None = field(default=None, init=False, repr=False)
     _callbacks: list[Callable[[Any], None]] = field(default_factory=list, init=False, repr=False)
 
     async def connect(self) -> None:
-        """Open both command and event sockets."""
-        self._cmd_reader, self._cmd_writer = await asyncio.open_connection(
-            self.host, self.command_port
+        """Open the event socket (commands use one-shot connections)."""
+        self._event_reader, self._event_writer = await asyncio.open_connection(
+            self.host, self.event_port
         )
-        event_reader, _ = await asyncio.open_connection(self.host, self.event_port)
-        self._event_reader = event_reader
 
     async def disconnect(self) -> None:
         """Close all connections."""
@@ -155,10 +208,10 @@ class TellStickController:
                 await self._event_task
             except asyncio.CancelledError:
                 pass
-        if self._cmd_writer:
-            self._cmd_writer.close()
+        if self._event_writer:
+            self._event_writer.close()
             try:
-                await self._cmd_writer.wait_closed()
+                await self._event_writer.wait_closed()
             except Exception:  # noqa: BLE001
                 pass
 
@@ -175,27 +228,31 @@ class TellStickController:
         self._callbacks.remove(callback)
 
     # ------------------------------------------------------------------
-    # Commands (port 50800)
+    # Commands (port 50800) – one TCP connection per command
     # ------------------------------------------------------------------
 
     async def turn_on(self, device_id: int) -> int:
         """Send tdTurnOn command. Returns 0 on success."""
-        return await self._call("tdTurnOn", [_encode_int32(device_id)])
+        return await self._call_int(
+            "tdTurnOn", [_encode_int(device_id)]
+        )
 
     async def turn_off(self, device_id: int) -> int:
         """Send tdTurnOff command. Returns 0 on success."""
-        return await self._call("tdTurnOff", [_encode_int32(device_id)])
+        return await self._call_int(
+            "tdTurnOff", [_encode_int(device_id)]
+        )
 
     async def dim(self, device_id: int, level: int) -> int:
         """Send tdDim command (level 0-255). Returns 0 on success."""
-        return await self._call(
-            "tdDim", [_encode_int32(device_id), _encode_int32(level)]
+        return await self._call_int(
+            "tdDim", [_encode_int(device_id), _encode_int(level)]
         )
 
     async def ping(self) -> bool:
         """Try to get the device count to confirm the connection is alive."""
         try:
-            await self._call("tdGetNumberOfDevices", [])
+            await self._call_int("tdGetNumberOfDevices", [])
             return True
         except Exception:  # noqa: BLE001
             return False
@@ -208,22 +265,24 @@ class TellStickController:
         parameters: dict[str, str],
     ) -> int:
         """Register a new device with telldusd and return its ID."""
-        device_id = await self._call("tdAddDevice", [])
+        device_id = await self._call_int("tdAddDevice", [])
         if device_id <= 0:
             raise RuntimeError(f"tdAddDevice returned error code {device_id}")
-        await self._call("tdSetName", [_encode_int32(device_id), _encode_string(name)])
-        await self._call(
-            "tdSetProtocol", [_encode_int32(device_id), _encode_string(protocol)]
+        await self._call_int(
+            "tdSetName", [_encode_int(device_id), _encode_string(name)]
+        )
+        await self._call_int(
+            "tdSetProtocol", [_encode_int(device_id), _encode_string(protocol)]
         )
         if model:
-            await self._call(
-                "tdSetModel", [_encode_int32(device_id), _encode_string(model)]
+            await self._call_int(
+                "tdSetModel", [_encode_int(device_id), _encode_string(model)]
             )
         for param_name, param_value in parameters.items():
-            await self._call(
+            await self._call_int(
                 "tdSetDeviceParameter",
                 [
-                    _encode_int32(device_id),
+                    _encode_int(device_id),
                     _encode_string(param_name),
                     _encode_string(param_value),
                 ],
@@ -232,26 +291,30 @@ class TellStickController:
 
     async def remove_device(self, device_id: int) -> None:
         """Remove a device from telldusd."""
-        await self._call("tdRemoveDevice", [_encode_int32(device_id)])
+        await self._call_int("tdRemoveDevice", [_encode_int(device_id)])
 
     async def list_devices(self) -> list[dict[str, Any]]:
         """Return all devices registered in telldusd as a list of dicts."""
-        count = await self._call("tdGetNumberOfDevices", [])
+        count = await self._call_int("tdGetNumberOfDevices", [])
         devices: list[dict[str, Any]] = []
         for i in range(count):
             try:
-                device_id = await self._call("tdGetDeviceId", [_encode_int32(i)])
+                device_id = await self._call_int(
+                    "tdGetDeviceId", [_encode_int(i)]
+                )
                 if device_id < 0:
                     continue
                 protocol = (
-                    await self._call_str("tdGetProtocol", [_encode_int32(device_id)])
+                    await self._call_str(
+                        "tdGetProtocol", [_encode_int(device_id)]
+                    )
                     or ""
                 )
                 house = (
                     await self._call_str(
                         "tdGetDeviceParameter",
                         [
-                            _encode_int32(device_id),
+                            _encode_int(device_id),
                             _encode_string("house"),
                             _encode_string(""),
                         ],
@@ -262,7 +325,7 @@ class TellStickController:
                     await self._call_str(
                         "tdGetDeviceParameter",
                         [
-                            _encode_int32(device_id),
+                            _encode_int(device_id),
                             _encode_string("unit"),
                             _encode_string(""),
                         ],
@@ -289,11 +352,7 @@ class TellStickController:
         house: str,
         unit: str,
     ) -> int:
-        """Find an existing telldusd device by protocol/house/unit or create it.
-
-        This avoids creating duplicates when the integration reconnects to a running
-        telldusd instance that already has the device registered.
-        """
+        """Find an existing telldusd device by protocol/house/unit or create it."""
         for dev in await self.list_devices():
             if (
                 dev["protocol"] == protocol.lower()
@@ -305,38 +364,37 @@ class TellStickController:
             name, protocol, model, {"house": house, "unit": unit}
         )
 
-    async def _call(self, function: str, params: list[bytes]) -> int:
-        """Send a command and return the int32 result."""
-        if self._cmd_writer is None or self._cmd_reader is None:
-            raise RuntimeError("Not connected")
-        payload = _encode_string(function)
-        for p in params:
-            payload += p
-        self._cmd_writer.write(_frame(payload))
-        await self._cmd_writer.drain()
-        response = await _read_frame(self._cmd_reader)
-        if len(response) >= 4:
-            (result,) = struct.unpack_from(">i", response, 0)
-            return result
-        return 0
+    async def _call_int(self, function: str, args: list[str]) -> int:
+        """Send a command via a one-shot TCP connection, return int result."""
+        response = await self._send_command(function, args)
+        return _parse_int_response(response)
 
-    async def _call_str(self, function: str, params: list[bytes]) -> str | None:
-        """Send a command and return the string result."""
-        if self._cmd_writer is None or self._cmd_reader is None:
-            raise RuntimeError("Not connected")
-        payload = _encode_string(function)
-        for p in params:
-            payload += p
-        self._cmd_writer.write(_frame(payload))
-        await self._cmd_writer.drain()
-        response = await _read_frame(self._cmd_reader)
-        if len(response) >= 4:
-            value, _ = _decode_string(response, 0)
-            return value
-        return None
+    async def _call_str(self, function: str, args: list[str]) -> str | None:
+        """Send a command via a one-shot TCP connection, return string result."""
+        response = await self._send_command(function, args)
+        return _parse_string_response(response)
+
+    async def _send_command(self, function: str, args: list[str]) -> str:
+        """Open a fresh TCP connection, send command, read response, close."""
+        reader, writer = await asyncio.open_connection(
+            self.host, self.command_port
+        )
+        try:
+            cmd_bytes = _build_command(function, args)
+            writer.write(cmd_bytes)
+            await writer.drain()
+            # Command responses are newline-terminated
+            raw = await asyncio.wait_for(reader.readline(), timeout=10.0)
+            return raw.decode("utf-8", errors="replace").rstrip("\n")
+        finally:
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except Exception:  # noqa: BLE001
+                pass
 
     # ------------------------------------------------------------------
-    # Events (port 50801)
+    # Events (port 50801) – persistent connection
     # ------------------------------------------------------------------
 
     async def _event_loop(self) -> None:
@@ -345,8 +403,9 @@ class TellStickController:
             return
         while True:
             try:
-                data = await _read_frame(self._event_reader)
-                self._dispatch_event(data)
+                event = await self._read_event()
+                if event is not None:
+                    self._dispatch(event)
             except asyncio.IncompleteReadError:
                 _LOGGER.warning("TellStick event socket closed")
                 break
@@ -355,45 +414,35 @@ class TellStickController:
             except Exception as exc:  # noqa: BLE001
                 _LOGGER.debug("Error reading TellStick event: %s", exc)
 
-    def _dispatch_event(self, data: bytes) -> None:
-        """Parse a single event frame and notify callbacks."""
-        try:
-            event = self._parse_event(data)
-        except Exception as exc:  # noqa: BLE001
-            _LOGGER.debug("Could not parse TellStick event: %s", exc)
-            return
-        if event is None:
-            return
-        for cb in list(self._callbacks):
-            try:
-                cb(event)
-            except Exception as exc:  # noqa: BLE001
-                _LOGGER.error("Error in TellStick event callback: %s", exc)
-
-    @staticmethod
-    def _parse_event(data: bytes) -> DeviceEvent | RawDeviceEvent | SensorEvent | None:
-        """Parse an event from telldusd binary format."""
-        if len(data) < 4:
+    async def _read_event(self) -> DeviceEvent | RawDeviceEvent | SensorEvent | None:
+        """Read one complete event from the event stream."""
+        reader = self._event_reader
+        if reader is None:
             return None
-        event_type, pos = _decode_int32(data, 0)
 
-        if event_type == TELLDUSD_DEVICE_EVENT:
-            device_id, pos = _decode_int32(data, pos)
-            method, pos = _decode_int32(data, pos)
-            value, pos = _decode_string(data, pos)
-            return DeviceEvent(device_id=device_id, method=method, value=value)
+        # First token is always the event type name (a string)
+        token_type, event_name = await _read_token(reader)
+        if token_type != "str":
+            return None
 
-        if event_type == TELLDUSD_RAW_DEVICE_EVENT:
-            raw, pos = _decode_string(data, pos)
-            controller_id, pos = _decode_int32(data, pos)
+        if event_name == "TDRawDeviceEvent":
+            _, raw = await _read_token(reader)        # string
+            _, controller_id = await _read_token(reader)  # int
             return RawDeviceEvent(raw=raw or "", controller_id=controller_id)
 
-        if event_type == TELLDUSD_SENSOR_EVENT:
-            sensor_id, pos = _decode_int32(data, pos)
-            protocol, pos = _decode_string(data, pos)
-            model, pos = _decode_string(data, pos)
-            data_type, pos = _decode_int32(data, pos)
-            value, pos = _decode_string(data, pos)
+        if event_name == "TDDeviceEvent":
+            _, device_id = await _read_token(reader)    # int
+            _, method = await _read_token(reader)       # int
+            _, value = await _read_token(reader)        # string
+            return DeviceEvent(device_id=device_id, method=method, value=value)
+
+        if event_name == "TDSensorEvent":
+            _, protocol = await _read_token(reader)     # string
+            _, model = await _read_token(reader)        # string
+            _, sensor_id = await _read_token(reader)    # int
+            _, data_type = await _read_token(reader)    # int
+            _, value = await _read_token(reader)        # string
+            _, _timestamp = await _read_token(reader)   # int (unused)
             return SensorEvent(
                 sensor_id=sensor_id,
                 protocol=protocol,
@@ -402,4 +451,24 @@ class TellStickController:
                 value=value,
             )
 
+        if event_name in ("TDDeviceChangeEvent", "TDControllerEvent"):
+            # Consume the tokens so the stream stays aligned, but we don't
+            # expose these event types yet.
+            if event_name == "TDDeviceChangeEvent":
+                for _ in range(3):  # int + int + int
+                    await _read_token(reader)
+            else:  # TDControllerEvent
+                for _ in range(4):  # int + int + int + string
+                    await _read_token(reader)
+            return None
+
+        _LOGGER.debug("Unknown telldusd event type: %s", event_name)
         return None
+
+    def _dispatch(self, event: Any) -> None:
+        """Notify all registered callbacks."""
+        for cb in list(self._callbacks):
+            try:
+                cb(event)
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.error("Error in TellStick event callback: %s", exc)
