@@ -29,6 +29,7 @@ jobs:
       build: ${{ steps.information.outputs.build }}
       description: ${{ steps.information.outputs.description }}
       name: ${{ steps.information.outputs.name }}
+      owner: ${{ steps.owner.outputs.owner }}
       slug: ${{ steps.information.outputs.slug }}
       target: ${{ steps.information.outputs.target }}
     steps:
@@ -39,6 +40,11 @@ jobs:
       - name: 🚀 Run app information action
         id: information
         uses: frenck/action-addon-information@ce1377e9851cf569c29329e65fb2c57e67ca0f69
+      - name: 🔡 Lowercase repository owner for Docker refs
+        id: owner
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: echo "owner=${OWNER,,}" >> "$GITHUB_OUTPUT"
 
   lint-app:
     name: Lint App
@@ -206,7 +212,7 @@ jobs:
           file: ${{ needs.information.outputs.target }}/Dockerfile
           cache-from: |
             type=gha,scope=${{ matrix.architecture }}
-            type=registry,ref=ghcr.io/${{ github.repository_owner }}/${{ needs.information.outputs.slug }}/${{ matrix.architecture }}:edge
+            type=registry,ref=ghcr.io/${{ needs.information.outputs.owner }}/${{ needs.information.outputs.slug }}/${{ matrix.architecture }}:edge
           cache-to: type=gha,mode=max,scope=${{ matrix.architecture }}
           platforms: ${{ steps.flags.outputs.platform }}
           build-args: |

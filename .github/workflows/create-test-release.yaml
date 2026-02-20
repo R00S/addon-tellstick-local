@@ -192,4 +192,5 @@ jobs:
     uses: ./.github/workflows/deploy.yaml
     with:
       version: ${{ needs.create-test-release.outputs.version }}
+      architectures: '["amd64"]'
     secrets: inherit
