@@ -27,7 +27,7 @@
     "step": {
       "init": {
         "title": "TellStick Local",
-        "description": "To remove a device, go to the device page and use the delete option in the menu.",
+        "description": "To remove a device, go to the device page and select **Delete** from the device menu (⋮ icon).",
         "menu_options": {
           "settings": "Detection mode – enable or disable automatic device discovery",
           "add_device": "Add device – manually pair a new 433 MHz device"

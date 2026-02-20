@@ -146,11 +146,12 @@ async def async_remove_config_entry_device(
     device_id_map: dict[str, int] = entry_data.get(ENTRY_DEVICE_ID_MAP, {})
     if controller and device_uid in device_id_map:
         try:
-            await controller.remove_device(device_id_map.pop(device_uid))
+            await controller.remove_device(device_id_map[device_uid])
         except Exception:  # noqa: BLE001
             _LOGGER.warning(
                 "Could not remove device %s from telldusd", device_uid
             )
+        device_id_map.pop(device_uid, None)
 
     # Remove from stored devices if present
     stored_devices: dict[str, Any] = dict(entry.options.get(CONF_DEVICES, {}))
