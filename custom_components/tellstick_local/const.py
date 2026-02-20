@@ -8,6 +8,14 @@ CONF_COMMAND_PORT = "command_port"
 CONF_EVENT_PORT = "event_port"
 CONF_AUTOMATIC_ADD = "automatic_add"
 
+# Device storage keys (in entry.options["devices"])
+CONF_DEVICES = "devices"
+CONF_DEVICE_PROTOCOL = "protocol"
+CONF_DEVICE_MODEL = "model"
+CONF_DEVICE_HOUSE = "house"
+CONF_DEVICE_UNIT = "unit"
+CONF_DEVICE_NAME = "name"
+
 # Defaults
 DEFAULT_HOST = "tellsticklive"  # add-on slug = hostname on the Supervisor network
 DEFAULT_COMMAND_PORT = 50800
@@ -43,7 +51,60 @@ PLATFORMS = ["switch", "light", "sensor"]
 
 # Entry data keys
 ENTRY_TELLSTICK_CONTROLLER = "controller"
+ENTRY_DEVICE_ID_MAP = "device_id_map"
 
 # Signal for new device discovery
 SIGNAL_NEW_DEVICE = DOMAIN + "_new_device_{}"
 SIGNAL_EVENT = DOMAIN + "_event_{}"
+
+# TX-capable protocols (can send commands and teach self-learning devices)
+TX_PROTOCOLS = [
+    "arctech",
+    "brateck",
+    "comen",
+    "everflourish",
+    "fuhaote",
+    "hasta",
+    "ikea",
+    "mandolyn",
+    "risingsun",
+    "sartano",
+    "silvanchip",
+    "upm",
+    "waveman",
+    "x10",
+    "yidong",
+]
+
+# Default model for each protocol when teaching a new device
+PROTOCOL_DEFAULT_MODELS: dict[str, str] = {
+    "arctech": "selflearning-switch",
+    "brateck": "",
+    "comen": "",
+    "everflourish": "selflearning",
+    "fuhaote": "",
+    "hasta": "",
+    "ikea": "",
+    "mandolyn": "",
+    "risingsun": "",
+    "sartano": "",
+    "silvanchip": "",
+    "upm": "",
+    "waveman": "",
+    "x10": "",
+    "yidong": "",
+}
+
+# Model normalization: arctech selflearning devices always report "selflearning" in
+# raw RF events regardless of whether they were configured as -switch or -dimmer.
+# Stored UIDs must use this normalized form so they match auto-discovered event UIDs.
+_UID_MODEL_NORMALIZE: dict[str, str] = {
+    "selflearning-switch": "selflearning",
+    "selflearning-dimmer": "selflearning",
+}
+
+
+def build_device_uid(protocol: str, model: str, house: str, unit: str) -> str:
+    """Build a stable device UID normalized to match raw RF event model strings."""
+    uid_model = _UID_MODEL_NORMALIZE.get(model, model)
+    return "_".join(filter(None, [protocol, uid_model, house, unit]))

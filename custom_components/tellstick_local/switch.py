@@ -13,7 +13,12 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .client import DeviceEvent, RawDeviceEvent, TellStickController
 from .const import (
     CONF_AUTOMATIC_ADD,
+    CONF_DEVICE_MODEL,
+    CONF_DEVICE_NAME,
+    CONF_DEVICE_PROTOCOL,
+    CONF_DEVICES,
     DOMAIN,
+    ENTRY_DEVICE_ID_MAP,
     ENTRY_TELLSTICK_CONTROLLER,
     SIGNAL_EVENT,
     SIGNAL_NEW_DEVICE,
@@ -23,11 +28,12 @@ from .entity import TellStickEntity
 
 _LOGGER = logging.getLogger(__name__)
 
-# Model keywords that indicate a switch (not a dimmer/light)
+# Exact model names that map to a switch entity (not a dimmer/light).
+# Uses exact set membership – "selflearning-dimmer" must NOT match here.
 _SWITCH_MODELS = {
     "codeswitch",
     "selflearning-switch",
-    "selflearning",
+    "selflearning",  # raw RF event model for auto-discovered arctech devices
     "bell",
     "kp100",
     "ecosavers",
@@ -35,7 +41,7 @@ _SWITCH_MODELS = {
 
 
 def _is_switch(protocol: str, model: str) -> bool:
-    return any(kw in model.lower() for kw in _SWITCH_MODELS)
+    return model.lower() in _SWITCH_MODELS
 
 
 async def async_setup_entry(
@@ -44,12 +50,34 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up TellStick switch entities."""
-    controller: TellStickController = hass.data[DOMAIN][entry.entry_id][
-        ENTRY_TELLSTICK_CONTROLLER
-    ]
+    entry_data = hass.data[DOMAIN][entry.entry_id]
+    controller: TellStickController = entry_data[ENTRY_TELLSTICK_CONTROLLER]
+    device_id_map: dict[str, int] = entry_data.get(ENTRY_DEVICE_ID_MAP, {})
     new_device_signal = SIGNAL_NEW_DEVICE.format(entry.entry_id)
 
     known: set[str] = set()
+
+    # Pre-create entities for stored (manually-added) switch devices
+    stored_entities: list[TellStickSwitch] = []
+    for device_uid, device_cfg in entry.options.get(CONF_DEVICES, {}).items():
+        protocol = device_cfg.get(CONF_DEVICE_PROTOCOL, "")
+        model = device_cfg.get(CONF_DEVICE_MODEL, "")
+        if not _is_switch(protocol, model):
+            continue
+        known.add(device_uid)
+        stored_entities.append(
+            TellStickSwitch(
+                entry_id=entry.entry_id,
+                device_uid=device_uid,
+                name=device_cfg.get(CONF_DEVICE_NAME, f"TellStick {device_uid}"),
+                protocol=protocol,
+                model=model,
+                controller=controller,
+                device_id=device_id_map.get(device_uid),
+            )
+        )
+    if stored_entities:
+        async_add_entities(stored_entities)
 
     @callback
     def _async_new_device(event: Any) -> None:

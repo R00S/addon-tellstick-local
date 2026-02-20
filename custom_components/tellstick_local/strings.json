@@ -7,7 +7,7 @@
       },
       "user": {
         "title": "Connect to TellStick daemon",
-        "description": "Enter the host and port of the TellStick Local add-on.",
+        "description": "Enter the host and port of the TellStick Local app.",
         "data": {
           "host": "Host",
           "command_port": "Command port",
@@ -16,7 +16,7 @@
       }
     },
     "error": {
-      "cannot_connect": "Cannot connect to the TellStick daemon. Check that the add-on is running and the host/ports are correct.",
+      "cannot_connect": "Cannot connect to the TellStick daemon. Check that the app is running and the host/ports are correct.",
       "unknown": "Unexpected error. See logs for details."
     },
     "abort": {
@@ -28,9 +28,37 @@
       "init": {
         "title": "TellStick Local options",
         "data": {
-          "automatic_add": "Automatically add new devices when they send a signal"
+          "automatic_add": "Automatically add new devices when they send a signal",
+          "add_device": "Teach a new self-learning device",
+          "remove_device": "Remove a device"
+        }
+      },
+      "add_device": {
+        "title": "Add a self-learning device",
+        "description": "Enter the device details. A random house code has been generated — leave it as-is unless you need a specific one.",
+        "data": {
+          "name": "Device name",
+          "protocol": "Protocol",
+          "model": "Model",
+          "house": "House code",
+          "unit": "Unit number"
+        }
+      },
+      "add_device_confirm": {
+        "title": "Send pairing signal",
+        "description": "**{name}** ({protocol}/{model}) will learn house code **{house}**, unit **{unit}**.\n\nPut your 433 MHz receiver in **learn mode** now, then click **Submit** — the pairing signal is sent immediately."
+      },
+      "remove_device": {
+        "title": "Remove a device",
+        "data": {
+          "device": "Device to remove"
         }
       }
+    },
+    "error": {
+      "invalid_code": "House and unit code must not be empty.",
+      "teach_failed": "Failed to send pairing signal. Check that the TellStick app is running.",
+      "invalid_selection": "Please select a device to remove."
     }
   },
   "device_automation": {

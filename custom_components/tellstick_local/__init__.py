@@ -19,8 +19,15 @@ from .client import (
 from .const import (
     CONF_AUTOMATIC_ADD,
     CONF_COMMAND_PORT,
+    CONF_DEVICE_HOUSE,
+    CONF_DEVICE_MODEL,
+    CONF_DEVICE_NAME,
+    CONF_DEVICE_PROTOCOL,
+    CONF_DEVICE_UNIT,
+    CONF_DEVICES,
     CONF_EVENT_PORT,
     DOMAIN,
+    ENTRY_DEVICE_ID_MAP,
     ENTRY_TELLSTICK_CONTROLLER,
     PLATFORMS,
     SIGNAL_EVENT,
@@ -46,8 +53,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.error("Cannot connect to TellStick daemon at %s: %s", host, err)
         return False
 
+    # Re-register stored devices with telldusd.  telldusd's device list is
+    # ephemeral (reset when the app container restarts), so we must do this on
+    # every setup.  find_or_add_device avoids duplicates on warm reconnects.
+    device_id_map: dict[str, int] = {}
+    stored_devices: dict[str, Any] = entry.options.get(CONF_DEVICES, {})
+    for device_uid, device_cfg in stored_devices.items():
+        try:
+            telldusd_id = await controller.find_or_add_device(
+                device_cfg.get(CONF_DEVICE_NAME, device_uid),
+                device_cfg[CONF_DEVICE_PROTOCOL],
+                device_cfg.get(CONF_DEVICE_MODEL, ""),
+                device_cfg.get(CONF_DEVICE_HOUSE, ""),
+                device_cfg.get(CONF_DEVICE_UNIT, ""),
+            )
+            device_id_map[device_uid] = telldusd_id
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning(
+                "Could not register device %s with telldusd: %s", device_uid, err
+            )
+
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         ENTRY_TELLSTICK_CONTROLLER: controller,
+        ENTRY_DEVICE_ID_MAP: device_id_map,
     }
 
     @callback
@@ -132,11 +160,14 @@ def _handle_raw_event(
             },
         )
 
-    # Auto-add: fire a signal for platforms to create new entities
+    # Auto-add: fire a signal for platforms to create new entities.
+    # Skip devices that are already manually configured via the options flow.
     if entry.options.get(CONF_AUTOMATIC_ADD, False):
-        async_dispatcher_send(
-            hass, SIGNAL_NEW_DEVICE.format(entry.entry_id), event
-        )
+        stored_devices = entry.options.get(CONF_DEVICES, {})
+        if device_uid not in stored_devices:
+            async_dispatcher_send(
+                hass, SIGNAL_NEW_DEVICE.format(entry.entry_id), event
+            )
 
 
 def _handle_device_event(

@@ -200,6 +200,111 @@ class TellStickController:
         except Exception:  # noqa: BLE001
             return False
 
+    async def add_device(
+        self,
+        name: str,
+        protocol: str,
+        model: str,
+        parameters: dict[str, str],
+    ) -> int:
+        """Register a new device with telldusd and return its ID."""
+        device_id = await self._call("tdAddDevice", [])
+        if device_id <= 0:
+            raise RuntimeError(f"tdAddDevice returned error code {device_id}")
+        await self._call("tdSetName", [_encode_int32(device_id), _encode_string(name)])
+        await self._call(
+            "tdSetProtocol", [_encode_int32(device_id), _encode_string(protocol)]
+        )
+        if model:
+            await self._call(
+                "tdSetModel", [_encode_int32(device_id), _encode_string(model)]
+            )
+        for param_name, param_value in parameters.items():
+            await self._call(
+                "tdSetDeviceParameter",
+                [
+                    _encode_int32(device_id),
+                    _encode_string(param_name),
+                    _encode_string(param_value),
+                ],
+            )
+        return device_id
+
+    async def remove_device(self, device_id: int) -> None:
+        """Remove a device from telldusd."""
+        await self._call("tdRemoveDevice", [_encode_int32(device_id)])
+
+    async def list_devices(self) -> list[dict[str, Any]]:
+        """Return all devices registered in telldusd as a list of dicts."""
+        count = await self._call("tdGetNumberOfDevices", [])
+        devices: list[dict[str, Any]] = []
+        for i in range(count):
+            try:
+                device_id = await self._call("tdGetDeviceId", [_encode_int32(i)])
+                if device_id < 0:
+                    continue
+                protocol = (
+                    await self._call_str("tdGetProtocol", [_encode_int32(device_id)])
+                    or ""
+                )
+                house = (
+                    await self._call_str(
+                        "tdGetDeviceParameter",
+                        [
+                            _encode_int32(device_id),
+                            _encode_string("house"),
+                            _encode_string(""),
+                        ],
+                    )
+                    or ""
+                )
+                unit = (
+                    await self._call_str(
+                        "tdGetDeviceParameter",
+                        [
+                            _encode_int32(device_id),
+                            _encode_string("unit"),
+                            _encode_string(""),
+                        ],
+                    )
+                    or ""
+                )
+                devices.append(
+                    {
+                        "id": device_id,
+                        "protocol": protocol.lower(),
+                        "house": house,
+                        "unit": unit,
+                    }
+                )
+            except Exception:  # noqa: BLE001
+                continue
+        return devices
+
+    async def find_or_add_device(
+        self,
+        name: str,
+        protocol: str,
+        model: str,
+        house: str,
+        unit: str,
+    ) -> int:
+        """Find an existing telldusd device by protocol/house/unit or create it.
+
+        This avoids creating duplicates when the integration reconnects to a running
+        telldusd instance that already has the device registered.
+        """
+        for dev in await self.list_devices():
+            if (
+                dev["protocol"] == protocol.lower()
+                and dev["house"] == house
+                and dev["unit"] == unit
+            ):
+                return dev["id"]
+        return await self.add_device(
+            name, protocol, model, {"house": house, "unit": unit}
+        )
+
     async def _call(self, function: str, params: list[bytes]) -> int:
         """Send a command and return the int32 result."""
         if self._cmd_writer is None or self._cmd_reader is None:
@@ -214,6 +319,21 @@ class TellStickController:
             (result,) = struct.unpack_from(">i", response, 0)
             return result
         return 0
+
+    async def _call_str(self, function: str, params: list[bytes]) -> str | None:
+        """Send a command and return the string result."""
+        if self._cmd_writer is None or self._cmd_reader is None:
+            raise RuntimeError("Not connected")
+        payload = _encode_string(function)
+        for p in params:
+            payload += p
+        self._cmd_writer.write(_frame(payload))
+        await self._cmd_writer.drain()
+        response = await _read_frame(self._cmd_reader)
+        if len(response) >= 4:
+            value, _ = _decode_string(response, 0)
+            return value
+        return None
 
     # ------------------------------------------------------------------
     # Events (port 50801)
