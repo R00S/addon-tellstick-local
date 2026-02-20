@@ -125,6 +125,9 @@ A Docker container managed by the HAOS Supervisor that:
 → `https://github.com/R00S/addon-tellsticklive-roosfork` → category **App**.
 **Not installed via HACS.**
 
+The app also **automatically installs the companion integration** by copying it to
+`/config/custom_components/tellstick_local/` at startup — no HACS step needed.
+
 ### Component 2 — HA Custom Integration (`custom_components/tellstick_local/`)
 
 A Home Assistant integration that runs inside the HA Core Python process:
@@ -136,9 +139,10 @@ A Home Assistant integration that runs inside the HA Core Python process:
   (controlled by the `automatic_add` option)
 - Fires HA bus events and dispatcher signals for automations / device triggers
 
-**How to install:** HACS → three-dot menu → Custom repositories →
-`https://github.com/R00S/addon-tellsticklive-roosfork` → category **Integration**.
-A `hacs.json` at the repo root declares the category.
+**How to install:** Automatically — the app copies it to `/config/custom_components/`
+at startup. The Supervisor then fires a discovery notification: "New device found:
+TellStick Local — Set up?" and the user clicks through the one-screen confirm flow.
+**HACS is not required.** (HACS can still be used optionally for update management.)
 **Not installed via the Supervisor Apps store.**
 
 ### Why you need both — and why they can't be merged
@@ -184,14 +188,15 @@ TCP sockets the app exposes. It has zero Python dependencies outside stdlib + HA
 
 ### HAOS App (`tellsticklive/`)
 
-| File                                    | Purpose                                                            |
-| --------------------------------------- | ------------------------------------------------------------------ |
-| `config.yaml`                           | App metadata, version (`dev` on branches), device schema           |
-| `Dockerfile`                            | Container build: compiles telldus-core from source, installs socat |
-| `rootfs/etc/cont-init.d/telldusd.sh`    | Generates `/etc/tellstick.conf` from add-on config at startup      |
-| `rootfs/etc/services.d/telldusd/run`    | Starts `telldusd`, waits for UNIX sockets, launches socat bridges  |
-| `rootfs/etc/services.d/telldusd/finish` | Halts add-on if telldusd crashes unexpectedly                      |
-| `rootfs/etc/services.d/stdin/run`       | Processes `hassio.addon_stdin` service calls (on/off/dim/list)     |
+| File                                       | Purpose                                                            |
+| ------------------------------------------ | ------------------------------------------------------------------ |
+| `config.yaml`                              | App metadata, version (`dev` on branches), device schema           |
+| `Dockerfile`                               | Container build: compiles telldus-core from source, installs socat; bundles integration files |
+| `rootfs/etc/cont-init.d/integration.sh`    | Copies bundled integration to `/config/custom_components/` at startup |
+| `rootfs/etc/cont-init.d/telldusd.sh`       | Generates `/etc/tellstick.conf` from add-on config at startup      |
+| `rootfs/etc/services.d/telldusd/run`       | Starts `telldusd`, waits for UNIX sockets, launches socat bridges  |
+| `rootfs/etc/services.d/telldusd/finish`    | Halts add-on if telldusd crashes unexpectedly                      |
+| `rootfs/etc/services.d/stdin/run`          | Processes `hassio.addon_stdin` service calls (on/off/dim/list)     |
 
 ### Custom Integration (`custom_components/tellstick_local/`)
 

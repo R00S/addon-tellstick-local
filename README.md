@@ -54,11 +54,13 @@ YAML file editing.
 
 - **Hardware:** TellStick Duo USB stick connected to the HAOS machine
 - **Software:** Home Assistant OS **2026.2 or later** (HAOS, not Container/Core)
-- HACS installed (for the integration)
+
+No HACS required — the integration is bundled inside the app and installs itself
+automatically.
 
 ---
 
-## Installation
+## How it works
 
 This project has **two components** — the same architecture used by Z-Wave JS,
 deCONZ, and other USB-dongle integrations. Both run on the **same HAOS machine**,
@@ -74,9 +76,14 @@ exposes it via TCP. The integration connects over that TCP link to create HA ent
 This split is unavoidable: HAOS never grants USB access to a Python integration, and
 the C daemon cannot run inside Python.
 
-### Step 1 – Install the TellStick Local app (via Supervisor)
+**The app automatically installs the integration** by copying it to
+`/config/custom_components/` at startup — no manual integration install step needed.
 
-The app runs `telldusd` and bridges it over TCP so the integration can reach it.
+---
+
+## Installation
+
+### Step 1 – Install the TellStick Local app (via Supervisor)
 
 1. In HAOS go to **Settings → Apps** (or Add-ons on older versions)
 2. Click the **⋮ menu → Repositories** (or "Add custom repository")
@@ -85,17 +92,9 @@ The app runs `telldusd` and bridges it over TCP so the integration can reach it.
 5. Find **TellStick Local** in the app store and click **Install**
 6. Click **Start** — wait for the log to show `TellStick Local is ready!`
 
-### Step 2 – Install the TellStick Local integration (via HACS)
+The app will automatically copy the integration into your HA config.
 
-The integration provides the HA-native config flow, entities, and automations.
-
-1. In HACS click the **⋮ menu → Custom repositories**
-2. Add: `https://github.com/R00S/addon-tellsticklive-roosfork`
-   with category **Integration**
-3. Click **Add**, then find **TellStick Local** and click **Download**
-4. Restart Home Assistant
-
-### Step 3 – Accept the setup prompt
+### Step 2 – Accept the setup prompt
 
 When the app starts for the first time, Home Assistant automatically shows a
 notification:

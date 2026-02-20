@@ -51,6 +51,9 @@ RUN apk add --no-cache \
     && rm -rf /usr/src/telldus \
     && cd /
 
+# Bundle companion integration (copied to /config/custom_components/ at startup)
+COPY custom_components/tellstick_local /usr/share/tellstick_local/
+
 # Copy data for add-on
 COPY rootfs /
 
