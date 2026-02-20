@@ -209,8 +209,10 @@ def build_device_uid(protocol: str, model: str, house: str, unit: str) -> str:
     """Build a stable device UID normalized to match raw RF event model strings.
 
     The model field from the device catalog may include a vendor suffix after ":"
-    (e.g. "selflearning-switch:nexa").  Raw RF events only report the base model
-    (e.g. "selflearning"), so we strip the suffix and then normalize.
+    (e.g. ``selflearning-switch:nexa``).  Raw RF events report only the base model
+    (e.g. ``selflearning``), so we:
+    1. Strip the vendor suffix: ``selflearning-switch:nexa`` → ``selflearning-switch``
+    2. Normalize: ``selflearning-switch`` → ``selflearning`` (to match RF events)
     """
     # Strip vendor suffix (e.g. "selflearning-switch:nexa" → "selflearning-switch")
     base_model = model.split(":")[0] if ":" in model else model
