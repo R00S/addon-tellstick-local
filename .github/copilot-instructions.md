@@ -206,20 +206,20 @@ TCP sockets the app exposes. It has zero Python dependencies outside stdlib + HA
 
 ### Custom Integration (`custom_components/tellstick_local/`)
 
-| File                   | Purpose                                                                                                              |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `manifest.json`        | Domain, version, no external requirements (pure asyncio TCP client)                                                  |
-| `const.py`             | **SOURCE OF TRUTH** – domain constants, method bitmasks, device catalog, signal templates                            |
-| `client.py`            | **SOURCE OF TRUTH** – asyncio TCP client; telldusd text protocol (one-shot commands, persistent events)              |
-| `config_flow.py`       | Config flow: host/port entry, live connection validation, options flow                                               |
-| `__init__.py`          | Hub setup, event subscription, dispatcher + HA bus event dispatch                                                    |
-| `entity.py`            | Base entity: device registry, state restore                                                                          |
-| `switch.py`            | Switch platform (on/off for codeswitch / selflearning-switch models)                                                 |
-| `light.py`             | Light platform (dim / on / off for selflearning-dimmer models)                                                       |
-| `sensor.py`            | Sensor platform (temperature, humidity from wireless sensors)                                                        |
-| `device_trigger.py`    | Device automation triggers: `turned_on` / `turned_off`                                                               |
-| `strings.json`         | UI strings (config flow labels, error messages)                                                                      |
-| `translations/en.json` | English translations (mirrors strings.json)                                                                          |
+| File                   | Purpose                                                                                                 |
+| ---------------------- | ------------------------------------------------------------------------------------------------------- |
+| `manifest.json`        | Domain, version, no external requirements (pure asyncio TCP client)                                     |
+| `const.py`             | **SOURCE OF TRUTH** – domain constants, method bitmasks, device catalog, signal templates               |
+| `client.py`            | **SOURCE OF TRUTH** – asyncio TCP client; telldusd text protocol (one-shot commands, persistent events) |
+| `config_flow.py`       | Config flow: host/port entry, live connection validation, options flow                                  |
+| `__init__.py`          | Hub setup, event subscription, dispatcher + HA bus event dispatch                                       |
+| `entity.py`            | Base entity: device registry, state restore                                                             |
+| `switch.py`            | Switch platform (on/off for codeswitch / selflearning-switch models)                                    |
+| `light.py`             | Light platform (dim / on / off for selflearning-dimmer models)                                          |
+| `sensor.py`            | Sensor platform (temperature, humidity from wireless sensors)                                           |
+| `device_trigger.py`    | Device automation triggers: `turned_on` / `turned_off`                                                  |
+| `strings.json`         | UI strings (config flow labels, error messages)                                                         |
+| `translations/en.json` | English translations (mirrors strings.json)                                                             |
 
 ---
 
@@ -258,7 +258,7 @@ The `client.py` file implements the telldusd socket protocol. Key facts:
 
 - **Text-based, NOT binary.** Source: `telldus-core/common/Message.cpp`.
 - Strings are encoded as: `<byte_length>:<utf8_text>` (e.g. `7:arctech`)
-- Integers are encoded as: `i<decimal_value>s`             (e.g. `i42s`)
+- Integers are encoded as: `i<decimal_value>s` (e.g. `i42s`)
 - **Command socket** (port 50800): each command requires a **new TCP connection**
   because telldusd creates a one-shot handler per UNIX-socket connection (reads
   one message, responds with `\n`-terminated reply, closes).
@@ -368,6 +368,7 @@ verifies:
 6. **All platform modules** — client, const, entity, switch, light, sensor, device_trigger
 
 This catches the most common integration-breaking issues:
+
 - **Removed HA imports** — e.g. `HassioServiceInfo` moved from
   `homeassistant.components.hassio` to `homeassistant.helpers.service_info.hassio`
 - **Deprecated API patterns** — e.g. OptionsFlow `self.config_entry = config_entry`
@@ -448,6 +449,7 @@ class MyOptionsFlow(OptionsFlow):
 ```
 
 Also update `async_get_options_flow` to not pass the entry:
+
 ```python
 return MyOptionsFlow()  # ✅ no argument
 ```
@@ -455,10 +457,12 @@ return MyOptionsFlow()  # ✅ no argument
 ### How to detect these early
 
 **Always run the integration test** after any change to integration Python code:
+
 ```bash
 pip install homeassistant pyflakes
 python tests/test_ha_integration.py
 ```
+
 If a new HA version breaks an import, the test will fail immediately with the
 exact `ImportError` or `TypeError`.
 

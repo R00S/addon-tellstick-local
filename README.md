@@ -150,17 +150,17 @@ device library. The table below summarizes what each protocol supports.
 
 ### Auto-discoverable (press a button → device appears)
 
-| Protocol       | Entity type    | Brands                                                                                       |
-| -------------- | -------------- | -------------------------------------------------------------------------------------------- |
+| Protocol       | Entity type    | Brands                                                                                          |
+| -------------- | -------------- | ----------------------------------------------------------------------------------------------- |
 | `arctech`      | Switch / Light | Nexa, Proove, KlikAanKlikUit, Intertechno, HomeEasy, Chacon, CoCo, Kappa, Bye Bye Standby, Elro |
-| `everflourish` | Switch         | GAO, Everflourish, Rusta                                                                     |
-| `hasta`        | Cover          | Hasta, Rollertrol motorised blinds                                                           |
-| `mandolyn`     | Switch         | Mandolyn / Summerbird                                                                        |
-| `sartano`      | Switch         | Sartano, Brennenstuhl, Rusta, Elro                                                           |
-| `waveman`      | Switch         | Waveman                                                                                      |
-| `x10`          | Switch         | X10                                                                                          |
-| `fineoffset`   | Sensor         | Nexa LMST-606 / WDS-100 thermometers, Fine Offset weather stations                          |
-| `oregon`       | Sensor         | Oregon Scientific weather sensors (temp, humidity, rain, wind, UV)                           |
+| `everflourish` | Switch         | GAO, Everflourish, Rusta                                                                        |
+| `hasta`        | Cover          | Hasta, Rollertrol motorised blinds                                                              |
+| `mandolyn`     | Switch         | Mandolyn / Summerbird                                                                           |
+| `sartano`      | Switch         | Sartano, Brennenstuhl, Rusta, Elro                                                              |
+| `waveman`      | Switch         | Waveman                                                                                         |
+| `x10`          | Switch         | X10                                                                                             |
+| `fineoffset`   | Sensor         | Nexa LMST-606 / WDS-100 thermometers, Fine Offset weather stations                              |
+| `oregon`       | Sensor         | Oregon Scientific weather sensors (temp, humidity, rain, wind, UV)                              |
 
 > **Nexa note:** Nexa _switches, dimmers, remotes and buttons_ use the `arctech`
 > protocol. Nexa _thermometers and weather sensors_ (LMST-606, WDS-100 etc.) use
@@ -170,16 +170,16 @@ device library. The table below summarizes what each protocol supports.
 
 These devices must be added via Method B (self-learning teach).
 
-| Protocol     | Entity type | Brands                                                   |
-| ------------ | ----------- | -------------------------------------------------------- |
-| `brateck`    | Cover       | Roxcore projector screens                                |
-| `comen`      | Switch      | Anslut / Jula                                            |
-| `fuhaote`    | Switch      | HQ                                                       |
-| `ikea`       | Switch      | IKEA Koppla                                              |
-| `risingsun`  | Switch      | Conrad, GAO, Kjell & Company, Otio                       |
-| `silvanchip` | Switch      | Ecosavers, KingPin KP100                                 |
-| `upm`        | Switch      | UPM                                                      |
-| `yidong`     | Switch      | Goobay                                                   |
+| Protocol     | Entity type | Brands                             |
+| ------------ | ----------- | ---------------------------------- |
+| `brateck`    | Cover       | Roxcore projector screens          |
+| `comen`      | Switch      | Anslut / Jula                      |
+| `fuhaote`    | Switch      | HQ                                 |
+| `ikea`       | Switch      | IKEA Koppla                        |
+| `risingsun`  | Switch      | Conrad, GAO, Kjell & Company, Otio |
+| `silvanchip` | Switch      | Ecosavers, KingPin KP100           |
+| `upm`        | Switch      | UPM                                |
+| `yidong`     | Switch      | Goobay                             |
 
 ---
 
