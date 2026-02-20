@@ -26,21 +26,37 @@
   "options": {
     "step": {
       "init": {
-        "title": "TellStick Local options",
+        "title": "TellStick Local",
+        "menu_options": {
+          "settings": "Settings",
+          "add_device": "Add device",
+          "remove_device": "Remove device"
+        }
+      },
+      "settings": {
+        "title": "Settings",
         "data": {
-          "automatic_add": "Automatically add new devices when they send a signal",
-          "add_device": "Teach a new self-learning device",
-          "remove_device": "Remove a device"
+          "automatic_add": "Automatically add new devices when they send a signal"
         }
       },
       "add_device": {
-        "title": "Add a self-learning device",
-        "description": "Pick your device type, give it a name, and click Submit. A random house code is generated — keep it unless you need a specific one.",
+        "title": "Add a device",
+        "description": "Pick your device type and give it a name.",
         "data": {
           "name": "Device name",
-          "device_type": "Device type",
+          "device_type": "Device type"
+        }
+      },
+      "add_device_params": {
+        "title": "Device parameters",
+        "description": "Enter the parameters for **{device_type}**. Ranges and defaults match the hardware.",
+        "data": {
           "house": "House code",
-          "unit": "Unit number"
+          "unit": "Unit code",
+          "code": "Code (10 digits, 0 or 1)",
+          "system": "System",
+          "units": "Units (comma-separated, 1–10)",
+          "fade": "Fade (smooth)"
         }
       },
       "add_device_confirm": {
@@ -55,7 +71,7 @@
       }
     },
     "error": {
-      "invalid_code": "House and unit code must not be empty.",
+      "invalid_code": "Parameter values must not be empty.",
       "teach_failed": "Failed to send pairing signal. Check that the TellStick app is running.",
       "invalid_selection": "Please select a device to remove."
     }
