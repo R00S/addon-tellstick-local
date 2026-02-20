@@ -13,9 +13,9 @@
 █     → Edit: custom_components/tellstick_local/<platform>.py                  █
 █     → Constants: custom_components/tellstick_local/const.py                  █
 █                                                                              █
-█   PROTOCOL BINARY FORMAT (telldusd socket encoding):                         █
+█   PROTOCOL: TEXT-BASED (telldusd socket encoding):                        █
 █     → Edit: custom_components/tellstick_local/client.py                      █
-█     → NEVER duplicate framing logic elsewhere                                 █
+█     → NEVER use binary framing — protocol is text-based                      █
 █                                                                              █
 ████████████████████████████████████████████████████████████████████████████████
 ```
@@ -209,8 +209,8 @@ TCP sockets the app exposes. It has zero Python dependencies outside stdlib + HA
 | File                   | Purpose                                                                                                              |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | `manifest.json`        | Domain, version, no external requirements (pure asyncio TCP client)                                                  |
-| `const.py`             | **SOURCE OF TRUTH** – all domain constants, event type IDs, method bitmasks, signal templates                        |
-| `client.py`            | **SOURCE OF TRUTH** – asyncio TCP client; telldusd binary framing (big-endian uint32-prefixed frames, UTF-8 strings) |
+| `const.py`             | **SOURCE OF TRUTH** – domain constants, method bitmasks, device catalog, signal templates                            |
+| `client.py`            | **SOURCE OF TRUTH** – asyncio TCP client; telldusd text protocol (one-shot commands, persistent events)              |
 | `config_flow.py`       | Config flow: host/port entry, live connection validation, options flow                                               |
 | `__init__.py`          | Hub setup, event subscription, dispatcher + HA bus event dispatch                                                    |
 | `entity.py`            | Base entity: device registry, state restore                                                                          |
@@ -252,19 +252,27 @@ HA custom integration (client.py)
 
 ---
 
-## telldusd Binary Protocol
+## telldusd Socket Protocol
 
-The `client.py` file implements the telldusd socket framing. Key facts:
+The `client.py` file implements the telldusd socket protocol. Key facts:
 
-- Every message is a **big-endian uint32 byte-length prefix** followed by payload
-- Strings are encoded as **uint32 length** + UTF-8 bytes (length `0xFFFFFFFF` = null)
-- Integers are **big-endian int32** (4 bytes signed)
-- Event type IDs (from `const.py`):
-  - `1` = `TELLDUSD_DEVICE_EVENT` – named device state change
-  - `3` = `TELLDUSD_RAW_DEVICE_EVENT` – raw RF event string (key:value pairs separated by `;`)
-  - `4` = `TELLDUSD_SENSOR_EVENT` – sensor reading
+- **Text-based, NOT binary.** Source: `telldus-core/common/Message.cpp`.
+- Strings are encoded as: `<byte_length>:<utf8_text>` (e.g. `7:arctech`)
+- Integers are encoded as: `i<decimal_value>s`             (e.g. `i42s`)
+- **Command socket** (port 50800): each command requires a **new TCP connection**
+  because telldusd creates a one-shot handler per UNIX-socket connection (reads
+  one message, responds with `\n`-terminated reply, closes).
+- **Event socket** (port 50801): persistent connection. telldusd pushes events
+  to all connected clients using the same text encoding (no `\n` terminator;
+  messages are self-delimiting).
+- Event types are identified by **string names** (not integer IDs):
+  - `TDRawDeviceEvent` – raw RF event string (key:value pairs separated by `;`)
+  - `TDDeviceEvent` – named device state change
+  - `TDSensorEvent` – sensor reading
+  - `TDDeviceChangeEvent` – device config change (consumed but not dispatched)
 
-**NEVER duplicate this framing logic outside `client.py`.**
+**NEVER duplicate this protocol logic outside `client.py`.**
+**NEVER use binary framing (struct.pack / big-endian) — the protocol is text.**
 
 ### Raw RF event format
 

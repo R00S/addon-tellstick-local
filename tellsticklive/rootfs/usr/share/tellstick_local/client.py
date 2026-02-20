@@ -108,6 +108,8 @@ def _parse_string_response(data: str) -> str | None:
     data = data.strip()
     if not data or not data[0].isdigit():
         return None
+    if ":" not in data:
+        return None
     idx = data.index(":")
     length = int(data[:idx])
     return data[idx + 1 : idx + 1 + length]
