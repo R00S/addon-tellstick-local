@@ -84,6 +84,7 @@ similar projects.
 | ---------------------------------------- | -------------------------------------------------------- |
 | Device/protocol list in add-on           | `tellsticklive/config.yaml`                              |
 | tellstick.conf generation logic          | `tellsticklive/rootfs/etc/cont-init.d/telldusd.sh`       |
+| Integration install/update logic         | `tellsticklive/rootfs/etc/cont-init.d/integration.sh`    |
 | telldusd startup / socat bridge          | `tellsticklive/rootfs/etc/services.d/telldusd/run`       |
 | stdin service call handling              | `tellsticklive/rootfs/etc/services.d/stdin/run`          |
 | TCP socket binary protocol (framing)     | `custom_components/tellstick_local/client.py`            |

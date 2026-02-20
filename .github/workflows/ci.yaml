@@ -164,6 +164,12 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           persist-credentials: false
+      - name: 📦 Bundle integration into add-on build context
+        env:
+          TARGET: ${{ needs.information.outputs.target }}
+        run: |
+          cp -r custom_components/tellstick_local \
+            "${TARGET}/rootfs/usr/share/tellstick_local"
       - name: 🏗 Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
       - name: ℹ️ Compose build flags

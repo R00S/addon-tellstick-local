@@ -111,24 +111,14 @@ jobs:
 
           This release is for testing purposes only and has NOT been merged to the main branch.
 
-          ## Installation via HACS
+          ## Installation
 
-          1. In HACS, go to Integrations
-          2. Click the three dots in the top right corner
-          3. Select "Custom repositories"
-          4. Add this repository URL: \`https://github.com/${REPO}\`
-          5. Select category: "Integration"
-          6. Click "Add"
-          7. Find "TellStick Local" and install version \`${TEST_VERSION}\`
-          8. Restart Home Assistant
-
-          ## Add-on installation
-
-          Make sure the **TellStick Local** add-on is installed and running from this repository:
-          \`https://github.com/${REPO}\`
-
-          The add-on exposes the \`telldusd\` daemon over TCP on ports **50800** (commands)
-          and **50801** (events). The custom integration connects to those ports.
+          1. In HAOS go to **Settings → Apps → ⋮ → Repositories**
+          2. Add: \`https://github.com/${REPO}\`, category **App**
+          3. Find **TellStick Local** and install it
+          4. Start the app — it will automatically copy the integration into your HA config
+          5. Accept the **"New device found: TellStick Local — Set up?"** notification
+          6. No HACS install needed — the integration is bundled in the app
 
           ## What's Included
 
@@ -140,14 +130,12 @@ jobs:
 
           ## Testing Instructions
 
-          1. Install the **TellStick Local** add-on and start it
-          2. Install this integration version via HACS
-          3. Restart Home Assistant
-          4. Add the **TellStick Local** integration via Settings → Devices & Services
-          5. Enter the hostname shown in the add-on log and accept the default ports (50800 / 50801)
-          6. Enable **Automatically add new devices** in the integration options
-          7. Press a 433 MHz remote/button to pair a device
-          8. Report any issues on the PR or as GitHub issues
+          1. Install and start the **TellStick Local** app
+          2. Accept the integration setup prompt (or go to Settings → Devices & Services → Add Integration → TellStick Local)
+          3. Enable **Automatically add new devices** in the integration options
+          4. Press a 433 MHz remote/button — the device should appear in HA
+          5. Test the self-learning teach flow: Configure → Add device → pick protocol → put receiver in learn mode → Submit
+          6. Report any issues on the PR or as GitHub issues
 
           ## Recent Commits
 
@@ -190,8 +178,7 @@ jobs:
           echo "**Release Type:** \`${RELEASE_TYPE}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "### Installation" >> "$GITHUB_STEP_SUMMARY"
-          echo "This release can now be installed via HACS." >> "$GITHUB_STEP_SUMMARY"
-          echo "HACS will automatically detect this version." >> "$GITHUB_STEP_SUMMARY"
+          echo "Install the **TellStick Local** app — the integration is bundled and installs automatically." >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "### Release URL" >> "$GITHUB_STEP_SUMMARY"
           echo "https://github.com/${REPO}/releases/tag/${TEST_TAG}" >> "$GITHUB_STEP_SUMMARY"
