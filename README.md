@@ -1,5 +1,10 @@
 # Home Assistant Add-on: TellStick Local
 
+> [!WARNING]
+> **🚧 Development repository – not ready for public testing.**
+> This repo is under active development. Features may be incomplete, APIs may
+> change without notice, and there may be known bugs. Do not use in production.
+
 ![Project Stage][project-stage-shield]
 
 ![Supports aarch64 Architecture][aarch64-shield]
@@ -137,4 +142,4 @@ See [LICENSE.md](LICENSE.md) and [NOTICE](NOTICE) for full details.
 [github-actions]: https://github.com/R00S/addon-tellsticklive-roosfork/actions
 [issue]: https://github.com/R00S/addon-tellsticklive-roosfork/issues
 [maintenance-shield]: https://img.shields.io/maintenance/yes/2025.svg
-[project-stage-shield]: https://img.shields.io/badge/project%20stage-production%20ready-brightgreen.svg
+[project-stage-shield]: https://img.shields.io/badge/project%20stage-experimental-orange.svg

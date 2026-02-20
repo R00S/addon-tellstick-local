@@ -1,0 +1,180 @@
+---
+# Updated: 2026-02-20 for addon-tellsticklive-roosfork
+name: Create Test Release
+
+# yamllint disable-line rule:truthy
+on:
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: Release type
+        required: true
+        type: choice
+        options:
+          - test
+          - beta
+          - rc
+        default: test
+      version_suffix:
+        description: Version suffix (e.g., branch name or identifier)
+        required: false
+        type: string
+
+jobs:
+  create-test-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get current branch name
+        id: branch
+        run: |
+          BRANCH_NAME="${GITHUB_REF#refs/heads/}"
+          echo "name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          # Sanitize branch name for use in version (replace / with -)
+          SAFE_BRANCH=$(echo "$BRANCH_NAME" | sed 's/\//-/g')
+          echo "safe_name=$SAFE_BRANCH" >> $GITHUB_OUTPUT
+
+      - name: Extract version from manifest
+        id: version
+        run: |
+          VERSION=$(grep -oP '"version":\s*"\K[^"]+' custom_components/tellstick_local/manifest.json)
+          echo "base=$VERSION" >> $GITHUB_OUTPUT
+
+          # Create test version based on release type
+          SUFFIX="${{ github.event.inputs.version_suffix }}"
+          if [ -z "$SUFFIX" ]; then
+            SUFFIX="${{ steps.branch.outputs.safe_name }}"
+          fi
+
+          RELEASE_TYPE="${{ github.event.inputs.release_type }}"
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+
+          case "$RELEASE_TYPE" in
+            test)
+              TEST_VERSION="${VERSION}-test.${SUFFIX}.${TIMESTAMP}"
+              ;;
+            beta)
+              TEST_VERSION="${VERSION}-beta.${SUFFIX}"
+              ;;
+            rc)
+              TEST_VERSION="${VERSION}-rc.${SUFFIX}"
+              ;;
+            *)
+              TEST_VERSION="${VERSION}-test.${SUFFIX}.${TIMESTAMP}"
+              ;;
+          esac
+
+          echo "test=$TEST_VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v${TEST_VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Update manifest.json with test version
+        run: |
+          sed -i 's/"version": "[^"]*"/"version": "${{ steps.version.outputs.test }}"/' \
+            custom_components/tellstick_local/manifest.json
+          cat custom_components/tellstick_local/manifest.json
+
+      - name: Create release archive
+        run: |
+          cd custom_components
+          zip -r ../tellstick-local-${{ steps.version.outputs.test }}.zip tellstick_local/
+          cd ..
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          cat > release_notes.md << 'EOF'
+          # 🧪 Test Release: ${{ steps.version.outputs.test }}
+
+          **⚠️ This is a TEST release from branch `${{ steps.branch.outputs.name }}`**
+
+          This release is for testing purposes only and has NOT been merged to the main branch.
+
+          ## Installation via HACS
+
+          1. In HACS, go to Integrations
+          2. Click the three dots in the top right corner
+          3. Select "Custom repositories"
+          4. Add this repository URL: `https://github.com/${{ github.repository }}`
+          5. Select category: "Integration"
+          6. Click "Add"
+          7. Find "TellStick Local" and install version `${{ steps.version.outputs.test }}`
+          8. Restart Home Assistant
+
+          ## Add-on installation
+
+          Make sure the **TellStick Local** add-on is installed and running from this repository:
+          `https://github.com/${{ github.repository }}`
+
+          The add-on exposes the `telldusd` daemon over TCP on ports **50800** (commands)
+          and **50801** (events). The custom integration connects to those ports.
+
+          ## What's Included
+
+          This test release includes all changes from the `${{ steps.branch.outputs.name }}` branch:
+
+          - Latest commit: `${{ github.sha }}`
+          - Base version: `${{ steps.version.outputs.base }}`
+          - Release type: `${{ github.event.inputs.release_type }}`
+
+          ## Testing Instructions
+
+          1. Install the **TellStick Local** add-on and start it
+          2. Install this integration version via HACS
+          3. Restart Home Assistant
+          4. Add the **TellStick Local** integration via Settings → Devices & Services
+          5. Enter the hostname shown in the add-on log and accept the default ports (50800 / 50801)
+          6. Enable **Automatically add new devices** in the integration options
+          7. Press a 433 MHz remote/button to pair a device
+          8. Report any issues on the PR or as GitHub issues
+
+          ## Recent Commits
+
+          ```
+          $(git log --oneline -10)
+          ```
+
+          ---
+
+          **Note:** Once testing is complete and issues are resolved, these changes will be
+          merged to main and a production release will be created.
+          EOF
+
+          cat release_notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "Test Release ${{ steps.version.outputs.test }}"
+          body_path: release_notes.md
+          files: tellstick-local-${{ steps.version.outputs.test }}.zip
+          draft: false
+          prerelease: true
+          target_commitish: ${{ github.sha }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "## 🎉 Test Release Created!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** \`${{ steps.version.outputs.test }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** \`${{ steps.version.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** \`${{ steps.branch.outputs.name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Release Type:** \`${{ github.event.inputs.release_type }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Installation" >> $GITHUB_STEP_SUMMARY
+          echo "This release can now be installed via HACS." >> $GITHUB_STEP_SUMMARY
+          echo "HACS will automatically detect this version." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Release URL" >> $GITHUB_STEP_SUMMARY
+          echo "https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.tag }}" \
+            >> $GITHUB_STEP_SUMMARY

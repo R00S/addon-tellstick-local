@@ -1,6 +1,6 @@
 ---
 name: TellStick Local
-version: 2.0.0
+version: 1.0.1.0
 slug: tellsticklive
 description: TellStick and TellStick Duo local service (no cloud)
 url: https://github.com/R00S/addon-tellsticklive-roosfork
