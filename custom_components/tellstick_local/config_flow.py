@@ -9,7 +9,7 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.components.hassio import HassioServiceInfo
+from homeassistant.helpers.service_info.hassio import HassioServiceInfo
 from homeassistant.const import CONF_HOST
 from homeassistant.data_entry_flow import FlowResult
 
@@ -28,11 +28,11 @@ from .const import (
     DEFAULT_COMMAND_PORT,
     DEFAULT_EVENT_PORT,
     DEFAULT_HOST,
+    DEVICE_CATALOG_LABELS,
+    DEVICE_CATALOG_MAP,
     DOMAIN,
     ENTRY_DEVICE_ID_MAP,
     ENTRY_TELLSTICK_CONTROLLER,
-    PROTOCOL_DEFAULT_MODELS,
-    TX_PROTOCOLS,
     build_device_uid,
 )
 
@@ -181,18 +181,15 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         config_entry: config_entries.ConfigEntry,
     ) -> TellStickLocalOptionsFlow:
         """Return the options flow."""
-        return TellStickLocalOptionsFlow(config_entry)
+        return TellStickLocalOptionsFlow()
 
 
 class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
     """Handle TellStick Local options."""
 
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+    def __init__(self) -> None:
         """Init options flow."""
-        self.config_entry = config_entry
-        self._automatic_add: bool = config_entry.options.get(
-            CONF_AUTOMATIC_ADD, DEFAULT_AUTOMATIC_ADD
-        )
+        self._automatic_add: bool = DEFAULT_AUTOMATIC_ADD
         self._new_device: dict[str, str] = {}
 
     async def async_step_init(
@@ -217,6 +214,10 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                 },
             )
 
+        self._automatic_add = self.config_entry.options.get(
+            CONF_AUTOMATIC_ADD, DEFAULT_AUTOMATIC_ADD
+        )
+
         schema_dict: dict[Any, Any] = {
             vol.Required(
                 CONF_AUTOMATIC_ADD,
@@ -239,8 +240,8 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            protocol = user_input["protocol"]
-            model = user_input.get("model", PROTOCOL_DEFAULT_MODELS.get(protocol, ""))
+            device_type = user_input["device_type"]
+            protocol, model = DEVICE_CATALOG_MAP[device_type]
             house = user_input["house"].strip()
             unit = user_input["unit"].strip()
             if not house or not unit:
@@ -264,11 +265,10 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
             data_schema=vol.Schema(
                 {
                     vol.Required("name"): str,
-                    vol.Required("protocol", default="arctech"): vol.In(TX_PROTOCOLS),
-                    vol.Optional(
-                        "model",
-                        default=PROTOCOL_DEFAULT_MODELS.get("arctech", ""),
-                    ): str,
+                    vol.Required(
+                        "device_type",
+                        default=DEVICE_CATALOG_LABELS[0],
+                    ): vol.In(DEVICE_CATALOG_LABELS),
                     vol.Required("house", default=default_house): str,
                     vol.Required("unit", default="1"): str,
                 }

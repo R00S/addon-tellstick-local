@@ -13,9 +13,9 @@
 █     → Edit: custom_components/tellstick_local/<platform>.py                  █
 █     → Constants: custom_components/tellstick_local/const.py                  █
 █                                                                              █
-█   PROTOCOL BINARY FORMAT (telldusd socket encoding):                         █
+█   PROTOCOL: TEXT-BASED (telldusd socket encoding):                        █
 █     → Edit: custom_components/tellstick_local/client.py                      █
-█     → NEVER duplicate framing logic elsewhere                                 █
+█     → NEVER use binary framing — protocol is text-based                      █
 █                                                                              █
 ████████████████████████████████████████████████████████████████████████████████
 ```
@@ -38,6 +38,11 @@ python -m pyflakes custom_components/tellstick_local/
 grep '"version"' custom_components/tellstick_local/manifest.json
 # Add-on config.yaml always reads 'dev' on branches — that is correct, see below
 grep '^version:' tellsticklive/config.yaml
+
+# Test integration loads and config flows work in a real HA instance
+# (see "Integration testing against Home Assistant" below)
+pip install homeassistant pyflakes
+python tests/test_ha_integration.py
 ```
 
 ## Version Numbering — Two Files, Different Rules
@@ -201,20 +206,20 @@ TCP sockets the app exposes. It has zero Python dependencies outside stdlib + HA
 
 ### Custom Integration (`custom_components/tellstick_local/`)
 
-| File                   | Purpose                                                                                                              |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `manifest.json`        | Domain, version, no external requirements (pure asyncio TCP client)                                                  |
-| `const.py`             | **SOURCE OF TRUTH** – all domain constants, event type IDs, method bitmasks, signal templates                        |
-| `client.py`            | **SOURCE OF TRUTH** – asyncio TCP client; telldusd binary framing (big-endian uint32-prefixed frames, UTF-8 strings) |
-| `config_flow.py`       | Config flow: host/port entry, live connection validation, options flow                                               |
-| `__init__.py`          | Hub setup, event subscription, dispatcher + HA bus event dispatch                                                    |
-| `entity.py`            | Base entity: device registry, state restore                                                                          |
-| `switch.py`            | Switch platform (on/off for codeswitch / selflearning-switch models)                                                 |
-| `light.py`             | Light platform (dim / on / off for selflearning-dimmer models)                                                       |
-| `sensor.py`            | Sensor platform (temperature, humidity from wireless sensors)                                                        |
-| `device_trigger.py`    | Device automation triggers: `turned_on` / `turned_off`                                                               |
-| `strings.json`         | UI strings (config flow labels, error messages)                                                                      |
-| `translations/en.json` | English translations (mirrors strings.json)                                                                          |
+| File                   | Purpose                                                                                                 |
+| ---------------------- | ------------------------------------------------------------------------------------------------------- |
+| `manifest.json`        | Domain, version, no external requirements (pure asyncio TCP client)                                     |
+| `const.py`             | **SOURCE OF TRUTH** – domain constants, method bitmasks, device catalog, signal templates               |
+| `client.py`            | **SOURCE OF TRUTH** – asyncio TCP client; telldusd text protocol (one-shot commands, persistent events) |
+| `config_flow.py`       | Config flow: host/port entry, live connection validation, options flow                                  |
+| `__init__.py`          | Hub setup, event subscription, dispatcher + HA bus event dispatch                                       |
+| `entity.py`            | Base entity: device registry, state restore                                                             |
+| `switch.py`            | Switch platform (on/off for codeswitch / selflearning-switch models)                                    |
+| `light.py`             | Light platform (dim / on / off for selflearning-dimmer models)                                          |
+| `sensor.py`            | Sensor platform (temperature, humidity from wireless sensors)                                           |
+| `device_trigger.py`    | Device automation triggers: `turned_on` / `turned_off`                                                  |
+| `strings.json`         | UI strings (config flow labels, error messages)                                                         |
+| `translations/en.json` | English translations (mirrors strings.json)                                                             |
 
 ---
 
@@ -247,19 +252,27 @@ HA custom integration (client.py)
 
 ---
 
-## telldusd Binary Protocol
+## telldusd Socket Protocol
 
-The `client.py` file implements the telldusd socket framing. Key facts:
+The `client.py` file implements the telldusd socket protocol. Key facts:
 
-- Every message is a **big-endian uint32 byte-length prefix** followed by payload
-- Strings are encoded as **uint32 length** + UTF-8 bytes (length `0xFFFFFFFF` = null)
-- Integers are **big-endian int32** (4 bytes signed)
-- Event type IDs (from `const.py`):
-  - `1` = `TELLDUSD_DEVICE_EVENT` – named device state change
-  - `3` = `TELLDUSD_RAW_DEVICE_EVENT` – raw RF event string (key:value pairs separated by `;`)
-  - `4` = `TELLDUSD_SENSOR_EVENT` – sensor reading
+- **Text-based, NOT binary.** Source: `telldus-core/common/Message.cpp`.
+- Strings are encoded as: `<byte_length>:<utf8_text>` (e.g. `7:arctech`)
+- Integers are encoded as: `i<decimal_value>s` (e.g. `i42s`)
+- **Command socket** (port 50800): each command requires a **new TCP connection**
+  because telldusd creates a one-shot handler per UNIX-socket connection (reads
+  one message, responds with `\n`-terminated reply, closes).
+- **Event socket** (port 50801): persistent connection. telldusd pushes events
+  to all connected clients using the same text encoding (no `\n` terminator;
+  messages are self-delimiting).
+- Event types are identified by **string names** (not integer IDs):
+  - `TDRawDeviceEvent` – raw RF event string (key:value pairs separated by `;`)
+  - `TDDeviceEvent` – named device state change
+  - `TDSensorEvent` – sensor reading
+  - `TDDeviceChangeEvent` – device config change (consumed but not dispatched)
 
-**NEVER duplicate this framing logic outside `client.py`.**
+**NEVER duplicate this protocol logic outside `client.py`.**
+**NEVER use binary framing (struct.pack / big-endian) — the protocol is text.**
 
 ### Raw RF event format
 
@@ -333,6 +346,42 @@ Common model strings: `codeswitch`, `selflearning-switch`, `selflearning-dimmer`
 
 ## Testing
 
+### Integration testing against Home Assistant
+
+The integration can be tested against a real Home Assistant instance **without**
+TellStick hardware. Install HA Core as a Python package and run the test script:
+
+```bash
+pip install homeassistant pyflakes
+python tests/test_ha_integration.py
+```
+
+The test script (`tests/test_ha_integration.py`) boots a minimal HA instance,
+copies `custom_components/tellstick_local/` into a temp config directory, and
+verifies:
+
+1. **Integration loads** — `loader.async_get_integration()` finds it in custom_components
+2. **Config flow imports** — no broken imports prevent the module from loading
+3. **User config flow** — `async_step_user` shows the host/port form
+4. **Hassio discovery flow** — `async_step_hassio` → `hassio_confirm` form
+5. **OptionsFlow** — instantiates without the deprecated `config_entry` parameter
+6. **All platform modules** — client, const, entity, switch, light, sensor, device_trigger
+
+This catches the most common integration-breaking issues:
+
+- **Removed HA imports** — e.g. `HassioServiceInfo` moved from
+  `homeassistant.components.hassio` to `homeassistant.helpers.service_info.hassio`
+- **Deprecated API patterns** — e.g. OptionsFlow `self.config_entry = config_entry`
+  explicit assignment removed in HA 2025.12
+- **Syntax errors or typos** in any module
+
+> **Note:** The test uses whatever HA version `pip install homeassistant` provides.
+> If the user reports issues on a newer HA version, check the
+> [HA developer blog](https://developers.home-assistant.io/blog/) for breaking
+> changes and update imports accordingly.
+
+### Hardware testing on real HAOS
+
 Testing is manual on real HAOS with TellStick hardware:
 
 1. Create a GitHub release from the branch using the **Create Test Release** workflow
@@ -346,8 +395,6 @@ Testing is manual on real HAOS with TellStick hardware:
 6. Enable **Automatically add new devices** in the integration options
 7. Press a 433 MHz remote — the device should appear in HA automatically
 
-No automated unit tests exist. All testing is on real hardware.
-
 ---
 
 ## Common Mistakes to Avoid
@@ -358,6 +405,97 @@ No automated unit tests exist. All testing is on real hardware.
 4. ❌ Using deprecated HA APIs — check HA 2024.1+ compatibility
 5. ❌ Adding Telldus Live / cloud dependencies — this is intentionally local-only
 6. ❌ **FABRICATING method/property names instead of reading the source code** (see below)
+
+---
+
+## 🛑 Known HA Breaking Changes (verified the hard way)
+
+These are **real breaking changes that broke this integration in production**.
+Always check the [HA developer blog](https://developers.home-assistant.io/blog/)
+for new ones when a user reports failures on a newer HA version.
+
+### `HassioServiceInfo` import moved (HA 2025.11)
+
+The old import was **removed** (not just deprecated) in HA Core 2025.11:
+
+```python
+# ❌ OLD — removed in HA 2025.11, causes ImportError:
+from homeassistant.components.hassio import HassioServiceInfo
+
+# ✅ NEW — required since HA 2025.2, sole path since 2025.11:
+from homeassistant.helpers.service_info.hassio import HassioServiceInfo
+```
+
+Same pattern applies to all ServiceInfo classes: `DhcpServiceInfo`,
+`SsdpServiceInfo`, `UsbServiceInfo`, `ZeroconfServiceInfo` — all moved from
+`homeassistant.components.<type>` to `homeassistant.helpers.service_info.<type>`.
+
+### OptionsFlow `config_entry` explicit assignment (HA 2025.12)
+
+Passing `config_entry` to `OptionsFlow.__init__` and setting
+`self.config_entry = config_entry` was **removed** in HA 2025.12:
+
+```python
+# ❌ OLD — raises error in HA 2025.12+:
+class MyOptionsFlow(OptionsFlow):
+    def __init__(self, config_entry):
+        self.config_entry = config_entry  # ← BREAKS
+
+# ✅ NEW — framework auto-provides self.config_entry after init:
+class MyOptionsFlow(OptionsFlow):
+    def __init__(self):
+        self._my_state = some_default
+    # Access self.config_entry in step methods (NOT in __init__)
+```
+
+Also update `async_get_options_flow` to not pass the entry:
+
+```python
+return MyOptionsFlow()  # ✅ no argument
+```
+
+### How to detect these early
+
+**Always run the integration test** after any change to integration Python code:
+
+```bash
+pip install homeassistant pyflakes
+python tests/test_ha_integration.py
+```
+
+If a new HA version breaks an import, the test will fail immediately with the
+exact `ImportError` or `TypeError`.
+
+---
+
+## 🛑 Shell Script Pitfalls (Alpine / BusyBox)
+
+The add-on container runs **Alpine Linux with BusyBox**. Many GNU tools behave
+differently or are missing entirely.
+
+### `grep -P` does not exist
+
+BusyBox `grep` does **not** support `-P` (Perl regex). This includes `\K`,
+lookahead, lookbehind, and other PCRE features. Commands using `grep -oP` will
+**silently fail** with exit code 2.
+
+```bash
+# ❌ BROKEN in Alpine — grep -P not supported:
+VERSION=$(grep -oP '"version":\s*"\K[^"]+' manifest.json)
+
+# ✅ CORRECT — use jq (always available via bashio):
+VERSION=$(jq -r '.version' manifest.json)
+```
+
+**Rule:** For JSON parsing in shell scripts, **always use `jq`**, never `grep`.
+`jq` is guaranteed available in all bashio-based add-on containers.
+
+### Other BusyBox gotchas
+
+- `sed -i` works but some GNU extensions don't (e.g. `\x00` hex escapes)
+- `find` lacks `-printf` — use `-exec` instead
+- `date` lacks `--date` — use busybox-compatible format strings
+- No `realpath` — use `readlink -f` instead
 
 ---
 

@@ -35,11 +35,10 @@
       },
       "add_device": {
         "title": "Add a self-learning device",
-        "description": "Enter the device details. A random house code has been generated — leave it as-is unless you need a specific one.",
+        "description": "Pick your device type, give it a name, and click Submit. A random house code is generated — keep it unless you need a specific one.",
         "data": {
           "name": "Device name",
-          "protocol": "Protocol",
-          "model": "Model",
+          "device_type": "Device type",
           "house": "House code",
           "unit": "Unit number"
         }

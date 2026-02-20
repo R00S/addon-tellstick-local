@@ -14,8 +14,8 @@ if [[ ! -d "${SRC}" ]]; then
 fi
 
 # Read versions for change detection
-BUNDLED_VERSION=$(grep -oP '"version":\s*"\K[^"]+' "${SRC}/manifest.json" 2>/dev/null || echo "unknown")
-INSTALLED_VERSION=$(grep -oP '"version":\s*"\K[^"]+' "${DEST}/manifest.json" 2>/dev/null || echo "none")
+BUNDLED_VERSION=$(jq -r '.version' "${SRC}/manifest.json" 2>/dev/null || echo "unknown")
+INSTALLED_VERSION=$(jq -r '.version' "${DEST}/manifest.json" 2>/dev/null || echo "none")
 
 if [[ "${BUNDLED_VERSION}" == "${INSTALLED_VERSION}" ]]; then
     bashio::log.info "TellStick Local integration v${INSTALLED_VERSION} already up to date, skipping install"
