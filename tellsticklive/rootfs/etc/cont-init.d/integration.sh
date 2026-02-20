@@ -6,7 +6,7 @@
 # - No change: skips copy and restart to avoid unnecessary disruption.
 
 SRC="/usr/share/tellstick_local"
-DEST="/config/custom_components/tellstick_local"
+DEST="/homeassistant/custom_components/tellstick_local"
 
 if [[ ! -d "${SRC}" ]]; then
     bashio::log.warning "Integration source not found at ${SRC}, skipping install"
