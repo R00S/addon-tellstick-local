@@ -266,25 +266,25 @@ The **RX** column indicates whether the TellStick Duo can **receive** signals fr
 that device (i.e. the protocol has a `decodeData()` implementation in telldus-core).
 Without RX support, the device can only be controlled (TX), not auto-discovered.
 
-| Protocol       | RX  | TX  | Typical brands / device types                                                                                                                                                                             |
-| -------------- | --- | --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `arctech`      | ✅  | ✅  | Nexa, KlikAanKlikUit (KAKU), Intertechno, Proove, HomeEasy, CoCo Technologies, Chacon, Byebye Standby, Rusta, Kappa — models: `codeswitch`, `selflearning-switch`, `selflearning-dimmer`, `bell`, `kp100` |
-| `everflourish` | ✅  | ✅  | Everflourish / Rusta selflearning switches                                                                                                                                                                |
-| `fineoffset`   | ✅  | —   | Fine Offset weather sensors (temperature, humidity, rain, wind) — WH1080, WH3080 families                                                                                                                 |
-| `hasta`        | ✅  | ✅  | Hasta motorised blinds/screens                                                                                                                                                                            |
-| `mandolyn`     | ✅  | ✅  | Mandolyn/Summerbird switches                                                                                                                                                                              |
-| `oregon`       | ✅  | —   | Oregon Scientific weather sensors — temperature, humidity, rain, wind, UV, pressure                                                                                                                       |
-| `sartano`      | ✅  | ✅  | Sartano / Kjell & Company switches (identical to x10)                                                                                                                                                     |
-| `waveman`      | ✅  | ✅  | Waveman switches (old arctech codeswitch family)                                                                                                                                                          |
-| `x10`          | ✅  | ✅  | X10 protocol switches                                                                                                                                                                                     |
-| `brateck`      | —   | ✅  | Brateck motorised blinds (TX only — cannot auto-discover)                                                                                                                                                 |
-| `comen`        | —   | ✅  | Comen devices (TX only — cannot auto-discover)                                                                                                                                                            |
-| `fuhaote`      | —   | ✅  | Fuhaote remote switches (TX only — cannot auto-discover)                                                                                                                                                  |
-| `ikea`         | —   | ✅  | IKEA Koppla 433 MHz remotes (TX only — cannot auto-discover)                                                                                                                                              |
-| `risingsun`    | —   | ✅  | Rising Sun remote switches (TX only — cannot auto-discover)                                                                                                                                               |
-| `silvanchip`   | —   | ✅  | Silvanchip devices (TX only — cannot auto-discover)                                                                                                                                                       |
-| `upm`          | —   | ✅  | UPM/Esic sensors (TX only in telldus-core — not auto-discoverable)                                                                                                                                        |
-| `yidong`       | —   | ✅  | Yidong remotes (TX only — cannot auto-discover)                                                                                                                                                           |
+| Protocol       | RX  | TX  | Typical brands / device types                                                                                                                                                                                                                   |
+| -------------- | --- | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `arctech`      | ✅  | ✅  | Nexa (switches, dimmers, remotes, buttons), KlikAanKlikUit (KAKU), Intertechno, Proove, HomeEasy, CoCo Technologies, Chacon, Byebye Standby, Rusta, Kappa — models: `codeswitch`, `selflearning-switch`, `selflearning-dimmer`, `bell`, `kp100` |
+| `everflourish` | ✅  | ✅  | Everflourish / Rusta selflearning switches                                                                                                                                                                                                      |
+| `fineoffset`   | ✅  | —   | **Nexa thermometers/weather sensors** (e.g. LMST-606, WDS-100), Fine Offset WH1080/WH3080 — temperature & humidity auto-discovered when received                                                                                                |
+| `hasta`        | ✅  | ✅  | Hasta motorised blinds/screens                                                                                                                                                                                                                  |
+| `mandolyn`     | ✅  | ✅  | Mandolyn/Summerbird switches                                                                                                                                                                                                                    |
+| `oregon`       | ✅  | —   | Oregon Scientific weather sensors — temperature, humidity, rain, wind, UV, pressure                                                                                                                                                             |
+| `sartano`      | ✅  | ✅  | Sartano / Kjell & Company switches (identical to x10)                                                                                                                                                                                           |
+| `waveman`      | ✅  | ✅  | Waveman switches (old arctech codeswitch family)                                                                                                                                                                                                |
+| `x10`          | ✅  | ✅  | X10 protocol switches                                                                                                                                                                                                                           |
+| `brateck`      | —   | ✅  | Brateck motorised blinds (TX only — cannot auto-discover)                                                                                                                                                                                       |
+| `comen`        | —   | ✅  | Comen devices (TX only — cannot auto-discover)                                                                                                                                                                                                  |
+| `fuhaote`      | —   | ✅  | Fuhaote remote switches (TX only — cannot auto-discover)                                                                                                                                                                                        |
+| `ikea`         | —   | ✅  | IKEA Koppla 433 MHz remotes (TX only — cannot auto-discover)                                                                                                                                                                                    |
+| `risingsun`    | —   | ✅  | Rising Sun remote switches (TX only — cannot auto-discover)                                                                                                                                                                                     |
+| `silvanchip`   | —   | ✅  | Silvanchip devices (TX only — cannot auto-discover)                                                                                                                                                                                             |
+| `upm`          | —   | ✅  | UPM/Esic sensors (TX only in telldus-core — not auto-discoverable)                                                                                                                                                                              |
+| `yidong`       | —   | ✅  | Yidong remotes (TX only — cannot auto-discover)                                                                                                                                                                                                 |
 
 **TX only means:** the device can be controlled from HA, but it cannot be
 auto-discovered by pressing a button. To add a TX-only device, the user must
@@ -293,14 +293,14 @@ or the future options-flow teach step.
 
 ### TellStick Duo vs RFXtrx
 
-| Aspect                   | TellStick Duo                               | RFXtrx433E                           |
-| ------------------------ | ------------------------------------------- | ------------------------------------ |
-| Protocol coverage        | ~17 protocols (fixed in telldus-core)       | 100+ protocols (firmware-updateable) |
-| Receive (RX) capability  | 9 protocols                                 | Most supported protocols             |
-| Protocol list updatable? | No (requires telldus-core fork)             | Yes (firmware update from RFXCOM)    |
-| Smart home focus         | Nordic/European brands (Nexa, KAKU, Proove) | Very broad, incl. US/AU brands       |
-| Weather sensors          | Oregon Scientific, Fine Offset              | Oregon Scientific + many more        |
-| Blind control            | Hasta, Brateck                              | Somfy RTS + many more                |
+| Aspect                   | TellStick Duo                                            | RFXtrx433E                           |
+| ------------------------ | -------------------------------------------------------- | ------------------------------------ |
+| Protocol coverage        | ~17 protocols (fixed in telldus-core)                    | 100+ protocols (firmware-updateable) |
+| Receive (RX) capability  | 9 protocols                                              | Most supported protocols             |
+| Protocol list updatable? | No (requires telldus-core fork)                          | Yes (firmware update from RFXCOM)    |
+| Smart home focus         | Nordic/European brands (Nexa, KAKU, Proove)              | Very broad, incl. US/AU brands       |
+| Weather sensors          | Oregon Scientific, Fine Offset (incl. Nexa thermometers) | Oregon Scientific + many more        |
+| Blind control            | Hasta, Brateck                                           | Somfy RTS + many more                |
 
 **Conclusion:** TellStick Duo is a solid choice for the popular Nordic/European
 arctech ecosystem (Nexa, KAKU, Intertechno, Proove) and Oregon Scientific sensors.
@@ -414,20 +414,24 @@ can only send commands — device must be manually added.
 
 #### Auto-discoverable (RX capable) — press button → appears in HA
 
-| Protocol                          | Entity type(s)                               | Example brands / devices                                |
-| --------------------------------- | -------------------------------------------- | ------------------------------------------------------- |
-| `arctech` — `codeswitch`          | Switch                                       | Old Nexa, KAKU dial-based remotes                       |
-| `arctech` — `selflearning-switch` | Switch                                       | Nexa, KAKU, Intertechno, Proove, HomeEasy, Chacon, CoCo |
-| `arctech` — `selflearning-dimmer` | Light (dimmer)                               | Nexa, Proove, KAKU dimmers                              |
-| `arctech` — `bell`                | Event                                        | Nexa doorbell                                           |
-| `everflourish`                    | Switch                                       | Everflourish, Rusta selflearning                        |
-| `hasta`                           | Switch/Cover                                 | Hasta motorised blinds                                  |
-| `mandolyn`                        | Switch                                       | Mandolyn / Summerbird                                   |
-| `sartano`                         | Switch                                       | Sartano, Kjell & Company                                |
-| `waveman`                         | Switch                                       | Waveman (old arctech family)                            |
-| `x10`                             | Switch                                       | X10 wall switches                                       |
-| `fineoffset`                      | Sensor (temp/humidity/rain/wind)             | Fine Offset, WH1080, WH3080 weather stations            |
-| `oregon`                          | Sensor (temp/humidity/rain/wind/UV/pressure) | Oregon Scientific weather sensors                       |
+| Protocol                          | Entity type(s)                               | Example brands / devices                                                             |
+| --------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `arctech` — `codeswitch`          | Switch                                       | Old Nexa, KAKU dial-based remotes and wall switches                                  |
+| `arctech` — `selflearning-switch` | Switch                                       | Nexa, KAKU, Intertechno, Proove, HomeEasy, Chacon, CoCo                              |
+| `arctech` — `selflearning-dimmer` | Light (dimmer)                               | Nexa, Proove, KAKU dimmers                                                           |
+| `arctech` — `bell`                | Event                                        | Nexa doorbell                                                                        |
+| `everflourish`                    | Switch                                       | Everflourish, Rusta selflearning                                                     |
+| `hasta`                           | Switch/Cover                                 | Hasta motorised blinds                                                               |
+| `mandolyn`                        | Switch                                       | Mandolyn / Summerbird                                                                |
+| `sartano`                         | Switch                                       | Sartano, Kjell & Company                                                             |
+| `waveman`                         | Switch                                       | Waveman (old arctech family)                                                         |
+| `x10`                             | Switch                                       | X10 wall switches                                                                    |
+| `fineoffset`                      | Sensor (temp/humidity)                       | **Nexa** LMST-606 / WDS-100 thermometers, Fine Offset WH1080/WH3080 weather stations |
+| `oregon`                          | Sensor (temp/humidity/rain/wind/UV/pressure) | Oregon Scientific weather sensors                                                    |
+
+> **Nexa spans two protocols:** Nexa _switches, dimmers, remotes and buttons_ use
+> `arctech` (RX+TX). Nexa _thermometers and weather sensors_ (LMST-606, WDS-100 etc.)
+> use `fineoffset` (RX only — sensor data arrives, no commands can be sent).
 
 #### TX only — can be controlled but NOT auto-discovered
 
