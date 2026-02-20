@@ -95,6 +95,51 @@ PROTOCOL_DEFAULT_MODELS: dict[str, str] = {
     "yidong": "",
 }
 
+# ---------------------------------------------------------------------------
+# Device catalog — user-friendly names → (protocol, model)
+# Modelled after TelldusCenter / Telldus Live device picker.
+# Each entry is a tuple (label, protocol, model).
+# The label is what the user sees in the "Add device" dropdown.
+# ---------------------------------------------------------------------------
+DEVICE_CATALOG: list[tuple[str, str, str]] = [
+    # --- Nexa / KAKU / Proove / HomeEasy / Intertechno (arctech) ---
+    ("Nexa / Proove — Self-learning switch", "arctech", "selflearning-switch"),
+    ("Nexa / Proove — Self-learning dimmer", "arctech", "selflearning-dimmer"),
+    ("Nexa / KAKU — Code switch (old dial-based)", "arctech", "codeswitch"),
+    ("Nexa — Doorbell", "arctech", "bell"),
+    # --- Everflourish / Rusta ---
+    ("Everflourish / Rusta — Self-learning switch", "everflourish", "selflearning"),
+    # --- Hasta ---
+    ("Hasta — Motorised blind", "hasta", ""),
+    # --- Mandolyn / Summerbird ---
+    ("Mandolyn / Summerbird — Switch", "mandolyn", ""),
+    # --- Sartano / Kjell & Company ---
+    ("Sartano / Kjell & Company — Switch", "sartano", ""),
+    # --- Waveman ---
+    ("Waveman — Switch", "waveman", ""),
+    # --- X10 ---
+    ("X10 — Switch", "x10", ""),
+    # --- Brateck ---
+    ("Brateck — Motorised blind", "brateck", ""),
+    # --- IKEA ---
+    ("IKEA Koppla — Switch", "ikea", ""),
+    # --- Rising Sun ---
+    ("Rising Sun — Switch", "risingsun", ""),
+    # --- Other / less common ---
+    ("Comen — Switch", "comen", ""),
+    ("Fuhaote — Switch", "fuhaote", ""),
+    ("Silvanchip — Switch", "silvanchip", ""),
+    ("Yidong — Switch", "yidong", ""),
+]
+
+# Build a lookup dict: label → (protocol, model)
+DEVICE_CATALOG_MAP: dict[str, tuple[str, str]] = {
+    label: (proto, model) for label, proto, model in DEVICE_CATALOG
+}
+
+# Ordered list of labels for the dropdown
+DEVICE_CATALOG_LABELS: list[str] = [label for label, _, _ in DEVICE_CATALOG]
+
 # Model normalization: arctech selflearning devices always report "selflearning" in
 # raw RF events regardless of whether they were configured as -switch or -dimmer.
 # Stored UIDs must use this normalized form so they match auto-discovered event UIDs.
