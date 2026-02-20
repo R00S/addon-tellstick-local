@@ -9,7 +9,7 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.components.hassio import HassioServiceInfo
+from homeassistant.helpers.service_info.hassio import HassioServiceInfo
 from homeassistant.const import CONF_HOST
 from homeassistant.data_entry_flow import FlowResult
 
@@ -181,18 +181,15 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         config_entry: config_entries.ConfigEntry,
     ) -> TellStickLocalOptionsFlow:
         """Return the options flow."""
-        return TellStickLocalOptionsFlow(config_entry)
+        return TellStickLocalOptionsFlow()
 
 
 class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
     """Handle TellStick Local options."""
 
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+    def __init__(self) -> None:
         """Init options flow."""
-        self.config_entry = config_entry
-        self._automatic_add: bool = config_entry.options.get(
-            CONF_AUTOMATIC_ADD, DEFAULT_AUTOMATIC_ADD
-        )
+        self._automatic_add: bool = DEFAULT_AUTOMATIC_ADD
         self._new_device: dict[str, str] = {}
 
     async def async_step_init(
@@ -216,6 +213,10 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                     CONF_DEVICES: existing_devices,
                 },
             )
+
+        self._automatic_add = self.config_entry.options.get(
+            CONF_AUTOMATIC_ADD, DEFAULT_AUTOMATIC_ADD
+        )
 
         schema_dict: dict[Any, Any] = {
             vol.Required(
