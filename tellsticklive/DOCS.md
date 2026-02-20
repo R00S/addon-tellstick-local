@@ -1,7 +1,6 @@
-# Home Assistant TellStick with Telldus Live
+# TellStick Local
 
-TellStick and TellStick Duo service with a possibility to export devices
-to Telldus Live!
+TellStick and TellStick Duo local service – no cloud, no Telldus Live.
 
 ![Supports aarch64 Architecture][aarch64-shield] ![Supports amd64 Architecture][amd64-shield]
 ![Supports armhf Architecture][armhf-shield] ![Supports armv7 Architecture][armv7-shield]
@@ -9,384 +8,173 @@ to Telldus Live!
 
 ## About
 
-This add-on provides TellStick and TellStick Duo support for Home Assistant with
-optional Telldus Live cloud integration.
+This add-on runs the Telldus `telldusd` daemon and exposes it over TCP
+(via socat bridges on ports **50800** and **50801**) so that the
+**TellStick Local** custom integration can communicate with it from
+Home Assistant.  There is no Telldus Live cloud connection.
 
 **Acknowledgments:**
-- This is a fork of [erik73's addon-tellsticklive](https://github.com/erik73/addon-tellsticklive)
-- Originally based on the now-deprecated official Home Assistant TellStick add-on
-- The underlying Telldus library is no longer maintained by the manufacturer, but this
-  fork continues to provide TellStick support for those who need it
+
+- Fork of [erik73's addon-tellsticklive](https://github.com/erik73/addon-tellsticklive)
+- Based on the now-deprecated official Home Assistant TellStick add-on
+- Uses a fork of telldus-core maintained by [erik73](https://github.com/erik73/telldus)
 
 ## Installation
 
-Follow these steps to get the add-on installed on your system:
-
 1. Add this repository to your Home Assistant add-on store:
    `https://github.com/R00S/addon-tellsticklive-roosfork`
-2. Find the "TellStick with Telldus Live" add-on and click it
-3. Click on the "INSTALL" button
-
-## How to use
-
-### Starting the add-on
-
-After installation you are presented with an example configuration.
-
-1. Adjust the add-on configuration to match your devices (see Configuration section below)
-2. Save the add-on configuration by clicking the "SAVE" button
-3. Start the add-on
-
-### Home Assistant integration
-
-You have two options for integrating with Home Assistant:
-
-#### Option 1: Telldus Live Integration (Cloud-based)
-
-If you want to use the Telldus Live cloud service for all device control:
-
-1. Set `enable_local: false` in the add-on configuration
-2. Set `enable_live: true` and configure your `live_uuid`
-3. In Home Assistant, add the **Telldus Live** integration via Settings → Devices & Services
-
-This method does NOT require any `configuration.yaml` entries.
-
-#### Option 2: Local TellStick Integration (Direct connection)
-
-If you want to run in local mode (direct connection to the TellStick hardware), you will
-need to add internal communication details to the `configuration.yaml`
-file to enable the integration with the add-on:
-
-```yaml
-# Example configuration.yaml entry
-# Replace YOUR_ADDON_HOSTNAME with the hostname shown in the add-on logs
-tellstick:
-  host: YOUR_ADDON_HOSTNAME
-  port: [50800, 50801]
-```
-
-**Finding Your Hostname**: Start the add-on and check the logs. When local mode is
-enabled, the logs will display the exact configuration you need to add to your
-`configuration.yaml`, including the correct hostname.
-
-**IMPORTANT - Restart Sequence**: The add-on must be fully started BEFORE Home
-Assistant tries to connect. If you see errors like "Could not connect to the
-Telldus Service (-6)", follow these steps:
-
-1. Start the add-on and wait for the logs to show:
-   `TellStick service is ready for Home Assistant!`
-2. Only then, restart Home Assistant (Settings → System → Restart)
-3. Check that the tellstick integration loads without errors
+2. Find the **TellStick Local** add-on and click **INSTALL**
+3. (Optional) Configure pre-known devices – see Configuration below
+4. Start the add-on
+5. Install the **TellStick Local** custom integration from
+   `custom_components/tellstick_local/` in this repository
 
 ## Configuration
 
-Configure your devices and sensors in the add-on configuration panel.
-
-All devices configured and working will be visible in your Telldus Live account when
-you have completed the configuration steps below.
-
-### Device Configuration
-
-Each device requires the following parameters:
-
-- **id**: Unique identifier for the device (integer starting from 1)
-- **name**: A friendly name for the device
-- **protocol**: The communication protocol (e.g., `arctech`, `everflourish`)
-- **model**: The device model type, optionally with brand suffix (e.g., `selflearning-switch`, `selflearning-switch:proove`)
-- **house**: House code (format depends on protocol)
-- **unit**: Unit code
-
-Example device configuration:
+You can optionally pre-configure devices so the integration can control
+them immediately.  If you use **automatic add** in the integration, you
+do not need to list devices here – they will be discovered when you press
+a remote.
 
 ```yaml
 devices:
   - id: 1
     name: Living Room Light
     protocol: arctech
-    model: selflearning-switch:proove
-    house: "30123030"
+    model: selflearning-switch
+    house: "12345678"
     unit: "1"
   - id: 2
     name: Kitchen Switch
     protocol: arctech
-    model: codeswitch
+    model: selflearning-switch
     house: A
     unit: "4"
 ```
 
-### Sensor Configuration
+Each device entry requires:
 
-Example sensor configuration:
+| Option | Required | Description |
+|--------|----------|-------------|
+| `id` | Yes | Unique numeric identifier (≥ 1) |
+| `name` | Yes | Human-readable name |
+| `protocol` | Yes | RF protocol (arctech, everflourish, …) |
+| `model` | No | Device model (selflearning-switch, selflearning-dimmer, …) |
+| `house` | No | House code |
+| `unit` | No | Unit code |
+| `code` | No | Code (for some protocols) |
+| `fade` | No | Enable fade for dimmers |
 
-```yaml
-enablelive: false
-sensors:
-  - id: 199
-    name: Example sensor
-    protocol: fineoffset
-    model: temperature
-  - id: 215
-    name: Example sensor two
-    protocol: fineoffset
-    model: temperaturehumidity
-```
+Restart the add-on after changing the device list.
 
-Please note: After any changes have been made to the configuration,
-you need to restart the add-on for the changes to take effect.
+## How to pair new devices (automatic add)
 
-### Option: `sensors` (required)
+1. Start the add-on and confirm it logs:
+   `TellStick Local is ready!`
+2. In Home Assistant go to **Settings → Devices & Services → Add Integration**
+   and search for **TellStick Local**.
+3. Enter the hostname shown in the add-on log and click **Submit**.
+4. Open the integration options and enable **Automatically add new devices**.
+5. Press the button or remote of the device you want to pair.
+6. The device appears in Home Assistant automatically.
+7. Rename it under **Settings → Devices & Services → TellStick Local**.
 
-Add one or more sensors entries to the add-on configuration for each
-sensor you'd like to add to Telldus Live.
+## Service calls (stdin)
 
-#### Option: `sensors.id` (required)
-
-This is the id of the sensor. To find out what id to use you have to use the
-service call hassio.addon_stdin with the following data:
-`{"addon":"32b8266a_tellsticklive","input":{"function":"list-sensors"}}`
-Look in the addon log, and you should be able to find the id, protocol and model
-for your sensors.
-
-#### Option: `sensors.name` (required)
-
-A name for your sensor, that will be displayed in Telldus Live.
-
-#### Option: `sensors.protocol` (required)
-
-This is the protocol the sensor uses. See above regarding service call to find
-this information.
-
-#### Option: `sensors.model` (optional)
-
-The model of the sensor. See above regarding the service call to find this information.
-
-## Service calls
-
-You can control TellStick devices using the `hassio.addon_stdin` service call.
-
-### Available functions:
-
-- **on**: Turn device on
-- **off**: Turn device off
-- **dim**: Dim device (requires level parameter)
-- **bell**: Ring bell device
-- **list**: List all configured devices
-- **list-sensors**: List all detected sensors
-
-### Example service calls:
+You can still control pre-configured devices via `hassio.addon_stdin`:
 
 Turn on device 1:
+
 ```yaml
 service: hassio.addon_stdin
 data:
-  addon: YOUR_ADDON_SLUG
+  addon: 32b8266a_tellsticklive
   input:
     function: "on"
     device: 1
 ```
 
-List sensors:
+Turn off device 1:
+
 ```yaml
 service: hassio.addon_stdin
 data:
-  addon: YOUR_ADDON_SLUG
+  addon: 32b8266a_tellsticklive
+  input:
+    function: "off"
+    device: 1
+```
+
+Set dimmer level (0–255):
+
+```yaml
+service: hassio.addon_stdin
+data:
+  addon: 32b8266a_tellsticklive
+  input:
+    function: "dim"
+    device: 2
+    level: 128
+```
+
+List configured devices:
+
+```yaml
+service: hassio.addon_stdin
+data:
+  addon: 32b8266a_tellsticklive
+  input:
+    function: "list"
+```
+
+List detected sensors:
+
+```yaml
+service: hassio.addon_stdin
+data:
+  addon: 32b8266a_tellsticklive
   input:
     function: "list-sensors"
 ```
 
-**Finding your add-on slug:** The add-on slug is shown at the top of the add-on logs. 
-Look for a line like `Add-on: TellStick with Telldus Live` - the slug appears in the 
-system information section (e.g., `e9305338_tellsticklive`). Your slug will be different.
-
-## How to enable the Telldus Live connection
-
-Once you are happy with the devices and sensors configuration it is time to establish
-the connection to Telldus Live, and generate an UUID that will be used to connect.
-
-Set the config option:
-
-```yaml
-enable_live: true
-```
-
-Restart the addon and look in the addon log.
-You will get a URL to visit in your browser to establish the connection
-between your Live account and this addon.
-That URL take you to Telldus Live, and you will be asked to login or create an account
-if you don´t have one.
-
-Also make sure you copy the string after uuid= in the URL, and create the following
-config entry:
-
-```yaml
-live_uuid: de1333b5-154c-5342-87dc-6b7e0b2096ab
-```
-
-The above is an example. Yours will look different.
-
-Finally, if you want to disable the local connection to HA, and get all of
-your devices from Telldus Live through the Telldus Live integration
-you have the set the following config option to false. In that case, you
-can remove all tellstick configuration from configuration.yaml.
-
-```yaml
-enable_local: false
-```
-
-Once all this is complete, you can restart the addon, and your devices and
-sensors will appear in Telldus Live!
-
-```yaml
-live_delay: 10
-```
-
-The above config options is by default set to 10 seconds. It is used
-to control how long to wait before establishing the connection to Telldus.
-This is important to set this to a higher value when new sensors has been
-added, because the sensors has to be found by your Telldus device before
-connecting.
-So in short, if new sensors has been added to your configuration, set it
-to for example 600 seconds. Once the sensors are found, and have been
-assigned the correct name in the Telldus Live system, it can be reduced
-to 10 seconds again.
-
 ## Troubleshooting
 
-### Error: "Could not connect to the Telldus Service (-6)"
+### Integration cannot connect
 
-This error occurs when Home Assistant starts before the add-on is ready. The add-on
-needs to create its TCP bridges on ports 50800 and 50801 before Home Assistant can
-connect.
+1. Confirm the add-on is **running** and the log shows `TellStick Local is ready!`
+2. Verify the hostname in the integration matches the one in the add-on log
+3. Ports **50800** and **50801** must be reachable from the HA core container
 
-**Solution:**
+### No devices appear after pressing remote
 
-1. Go to the add-on logs and wait until you see:
-   `TellStick service is ready for Home Assistant!`
-2. Restart Home Assistant: Settings → System → Restart
-3. The tellstick integration should now connect successfully
+1. Make sure **Automatically add new devices** is enabled in the integration options
+2. Check the add-on log – raw RF events should appear when a button is pressed
+3. Ensure the TellStick USB stick is connected (check **Settings → Add-ons → TellStick Local → Hardware**)
 
-**Tip:** This typically happens after a system reboot. In the future, after a reboot,
-wait 30-60 seconds for the add-on to fully start before restarting Home Assistant.
+### Device protocol format
 
-### No entities appearing in Home Assistant
+| Field | Example | Notes |
+|-------|---------|-------|
+| `protocol` | `arctech` | Must be a supported protocol identifier |
+| `model` | `selflearning-switch` | Optional model name, optionally with brand suffix (`selflearning-switch:proove`) |
 
-If you can control devices through Telldus Live but no entities appear in HA:
-
-1. **Check your integration type:**
-   - Using `enable_local: true`? You need the `tellstick:` config in `configuration.yaml`
-   - Using `enable_local: false`? Use the Telldus Live integration instead
-
-2. **For local mode:** Make sure you have platform configurations:
-   ```yaml
-   switch:
-     - platform: tellstick
-   
-   light:
-     - platform: tellstick
-   
-   sensor:
-     - platform: tellstick
-   ```
-
-3. **For Telldus Live mode:** Add the Telldus Live integration via
-   Settings → Devices & Services → Add Integration → Telldus Live
-
-### Devices not syncing to Telldus Live
-
-If devices are configured but not appearing in your Telldus Live account:
-
-1. Check that `enable_live: true` is set
-2. Verify your `live_uuid` is correctly configured
-3. Check the add-on logs for connection messages to Telldus Live
-4. If you recently added sensors, increase `live_delay` to 600 seconds to allow
-   sensor discovery before the Live connection is established
-
-### Device configuration format
-
-When configuring devices, note the following format rules:
-
-- **protocol**: Must be one of the supported protocols (e.g., `arctech`, `everflourish`, `fineoffset`)
-- **model**: The device model type, optionally with a brand suffix using colon notation
-
-**Supported model base types:** `codeswitch`, `bell`, `selflearning-switch`, `selflearning-dimmer`,
-`selflearning`, `ecosavers`, `kp100`, `temperaturehumidity`, `temperature`
-
-**Brand suffix format:** `<model>:<brand>` (e.g., `selflearning-switch:proove`, `selflearning-switch:nexa`)
-
-**Common mistake**: Do NOT put the model in the protocol field.
-
-❌ Wrong:
-```yaml
-protocol: arctech:selflearning-switch
-```
-
-✓ Correct:
-```yaml
-protocol: arctech
-model: selflearning-switch
-```
-
-✓ Also correct (with brand suffix):
-```yaml
-protocol: arctech
-model: selflearning-switch:proove
-```
+**Supported protocols:** arctech, brateck, comen, everflourish, fineoffset, fuhaote,
+hasta, ikea, kangtai, mandolyn, oregon, risingsun, sartano, silvanchip, upm, waveman, x10, yidong
 
 ## Support
 
-Got questions or found a bug?
-
 - [Open an issue on GitHub][issue]
-- Check the [Home Assistant Community Forums](https://community.home-assistant.io/) for TellStick discussions
 
 ## License
 
-This add-on is licensed under the **GNU General Public License v3.0 or later**.
+GNU General Public License v3.0 or later
 
-Copyright (c) 2019-2024 Erik Hilton  
-Copyright (c) 2024-2025 R00S (roosfork modifications)
-
-This program incorporates GPL-licensed components and is therefore distributed
-under GPL v3. For complete licensing information and attributions, see the
-LICENSE.md and NOTICE files in the repository.
-
-## Acknowledgments
-
-This add-on would not be possible without the contributions of many individuals
-and organizations:
-
-### Core Contributors
-
-- **Erik Hilton (erik73)** - Original author and maintainer of the
-  addon-tellsticklive fork. Erik created this add-on and continues to maintain
-  a fork of the telldus-core library, ensuring TellStick hardware remains
-  usable after the manufacturer discontinued support.
-  - https://github.com/erik73/addon-tellsticklive
-  - https://github.com/erik73/telldus
-
-- **Erik Johansson (erijo)** - Author and maintainer of:
-  - **tellive-py** (GPL v3+) - Python wrapper for Telldus Live
-  - **tellcore-py** (GPL v3+) - Python bindings for TellStick Core
-  - https://github.com/erijo
-
-### Upstream Projects
-
-- **Telldus Technologies AB** - Original creators of TellStick hardware and
-  the telldus-core daemon (LGPL 2.1)
-
-- **Home Assistant Team** - Creators of Home Assistant and the original
-  TellStick add-on (now deprecated, Apache 2.0)
-
-For detailed licensing and attribution information, see:
-- https://github.com/R00S/addon-tellsticklive-roosfork/blob/main/LICENSE.md
-- https://github.com/R00S/addon-tellsticklive-roosfork/blob/main/NOTICE
+Copyright (c) 2019–2024 Erik Hilton
+Copyright (c) 2024–2025 R00S (roosfork modifications)
 
 [aarch64-shield]: https://img.shields.io/badge/aarch64-yes-green.svg
 [amd64-shield]: https://img.shields.io/badge/amd64-yes-green.svg
 [armhf-shield]: https://img.shields.io/badge/armhf-yes-green.svg
 [armv7-shield]: https://img.shields.io/badge/armv7-yes-green.svg
-[conf]: http://developer.telldus.com/wiki/TellStick_conf
 [i386-shield]: https://img.shields.io/badge/i386-yes-green.svg
 [issue]: https://github.com/R00S/addon-tellsticklive-roosfork/issues
-[protocol-list]: http://developer.telldus.com/wiki/TellStick_conf
-[repository]: https://github.com/R00S/addon-tellsticklive-roosfork

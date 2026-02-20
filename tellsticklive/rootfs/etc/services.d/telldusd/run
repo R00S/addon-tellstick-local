@@ -25,28 +25,16 @@ done
 
 if [[ -S /tmp/TelldusClient ]] && [[ -S /tmp/TelldusEvents ]]; then
     bashio::log.info "Telldusd sockets are ready"
-    
-    if bashio::config.true "enable_local"; then
-        bashio::log.info "Local enabled. Exposing sockets to HomeAssistant..."
-        socat TCP-LISTEN:50800,reuseaddr,fork UNIX-CONNECT:/tmp/TelldusClient &
-        socat TCP-LISTEN:50801,reuseaddr,fork UNIX-CONNECT:/tmp/TelldusEvents &
-        bashio::log.info "Socat TCP-to-UNIX bridges started on ports 50800 and 50801"
-        
-        # Log the hostname for users to use in their configuration.yaml
-        ADDON_HOSTNAME=$(hostname)
-        bashio::log.info "-----------------------------------------------------------"
-        bashio::log.info "TellStick service is ready for Home Assistant!"
-        bashio::log.info "Add this to your configuration.yaml:"
-        bashio::log.info ""
-        bashio::log.info "tellstick:"
-        bashio::log.info "  host: ${ADDON_HOSTNAME}"
-        bashio::log.info "  port: [50800, 50801]"
-        bashio::log.info ""
-        bashio::log.info "IMPORTANT: If you see 'Could not connect to Telldus Service'"
-        bashio::log.info "errors, you must RESTART Home Assistant after this add-on"
-        bashio::log.info "has fully started. Go to Settings -> System -> Restart."
-        bashio::log.info "-----------------------------------------------------------"
-    fi
+    socat TCP-LISTEN:50800,reuseaddr,fork UNIX-CONNECT:/tmp/TelldusClient &
+    socat TCP-LISTEN:50801,reuseaddr,fork UNIX-CONNECT:/tmp/TelldusEvents &
+    bashio::log.info "Socat TCP-to-UNIX bridges started on ports 50800 and 50801"
+
+    ADDON_HOSTNAME=$(hostname)
+    bashio::log.info "-----------------------------------------------------------"
+    bashio::log.info "TellStick Local is ready!"
+    bashio::log.info "Add the TellStick Local integration in Home Assistant and"
+    bashio::log.info "use host: ${ADDON_HOSTNAME}  ports: 50800 / 50801"
+    bashio::log.info "-----------------------------------------------------------"
 fi
 
 # Wait for telldusd to exit (keep the service running)
