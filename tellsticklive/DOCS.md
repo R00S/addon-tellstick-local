@@ -40,14 +40,16 @@ Add Integration**, search for **TellStick Local**, and run the manual setup.
 
 ---
 
-## Next steps: install the integration
+## Next steps
 
-All device management (pairing, naming, automations) happens in the
-**TellStick Local** custom integration, installed via HACS:
+After the app starts, the **TellStick Local** integration is automatically installed
+into `/config/custom_components/`. No HACS or manual download is needed.
 
-1. In HACS click **⋮ → Custom repositories**
-2. Add: `https://github.com/R00S/addon-tellsticklive-roosfork`, category **Integration**
-3. Find **TellStick Local**, click **Download**, then restart Home Assistant
+All device management (pairing, naming, automations) happens in the integration:
+
+- Go to **Settings → Devices & Services → TellStick Local → Configure**
+- **Automatic add** — enable it, then press any 433 MHz remote to discover devices
+- **Self-learning teach** — pick a device type from the dropdown, send a pairing signal
 
 See the [project README](https://github.com/R00S/addon-tellsticklive-roosfork) for
 full pairing and device management instructions.
@@ -121,6 +123,6 @@ hasta, ikea, mandolyn, oregon, risingsun, sartano, silvanchip, upm, waveman, x10
 GNU General Public License v3.0 or later
 
 Copyright (c) 2019–2024 Erik Hilton
-Copyright (c) 2024–2025 R00S (roosfork modifications)
+Copyright (c) 2024–2026 R00S (roosfork modifications)
 
 [issue]: https://github.com/R00S/addon-tellsticklive-roosfork/issues

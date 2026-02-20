@@ -129,7 +129,7 @@ that need to be taught a code before they respond.
 
 1. Go to **Settings → Devices & Services → TellStick Local → Configure**
 2. Click **Add device**
-3. Pick the **Protocol** (e.g. `arctech`) and **Model** (e.g. `selflearning-switch`)
+3. Pick your **device type** from the dropdown (e.g. "Nexa — Self-learning on/off")
 4. A house code and unit code are generated automatically — click **Submit**
 5. Put the receiver in **learn mode** (hold its button until it blinks)
 6. HA sends the pairing signal — the receiver learns the code
@@ -145,22 +145,22 @@ that need to be taught a code before they respond.
 
 ## Supported devices
 
+The device picker in the integration shows all brands from the TelldusCenter
+device library. The table below summarizes what each protocol supports.
+
 ### Auto-discoverable (press a button → device appears)
 
-| Protocol                          | Entity type    | Example brands / devices                                               |
-| --------------------------------- | -------------- | ---------------------------------------------------------------------- |
-| `arctech` — `codeswitch`          | Switch         | Old Nexa, KAKU dial-based remotes and wall switches                    |
-| `arctech` — `selflearning-switch` | Switch         | Nexa, KAKU, Intertechno, Proove, HomeEasy, Chacon, CoCo                |
-| `arctech` — `selflearning-dimmer` | Light (dimmer) | Nexa, Proove, KAKU dimmers                                             |
-| `arctech` — `bell`                | Event          | Nexa doorbell                                                          |
-| `everflourish`                    | Switch         | Everflourish, Rusta selflearning switches                              |
-| `hasta`                           | Switch/Cover   | Hasta motorised blinds                                                 |
-| `mandolyn`                        | Switch         | Mandolyn / Summerbird switches                                         |
-| `sartano`                         | Switch         | Sartano, Kjell & Company switches                                      |
-| `waveman`                         | Switch         | Waveman switches                                                       |
-| `x10`                             | Switch         | X10 wall switches                                                      |
-| `fineoffset`                      | Sensor         | **Nexa** LMST-606 / WDS-100 thermometers, Fine Offset weather stations |
-| `oregon`                          | Sensor         | Oregon Scientific weather sensors (temp, humidity, rain, wind, UV)     |
+| Protocol       | Entity type    | Brands                                                                                       |
+| -------------- | -------------- | -------------------------------------------------------------------------------------------- |
+| `arctech`      | Switch / Light | Nexa, Proove, KlikAanKlikUit, Intertechno, HomeEasy, Chacon, CoCo, Kappa, Bye Bye Standby, Elro |
+| `everflourish` | Switch         | GAO, Everflourish, Rusta                                                                     |
+| `hasta`        | Cover          | Hasta, Rollertrol motorised blinds                                                           |
+| `mandolyn`     | Switch         | Mandolyn / Summerbird                                                                        |
+| `sartano`      | Switch         | Sartano, Brennenstuhl, Rusta, Elro                                                           |
+| `waveman`      | Switch         | Waveman                                                                                      |
+| `x10`          | Switch         | X10                                                                                          |
+| `fineoffset`   | Sensor         | Nexa LMST-606 / WDS-100 thermometers, Fine Offset weather stations                          |
+| `oregon`       | Sensor         | Oregon Scientific weather sensors (temp, humidity, rain, wind, UV)                           |
 
 > **Nexa note:** Nexa _switches, dimmers, remotes and buttons_ use the `arctech`
 > protocol. Nexa _thermometers and weather sensors_ (LMST-606, WDS-100 etc.) use
@@ -170,15 +170,16 @@ that need to be taught a code before they respond.
 
 These devices must be added via Method B (self-learning teach).
 
-| Protocol     | Entity type | Example brands / devices   |
-| ------------ | ----------- | -------------------------- |
-| `brateck`    | Cover       | Brateck motorised blinds   |
-| `comen`      | Switch      | Comen devices              |
-| `fuhaote`    | Switch      | Fuhaote remote switches    |
-| `ikea`       | Switch      | IKEA Koppla 433 MHz        |
-| `risingsun`  | Switch      | Rising Sun remote switches |
-| `silvanchip` | Switch      | Silvanchip devices         |
-| `yidong`     | Switch      | Yidong remotes             |
+| Protocol     | Entity type | Brands                                                   |
+| ------------ | ----------- | -------------------------------------------------------- |
+| `brateck`    | Cover       | Roxcore projector screens                                |
+| `comen`      | Switch      | Anslut / Jula                                            |
+| `fuhaote`    | Switch      | HQ                                                       |
+| `ikea`       | Switch      | IKEA Koppla                                              |
+| `risingsun`  | Switch      | Conrad, GAO, Kjell & Company, Otio                       |
+| `silvanchip` | Switch      | Ecosavers, KingPin KP100                                 |
+| `upm`        | Switch      | UPM                                                      |
+| `yidong`     | Switch      | Goobay                                                   |
 
 ---
 
@@ -230,7 +231,7 @@ and run the manual setup flow.
 GNU General Public License v3.0 or later
 
 Copyright (c) 2019–2024 Erik Hilton
-Copyright (c) 2024–2025 R00S (roosfork modifications)
+Copyright (c) 2024–2026 R00S (roosfork modifications)
 
 See [LICENSE.md](LICENSE.md) and [NOTICE](NOTICE) for full details.
 
@@ -253,5 +254,5 @@ See [LICENSE.md](LICENSE.md) and [NOTICE](NOTICE) for full details.
 [github-actions-shield]: https://github.com/R00S/addon-tellsticklive-roosfork/workflows/CI/badge.svg
 [github-actions]: https://github.com/R00S/addon-tellsticklive-roosfork/actions
 [issue]: https://github.com/R00S/addon-tellsticklive-roosfork/issues
-[maintenance-shield]: https://img.shields.io/maintenance/yes/2025.svg
+[maintenance-shield]: https://img.shields.io/maintenance/yes/2026.svg
 [project-stage-shield]: https://img.shields.io/badge/project%20stage-experimental-orange.svg
