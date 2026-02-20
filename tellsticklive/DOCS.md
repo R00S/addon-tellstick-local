@@ -11,7 +11,7 @@ TellStick and TellStick Duo local service – no cloud, no Telldus Live.
 This add-on runs the Telldus `telldusd` daemon and exposes it over TCP
 (via socat bridges on ports **50800** and **50801**) so that the
 **TellStick Local** custom integration can communicate with it from
-Home Assistant.  There is no Telldus Live cloud connection.
+Home Assistant. There is no Telldus Live cloud connection.
 
 **Acknowledgments:**
 
@@ -32,7 +32,7 @@ Home Assistant.  There is no Telldus Live cloud connection.
 ## Configuration
 
 You can optionally pre-configure devices so the integration can control
-them immediately.  If you use **automatic add** in the integration, you
+them immediately. If you use **automatic add** in the integration, you
 do not need to list devices here – they will be discovered when you press
 a remote.
 
@@ -54,16 +54,16 @@ devices:
 
 Each device entry requires:
 
-| Option | Required | Description |
-|--------|----------|-------------|
-| `id` | Yes | Unique numeric identifier (≥ 1) |
-| `name` | Yes | Human-readable name |
-| `protocol` | Yes | RF protocol (arctech, everflourish, …) |
-| `model` | No | Device model (selflearning-switch, selflearning-dimmer, …) |
-| `house` | No | House code |
-| `unit` | No | Unit code |
-| `code` | No | Code (for some protocols) |
-| `fade` | No | Enable fade for dimmers |
+| Option     | Required | Description                                                |
+| ---------- | -------- | ---------------------------------------------------------- |
+| `id`       | Yes      | Unique numeric identifier (≥ 1)                            |
+| `name`     | Yes      | Human-readable name                                        |
+| `protocol` | Yes      | RF protocol (arctech, everflourish, …)                     |
+| `model`    | No       | Device model (selflearning-switch, selflearning-dimmer, …) |
+| `house`    | No       | House code                                                 |
+| `unit`     | No       | Unit code                                                  |
+| `code`     | No       | Code (for some protocols)                                  |
+| `fade`     | No       | Enable fade for dimmers                                    |
 
 Restart the add-on after changing the device list.
 
@@ -153,10 +153,10 @@ data:
 
 ### Device protocol format
 
-| Field | Example | Notes |
-|-------|---------|-------|
-| `protocol` | `arctech` | Must be a supported protocol identifier |
-| `model` | `selflearning-switch` | Optional model name, optionally with brand suffix (`selflearning-switch:proove`) |
+| Field      | Example               | Notes                                                                            |
+| ---------- | --------------------- | -------------------------------------------------------------------------------- |
+| `protocol` | `arctech`             | Must be a supported protocol identifier                                          |
+| `model`    | `selflearning-switch` | Optional model name, optionally with brand suffix (`selflearning-switch:proove`) |
 
 **Supported protocols:** arctech, brateck, comen, everflourish, fineoffset, fuhaote,
 hasta, ikea, kangtai, mandolyn, oregon, risingsun, sartano, silvanchip, upm, waveman, x10, yidong

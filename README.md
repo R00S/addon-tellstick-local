@@ -25,7 +25,7 @@ This repository contains:
 
 1. **TellStick Local add-on** (`tellsticklive/`) – runs the `telldusd` daemon and
    exposes it over TCP on ports **50800** (commands) and **50801** (events) via
-   socat bridges.  No Telldus Live / cloud connection.
+   socat bridges. No Telldus Live / cloud connection.
 
 2. **TellStick Local custom integration** (`custom_components/tellstick_local/`) –
    a config-flow–based HA integration that connects to the add-on, subscribes to
@@ -81,7 +81,7 @@ your Home Assistant `config/custom_components/` directory, then restart HA.
 ## Add-on Configuration
 
 Pre-configure devices if you want to control them immediately without waiting
-for an RF event.  See [tellsticklive/DOCS.md](tellsticklive/DOCS.md) for
+for an RF event. See [tellsticklive/DOCS.md](tellsticklive/DOCS.md) for
 full details.
 
 ```yaml

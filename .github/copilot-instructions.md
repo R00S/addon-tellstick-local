@@ -41,23 +41,23 @@ grep '^version:' tellsticklive/config.yaml
 
 ## What File to Edit for Each Change
 
-| I want to change...                        | File to edit                                             |
-|--------------------------------------------|----------------------------------------------------------|
-| Device/protocol list in add-on             | `tellsticklive/config.yaml`                              |
-| tellstick.conf generation logic            | `tellsticklive/rootfs/etc/cont-init.d/telldusd.sh`       |
-| telldusd startup / socat bridge            | `tellsticklive/rootfs/etc/services.d/telldusd/run`       |
-| stdin service call handling                | `tellsticklive/rootfs/etc/services.d/stdin/run`          |
-| TCP socket binary protocol (framing)       | `custom_components/tellstick_local/client.py`            |
-| HA config flow (host/port entry)           | `custom_components/tellstick_local/config_flow.py`       |
-| Hub setup / event dispatch                 | `custom_components/tellstick_local/__init__.py`          |
-| Base entity / device registry              | `custom_components/tellstick_local/entity.py`            |
-| Switch entities                            | `custom_components/tellstick_local/switch.py`            |
-| Light/dimmer entities                      | `custom_components/tellstick_local/light.py`             |
-| Wireless sensor entities (temp/humidity)   | `custom_components/tellstick_local/sensor.py`            |
-| Device automation triggers                 | `custom_components/tellstick_local/device_trigger.py`    |
-| All domain constants                       | `custom_components/tellstick_local/const.py`             |
-| UI strings (config flow labels, errors)    | `custom_components/tellstick_local/strings.json`         |
-| English translations                       | `custom_components/tellstick_local/translations/en.json` |
+| I want to change...                      | File to edit                                             |
+| ---------------------------------------- | -------------------------------------------------------- |
+| Device/protocol list in add-on           | `tellsticklive/config.yaml`                              |
+| tellstick.conf generation logic          | `tellsticklive/rootfs/etc/cont-init.d/telldusd.sh`       |
+| telldusd startup / socat bridge          | `tellsticklive/rootfs/etc/services.d/telldusd/run`       |
+| stdin service call handling              | `tellsticklive/rootfs/etc/services.d/stdin/run`          |
+| TCP socket binary protocol (framing)     | `custom_components/tellstick_local/client.py`            |
+| HA config flow (host/port entry)         | `custom_components/tellstick_local/config_flow.py`       |
+| Hub setup / event dispatch               | `custom_components/tellstick_local/__init__.py`          |
+| Base entity / device registry            | `custom_components/tellstick_local/entity.py`            |
+| Switch entities                          | `custom_components/tellstick_local/switch.py`            |
+| Light/dimmer entities                    | `custom_components/tellstick_local/light.py`             |
+| Wireless sensor entities (temp/humidity) | `custom_components/tellstick_local/sensor.py`            |
+| Device automation triggers               | `custom_components/tellstick_local/device_trigger.py`    |
+| All domain constants                     | `custom_components/tellstick_local/const.py`             |
+| UI strings (config flow labels, errors)  | `custom_components/tellstick_local/strings.json`         |
+| English translations                     | `custom_components/tellstick_local/translations/en.json` |
 
 ---
 
@@ -97,31 +97,31 @@ A config-flow hub integration that:
 
 ### Add-on (`tellsticklive/`)
 
-| File | Purpose |
-|------|---------|
-| `config.yaml` | Add-on metadata, version, device schema |
-| `Dockerfile` | Container build: installs telldus-core from source, socat, tellcore-py |
-| `rootfs/etc/cont-init.d/telldusd.sh` | Generates `/etc/tellstick.conf` from add-on config at startup |
-| `rootfs/etc/services.d/telldusd/run` | Starts `telldusd`, waits for UNIX sockets, launches socat bridges |
-| `rootfs/etc/services.d/telldusd/finish` | Halts add-on if telldusd crashes unexpectedly |
-| `rootfs/etc/services.d/stdin/run` | Processes `hassio.addon_stdin` service calls (on/off/dim/list) |
+| File                                    | Purpose                                                                |
+| --------------------------------------- | ---------------------------------------------------------------------- |
+| `config.yaml`                           | Add-on metadata, version, device schema                                |
+| `Dockerfile`                            | Container build: installs telldus-core from source, socat, tellcore-py |
+| `rootfs/etc/cont-init.d/telldusd.sh`    | Generates `/etc/tellstick.conf` from add-on config at startup          |
+| `rootfs/etc/services.d/telldusd/run`    | Starts `telldusd`, waits for UNIX sockets, launches socat bridges      |
+| `rootfs/etc/services.d/telldusd/finish` | Halts add-on if telldusd crashes unexpectedly                          |
+| `rootfs/etc/services.d/stdin/run`       | Processes `hassio.addon_stdin` service calls (on/off/dim/list)         |
 
 ### Custom Integration (`custom_components/tellstick_local/`)
 
-| File | Purpose |
-|------|---------|
-| `manifest.json` | Domain, version, requirements (`tellcore-py`) |
-| `const.py` | **SOURCE OF TRUTH** – all domain constants, event type IDs, method bitmasks, signal templates |
-| `client.py` | **SOURCE OF TRUTH** – asyncio TCP client; telldusd binary framing (big-endian uint32-prefixed frames, UTF-8 strings) |
-| `config_flow.py` | Config flow: host/port entry, live connection validation, options flow |
-| `__init__.py` | Hub setup, event subscription, dispatcher + HA bus event dispatch |
-| `entity.py` | Base entity: device registry, state restore |
-| `switch.py` | Switch platform (on/off for codeswitch / selflearning-switch models) |
-| `light.py` | Light platform (dim / on / off for selflearning-dimmer models) |
-| `sensor.py` | Sensor platform (temperature, humidity from wireless sensors) |
-| `device_trigger.py` | Device automation triggers: `turned_on` / `turned_off` |
-| `strings.json` | UI strings (config flow labels, error messages) |
-| `translations/en.json` | English translations (mirrors strings.json) |
+| File                   | Purpose                                                                                                              |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `manifest.json`        | Domain, version, requirements (`tellcore-py`)                                                                        |
+| `const.py`             | **SOURCE OF TRUTH** – all domain constants, event type IDs, method bitmasks, signal templates                        |
+| `client.py`            | **SOURCE OF TRUTH** – asyncio TCP client; telldusd binary framing (big-endian uint32-prefixed frames, UTF-8 strings) |
+| `config_flow.py`       | Config flow: host/port entry, live connection validation, options flow                                               |
+| `__init__.py`          | Hub setup, event subscription, dispatcher + HA bus event dispatch                                                    |
+| `entity.py`            | Base entity: device registry, state restore                                                                          |
+| `switch.py`            | Switch platform (on/off for codeswitch / selflearning-switch models)                                                 |
+| `light.py`             | Light platform (dim / on / off for selflearning-dimmer models)                                                       |
+| `sensor.py`            | Sensor platform (temperature, humidity from wireless sensors)                                                        |
+| `device_trigger.py`    | Device automation triggers: `turned_on` / `turned_off`                                                               |
+| `strings.json`         | UI strings (config flow labels, error messages)                                                                      |
+| `translations/en.json` | English translations (mirrors strings.json)                                                                          |
 
 ---
 
@@ -261,10 +261,10 @@ When writing ANY new code that calls existing methods or references existing pro
 
 ### Success Rate Impact
 
-| Approach | Success Rate |
-|----------|-------------|
-| Code where source was READ first | 80–95% |
-| Code with FABRICATED names (guessed from patterns) | **0%** |
+| Approach                                           | Success Rate |
+| -------------------------------------------------- | ------------ |
+| Code where source was READ first                   | 80–95%       |
+| Code with FABRICATED names (guessed from patterns) | **0%**       |
 
 ---
 
