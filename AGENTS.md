@@ -190,7 +190,20 @@ tdtool --list-sensors
 
 ### Testing
 
-There is no automated test infrastructure. Testing requires:
+There is an automated integration test that verifies the custom integration loads
+correctly in a real Home Assistant instance:
+
+```bash
+pip install homeassistant pyflakes
+python tests/test_ha_integration.py
+```
+
+This test boots a minimal HA Core instance, loads the integration from
+`custom_components/`, and verifies config flows, hassio discovery, options flow
+instantiation, and all module imports. It catches broken imports (e.g. removed HA
+APIs) and deprecated patterns without needing TellStick hardware.
+
+Full end-to-end testing requires:
 
 1. Building the Docker image locally
 2. Running in a Home Assistant environment with actual TellStick hardware

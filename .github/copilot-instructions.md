@@ -38,6 +38,11 @@ python -m pyflakes custom_components/tellstick_local/
 grep '"version"' custom_components/tellstick_local/manifest.json
 # Add-on config.yaml always reads 'dev' on branches — that is correct, see below
 grep '^version:' tellsticklive/config.yaml
+
+# Test integration loads and config flows work in a real HA instance
+# (see "Integration testing against Home Assistant" below)
+pip install homeassistant pyflakes
+python tests/test_ha_integration.py
 ```
 
 ## Version Numbering — Two Files, Different Rules
@@ -333,6 +338,41 @@ Common model strings: `codeswitch`, `selflearning-switch`, `selflearning-dimmer`
 
 ## Testing
 
+### Integration testing against Home Assistant
+
+The integration can be tested against a real Home Assistant instance **without**
+TellStick hardware. Install HA Core as a Python package and run the test script:
+
+```bash
+pip install homeassistant pyflakes
+python tests/test_ha_integration.py
+```
+
+The test script (`tests/test_ha_integration.py`) boots a minimal HA instance,
+copies `custom_components/tellstick_local/` into a temp config directory, and
+verifies:
+
+1. **Integration loads** — `loader.async_get_integration()` finds it in custom_components
+2. **Config flow imports** — no broken imports prevent the module from loading
+3. **User config flow** — `async_step_user` shows the host/port form
+4. **Hassio discovery flow** — `async_step_hassio` → `hassio_confirm` form
+5. **OptionsFlow** — instantiates without the deprecated `config_entry` parameter
+6. **All platform modules** — client, const, entity, switch, light, sensor, device_trigger
+
+This catches the most common integration-breaking issues:
+- **Removed HA imports** — e.g. `HassioServiceInfo` moved from
+  `homeassistant.components.hassio` to `homeassistant.helpers.service_info.hassio`
+- **Deprecated API patterns** — e.g. OptionsFlow `self.config_entry = config_entry`
+  explicit assignment removed in HA 2025.12
+- **Syntax errors or typos** in any module
+
+> **Note:** The test uses whatever HA version `pip install homeassistant` provides.
+> If the user reports issues on a newer HA version, check the
+> [HA developer blog](https://developers.home-assistant.io/blog/) for breaking
+> changes and update imports accordingly.
+
+### Hardware testing on real HAOS
+
 Testing is manual on real HAOS with TellStick hardware:
 
 1. Create a GitHub release from the branch using the **Create Test Release** workflow
@@ -345,8 +385,6 @@ Testing is manual on real HAOS with TellStick hardware:
 5. Add the **TellStick Local** integration via Settings → Devices & Services
 6. Enable **Automatically add new devices** in the integration options
 7. Press a 433 MHz remote — the device should appear in HA automatically
-
-No automated unit tests exist. All testing is on real hardware.
 
 ---
 
