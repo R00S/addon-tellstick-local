@@ -57,8 +57,9 @@ jobs:
         env:
           TARGET: ${{ needs.information.outputs.target }}
         run: |
-          cp -r custom_components/tellstick_local \
-            "${TARGET}/rootfs/usr/share/tellstick_local"
+          mkdir -p "${TARGET}/rootfs/usr/share/tellstick_local"
+          cp -r custom_components/tellstick_local/. \
+            "${TARGET}/rootfs/usr/share/tellstick_local/"
       - name: 🏷 Set release version in config.yaml
         env:
           TARGET: ${{ needs.information.outputs.target }}
@@ -87,6 +88,12 @@ jobs:
             echo "platform=linux/amd64" >> "$GITHUB_OUTPUT"
           elif [[ "${ARCHITECTURE}" = "aarch64" ]]; then
             echo "platform=linux/arm64/v8" >> "$GITHUB_OUTPUT"
+          elif [[ "${ARCHITECTURE}" = "armv7" ]]; then
+            echo "platform=linux/arm/v7" >> "$GITHUB_OUTPUT"
+          elif [[ "${ARCHITECTURE}" = "armhf" ]]; then
+            echo "platform=linux/arm/v6" >> "$GITHUB_OUTPUT"
+          elif [[ "${ARCHITECTURE}" = "i386" ]]; then
+            echo "platform=linux/386" >> "$GITHUB_OUTPUT"
           else
             echo "::error ::Could not determine platform for architecture ${ARCHITECTURE}"
             exit 1
