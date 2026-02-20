@@ -17,114 +17,204 @@
 ![Project Maintenance][maintenance-shield]
 [![GitHub Activity][commits-shield]][commits]
 
-Local-only TellStick / TellStick Duo support for Home Assistant – no cloud required.
+Local-only TellStick Duo support for Home Assistant – no cloud, no YAML, full GUI.
+
+---
 
 ## About
 
-This repository contains **two components that work together**:
+This project makes the **TellStick Duo USB stick** work in Home Assistant OS exactly
+like other 433 MHz receivers (e.g. RFXtrx) — controlled entirely through the HA GUI
+and the Home Assistant companion app, with no cloud, no Telldus Live account, and no
+YAML file editing.
 
-1. **TellStick Local app** (`tellsticklive/`) – a HAOS app (Docker container managed
-   by the Supervisor) that runs the `telldusd` daemon and exposes it over TCP on ports
-   **50800** (commands) and **50801** (events) via socat bridges. No cloud.
-   _Installed via HAOS Supervisor — not via HACS._
+> **Terminology note:** HAOS 2026.2 renamed "Add-ons" to "Apps" in the UI. Both names
+> refer to the same Supervisor-managed Docker container.
 
-2. **TellStick Local integration** (`custom_components/tellstick_local/`) –
-   a config-flow–based HA integration (pure asyncio, no native dependencies) that
-   connects to the app's TCP sockets, subscribes to RF events, auto-adds devices,
-   and provides switch, light and sensor entities plus device triggers for automations.
-   _Installed via HACS — not via the Supervisor._
+> **Note:** The official Home Assistant TellStick add-on was deprecated in December
+> 2024 because the underlying Telldus library is no longer maintained by its original
+> manufacturer. This project continues local TellStick Duo support.
 
-> **Why are both needed?**
-> HAOS only allows USB hardware passthrough to Supervisor-managed Docker containers
-> (apps) — custom integrations running inside HA Core have no USB access.
-> `telldusd` is also a compiled C daemon that cannot run in a Python process.
-> The app handles the hardware; the integration handles the HA-native experience.
-> Advanced users with `telldusd` running on an external machine can skip the app and
-> point the integration directly at that host.
+### What you get
 
-> **Terminology note:** HAOS 2026.2 renamed "Add-ons" to "Apps" in the UI.
-> The underlying system is unchanged — both names refer to the same
-> Supervisor-managed Docker container.
-
-> **Note**: The official Home Assistant TellStick add-on was deprecated in
-> December 2024 because the underlying Telldus library is no longer maintained.
-> This fork continues to provide TellStick support for those who need it.
-
-### Features
-
-- **Local control** – no cloud, no account required
-- **Automatic device pairing** – press a remote and the device appears in HA
-- **Config flow** – set up the integration via the HA UI
-- **Entities** – switch, light (dimmer), and wireless sensor
-- **Device triggers** – use RF events in automations
-- **Service calls** – control devices via `hassio.addon_stdin`
+| Capability              | Description                                                                    |
+| ----------------------- | ------------------------------------------------------------------------------ |
+| **Auto install prompt** | Install the app → HA automatically offers "Set up TellStick Local?"            |
+| **Press-to-discover**   | Enable automatic add → press any remote → device appears in HA                 |
+| **Self-learning teach** | Options → Add device → pick protocol → send pairing signal → receiver learns   |
+| **GUI-only management** | Add, rename and remove devices via HA UI — no YAML, no restart                 |
+| **Local push**          | RF events arrive in real time; no polling, no cloud                            |
+| **Automations**         | Device triggers on any 433 MHz button press, usable directly in HA automations |
+| **Companion app**       | Identical UX in the HA Android/iOS app                                         |
+| **No Telldus Live**     | Zero cloud, zero account, zero internet dependency                             |
 
 ---
 
-## Quick Start
+## Prerequisites
 
-### 1. Install the Add-on
-
-1. Add this repository to your Home Assistant add-on store:
-   `https://github.com/R00S/addon-tellsticklive-roosfork`
-2. Find **TellStick Local** and click **Install**
-3. Start the add-on
-4. Note the hostname printed in the add-on log (e.g. `32b8266a-tellsticklive`)
-
-### 2. Install the Custom Integration
-
-Copy or symlink `custom_components/tellstick_local/` from this repository into
-your Home Assistant `config/custom_components/` directory, then restart HA.
-
-### 3. Add the Integration
-
-1. Go to **Settings → Devices & Services → Add Integration**
-2. Search for **TellStick Local**
-3. Enter the hostname from the add-on log and accept the default ports
-4. Click **Submit**
-
-### 4. Pair Devices (Automatic Add)
-
-1. Open the integration options (⚙ icon) and enable
-   **Automatically add new devices**
-2. Press the remote or button of the device you want to add
-3. The device appears in Home Assistant – rename it as desired
+- **Hardware:** TellStick Duo USB stick connected to the HAOS machine
+- **Software:** Home Assistant OS **2026.2 or later** (HAOS, not Container/Core)
+- HACS installed (for the integration)
 
 ---
 
-## Add-on Configuration
+## Installation
 
-Pre-configure devices if you want to control them immediately without waiting
-for an RF event. See [tellsticklive/DOCS.md](tellsticklive/DOCS.md) for
-full details.
+This project has **two components** that must both be installed. They are installed
+through different channels because HAOS only grants USB hardware passthrough to
+Supervisor-managed Docker containers — a custom integration has no USB access.
 
-```yaml
-devices:
-  - id: 1
-    name: Living Room Light
-    protocol: arctech
-    model: selflearning-switch
-    house: "12345678"
-    unit: "1"
-```
+### Step 1 – Install the TellStick Local app (via Supervisor)
+
+The app runs `telldusd` and bridges it over TCP so the integration can reach it.
+
+1. In HAOS go to **Settings → Apps** (or Add-ons on older versions)
+2. Click the **⋮ menu → Repositories** (or "Add custom repository")
+3. Add: `https://github.com/R00S/addon-tellsticklive-roosfork`
+4. Select category **App** (or Add-on) and click **Add**
+5. Find **TellStick Local** in the app store and click **Install**
+6. Click **Start** — wait for the log to show `TellStick Local is ready!`
+
+### Step 2 – Install the TellStick Local integration (via HACS)
+
+The integration provides the HA-native config flow, entities, and automations.
+
+1. In HACS click the **⋮ menu → Custom repositories**
+2. Add: `https://github.com/R00S/addon-tellsticklive-roosfork`
+   with category **Integration**
+3. Click **Add**, then find **TellStick Local** and click **Download**
+4. Restart Home Assistant
+
+### Step 3 – Accept the setup prompt
+
+When the app starts for the first time, Home Assistant automatically shows a
+notification:
+
+> **New device found: TellStick Local — Set up?**
+
+Click it and then **Submit** to confirm. The integration connects to the app
+automatically — no host or port entry needed.
+
+If the notification does not appear, go to **Settings → Devices & Services →
+Add Integration**, search for **TellStick Local**, and click through the setup.
 
 ---
 
-## Migrating from the Old Add-on
+## Pairing devices
 
-If you were using the previous version (with Telldus Live):
+### Method A – Automatic add (press-to-discover)
+
+Works for any device that transmits 433 MHz when a button is pressed (remotes,
+wall switches, sensors).
+
+1. Go to **Settings → Devices & Services → TellStick Local**
+2. Click **Configure** (⚙ icon)
+3. Enable **Automatically add new devices** and click **Submit**
+4. Press the button or remote you want to pair
+5. The device appears in HA — click its name to rename it
+
+### Method B – Self-learning teach
+
+Use this for self-learning receivers (Nexa, KAKU, Proove, Intertechno, etc.)
+that need to be taught a code before they respond.
+
+1. Go to **Settings → Devices & Services → TellStick Local → Configure**
+2. Click **Add device**
+3. Pick the **Protocol** (e.g. `arctech`) and **Model** (e.g. `selflearning-switch`)
+4. A house code and unit code are generated automatically — click **Submit**
+5. Put the receiver in **learn mode** (hold its button until it blinks)
+6. HA sends the pairing signal — the receiver learns the code
+7. The device appears in HA and can now be controlled
+
+### Removing a device
+
+1. Go to **Settings → Devices & Services → TellStick Local → Configure**
+2. Click **Remove device**
+3. Select the device and click **Submit**
+
+---
+
+## Supported devices
+
+### Auto-discoverable (press a button → device appears)
+
+| Protocol                          | Entity type    | Example brands / devices                                               |
+| --------------------------------- | -------------- | ---------------------------------------------------------------------- |
+| `arctech` — `codeswitch`          | Switch         | Old Nexa, KAKU dial-based remotes and wall switches                    |
+| `arctech` — `selflearning-switch` | Switch         | Nexa, KAKU, Intertechno, Proove, HomeEasy, Chacon, CoCo                |
+| `arctech` — `selflearning-dimmer` | Light (dimmer) | Nexa, Proove, KAKU dimmers                                             |
+| `arctech` — `bell`                | Event          | Nexa doorbell                                                          |
+| `everflourish`                    | Switch         | Everflourish, Rusta selflearning switches                              |
+| `hasta`                           | Switch/Cover   | Hasta motorised blinds                                                 |
+| `mandolyn`                        | Switch         | Mandolyn / Summerbird switches                                         |
+| `sartano`                         | Switch         | Sartano, Kjell & Company switches                                      |
+| `waveman`                         | Switch         | Waveman switches                                                       |
+| `x10`                             | Switch         | X10 wall switches                                                      |
+| `fineoffset`                      | Sensor         | **Nexa** LMST-606 / WDS-100 thermometers, Fine Offset weather stations |
+| `oregon`                          | Sensor         | Oregon Scientific weather sensors (temp, humidity, rain, wind, UV)     |
+
+> **Nexa note:** Nexa _switches, dimmers, remotes and buttons_ use the `arctech`
+> protocol. Nexa _thermometers and weather sensors_ (LMST-606, WDS-100 etc.) use
+> the `fineoffset` protocol — they appear automatically as sensor entities.
+
+### TX only (can be controlled but not auto-discovered)
+
+These devices must be added via Method B (self-learning teach).
+
+| Protocol     | Entity type | Example brands / devices   |
+| ------------ | ----------- | -------------------------- |
+| `brateck`    | Cover       | Brateck motorised blinds   |
+| `comen`      | Switch      | Comen devices              |
+| `fuhaote`    | Switch      | Fuhaote remote switches    |
+| `ikea`       | Switch      | IKEA Koppla 433 MHz        |
+| `risingsun`  | Switch      | Rising Sun remote switches |
+| `silvanchip` | Switch      | Silvanchip devices         |
+| `yidong`     | Switch      | Yidong remotes             |
+
+---
+
+## Migrating from the old add-on (with Telldus Live)
 
 1. Remove `enable_live`, `live_uuid`, `live_delay`, and `sensors` from the
-   add-on configuration
-2. Remove `tellstick:` and platform entries from `configuration.yaml`
-3. Install the **TellStick Local** custom integration via the UI
-4. Re-pair devices using automatic add if needed
+   app configuration
+2. Remove `tellstick:` and any `platform: tellstick` entries from `configuration.yaml`
+3. Restart HA — accept the new integration setup prompt
+4. Re-pair devices using automatic add or the teach flow
+
+---
+
+## Troubleshooting
+
+### "No setup prompt appeared after installing the app"
+
+Go to **Settings → Devices & Services → Add Integration**, search **TellStick Local**
+and run the manual setup flow.
+
+### "Integration cannot connect"
+
+1. Confirm the app is **running** and the log shows `TellStick Local is ready!`
+2. Ports 50800 and 50801 must be reachable from HA Core (they are on the Supervisor
+   internal network by default — no firewall config needed)
+
+### "No devices appear after pressing remote"
+
+1. Check that **Automatically add new devices** is enabled in the integration options
+2. Open the app log — raw RF events should appear when a button is pressed
+3. Confirm the TellStick Duo USB stick is connected:
+   **Settings → Apps → TellStick Local → Hardware**
+
+### "Receiver did not learn the code during teach"
+
+1. Make sure the receiver was in learn mode _before_ clicking Submit
+2. Try again — the pairing signal can be re-sent as many times as needed
 
 ---
 
 ## Support
 
 - [Open an issue on GitHub][issue]
+
+---
 
 ## License
 
@@ -138,12 +228,11 @@ See [LICENSE.md](LICENSE.md) and [NOTICE](NOTICE) for full details.
 ## Acknowledgments
 
 - **Erik Hilton (erik73)** – Original add-on and telldus-core fork
-  - https://github.com/erik73/addon-tellsticklive
-  - https://github.com/erik73/telldus
+  — <https://github.com/erik73/addon-tellsticklive> / <https://github.com/erik73/telldus>
 - **Erik Johansson (erijo)** – `tellcore-py` Python bindings
-  - https://github.com/erijo/tellcore-py
+  — <https://github.com/erijo/tellcore-py>
 - **Telldus Technologies AB** – Original TellStick hardware and telldus-core daemon
-- **Home Assistant Team** – Platform and original TellStick add-on
+- **Home Assistant Team** – Platform and original TellStick add-on (Apache 2.0)
 
 [aarch64-shield]: https://img.shields.io/badge/aarch64-yes-green.svg
 [amd64-shield]: https://img.shields.io/badge/amd64-yes-green.svg

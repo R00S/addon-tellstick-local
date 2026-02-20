@@ -528,12 +528,12 @@ Apache 2.0 license. Update `NOTICE`.
 
 ### Implementation Phases
 
-| Phase                         | Status     | What it delivers                                                                                                                                     |
-| ----------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **1 – Foundation**            | ✅ Done    | App: no Telldus Live, TCP 50800/50801. Integration: config flow, auto-add, switch/light/sensor entities, device triggers                             |
-| **2 – Supervisor auto-setup** | ✅ Done    | `discovery: tellstick_local` in app → `async_step_hassio` in integration → app start triggers HA setup prompt automatically                          |
-| **3 – Self-learning teach**   | ✅ Done    | Options flow "Add device": pick protocol, generate house+unit code, send pairing signal via TCP, device appears in HA (model: `rfxtrx` options flow) |
-| **4 – Full GUI device mgmt**  | ✅ Done    | Remove/re-teach via HA UI; devices persist in `entry.options["devices"]`; re-registered with telldusd on startup; auto-add suppressed for stored UIDs |
+| Phase                         | Status  | What it delivers                                                                                                                                      |
+| ----------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1 – Foundation**            | ✅ Done | App: no Telldus Live, TCP 50800/50801. Integration: config flow, auto-add, switch/light/sensor entities, device triggers                              |
+| **2 – Supervisor auto-setup** | ✅ Done | `discovery: tellstick_local` in app → `async_step_hassio` in integration → app start triggers HA setup prompt automatically                           |
+| **3 – Self-learning teach**   | ✅ Done | Options flow "Add device": pick protocol, generate house+unit code, send pairing signal via TCP, device appears in HA (model: `rfxtrx` options flow)  |
+| **4 – Full GUI device mgmt**  | ✅ Done | Remove/re-teach via HA UI; devices persist in `entry.options["devices"]`; re-registered with telldusd on startup; auto-add suppressed for stored UIDs |
 
 ---
 

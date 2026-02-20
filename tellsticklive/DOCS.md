@@ -1,17 +1,18 @@
 # TellStick Local
 
-TellStick and TellStick Duo local service – no cloud, no Telldus Live.
-
-![Supports aarch64 Architecture][aarch64-shield] ![Supports amd64 Architecture][amd64-shield]
-![Supports armhf Architecture][armhf-shield] ![Supports armv7 Architecture][armv7-shield]
-![Supports i386 Architecture][i386-shield]
+TellStick Duo local service for Home Assistant – no cloud, no Telldus Live.
 
 ## About
 
-This add-on runs the Telldus `telldusd` daemon and exposes it over TCP
-(via socat bridges on ports **50800** and **50801**) so that the
-**TellStick Local** custom integration can communicate with it from
-Home Assistant. There is no Telldus Live cloud connection.
+This app runs the Telldus `telldusd` daemon inside a Docker container managed by
+the HAOS Supervisor and exposes it over TCP via socat bridges:
+
+- **Port 50800** – command socket (turn on/off, dim)
+- **Port 50801** – event socket (real-time RF events from remotes and sensors)
+
+It exists because HAOS only allows USB hardware passthrough to Supervisor-managed
+containers — a custom integration has no USB access. The app handles the hardware;
+the **TellStick Local** integration handles everything in the HA UI.
 
 **Acknowledgments:**
 
@@ -19,147 +20,97 @@ Home Assistant. There is no Telldus Live cloud connection.
 - Based on the now-deprecated official Home Assistant TellStick add-on
 - Uses a fork of telldus-core maintained by [erik73](https://github.com/erik73/telldus)
 
+---
+
 ## Installation
 
-1. Add this repository to your Home Assistant add-on store:
-   `https://github.com/R00S/addon-tellsticklive-roosfork`
-2. Find the **TellStick Local** add-on and click **INSTALL**
-3. (Optional) Configure pre-known devices – see Configuration below
-4. Start the add-on
-5. Install the **TellStick Local** custom integration from
-   `custom_components/tellstick_local/` in this repository
+1. In HAOS go to **Settings → Apps → ⋮ → Repositories**
+2. Add: `https://github.com/R00S/addon-tellsticklive-roosfork`, category **App**
+3. Find **TellStick Local** in the store and click **Install**
+4. Click **Start** and wait for the log to show `TellStick Local is ready!`
 
-## Configuration
+After the app starts, Home Assistant automatically shows a notification:
 
-You can optionally pre-configure devices so the integration can control
-them immediately. If you use **automatic add** in the integration, you
-do not need to list devices here – they will be discovered when you press
-a remote.
+> **New device found: TellStick Local — Set up?**
+
+Click it and then **Submit** — no host or port entry is needed.
+
+If the notification does not appear, go to **Settings → Devices & Services →
+Add Integration**, search for **TellStick Local**, and run the manual setup.
+
+---
+
+## Next steps: install the integration
+
+All device management (pairing, naming, automations) happens in the
+**TellStick Local** custom integration, installed via HACS:
+
+1. In HACS click **⋮ → Custom repositories**
+2. Add: `https://github.com/R00S/addon-tellsticklive-roosfork`, category **Integration**
+3. Find **TellStick Local**, click **Download**, then restart Home Assistant
+
+See the [project README](https://github.com/R00S/addon-tellsticklive-roosfork) for
+full pairing and device management instructions.
+
+---
+
+## Optional: pre-configure devices
+
+You only need this if you want to control a TX-only device (one that cannot send
+RF signals itself) and want it available before any RF event arrives.
+
+For all other devices (Nexa remotes, KAKU switches, Oregon sensors, etc.) just
+use **automatic add** in the integration — no configuration here is needed.
 
 ```yaml
 devices:
   - id: 1
-    name: Living Room Light
-    protocol: arctech
-    model: selflearning-switch
-    house: "12345678"
+    name: Bedroom Blind
+    protocol: brateck
+    model: ""
+    house: "1"
     unit: "1"
-  - id: 2
-    name: Kitchen Switch
-    protocol: arctech
-    model: selflearning-switch
-    house: A
-    unit: "4"
 ```
-
-Each device entry requires:
 
 | Option     | Required | Description                                                |
 | ---------- | -------- | ---------------------------------------------------------- |
 | `id`       | Yes      | Unique numeric identifier (≥ 1)                            |
 | `name`     | Yes      | Human-readable name                                        |
-| `protocol` | Yes      | RF protocol (arctech, everflourish, …)                     |
+| `protocol` | Yes      | RF protocol (see list below)                               |
 | `model`    | No       | Device model (selflearning-switch, selflearning-dimmer, …) |
 | `house`    | No       | House code                                                 |
 | `unit`     | No       | Unit code                                                  |
-| `code`     | No       | Code (for some protocols)                                  |
-| `fade`     | No       | Enable fade for dimmers                                    |
+| `code`     | No       | Code (for code-based protocols)                            |
+| `fade`     | No       | Enable fade for dimmers (`true`/`false`)                   |
 
-Restart the add-on after changing the device list.
+Restart the app after changing the device list.
 
-## How to pair new devices (automatic add)
+**Supported protocols:** arctech, brateck, comen, everflourish, fineoffset, fuhaote,
+hasta, ikea, mandolyn, oregon, risingsun, sartano, silvanchip, upm, waveman, x10, yidong
 
-1. Start the add-on and confirm it logs:
-   `TellStick Local is ready!`
-2. In Home Assistant go to **Settings → Devices & Services → Add Integration**
-   and search for **TellStick Local**.
-3. Enter the hostname shown in the add-on log and click **Submit**.
-4. Open the integration options and enable **Automatically add new devices**.
-5. Press the button or remote of the device you want to pair.
-6. The device appears in Home Assistant automatically.
-7. Rename it under **Settings → Devices & Services → TellStick Local**.
-
-## Service calls (stdin)
-
-You can still control pre-configured devices via `hassio.addon_stdin`:
-
-Turn on device 1:
-
-```yaml
-service: hassio.addon_stdin
-data:
-  addon: 32b8266a_tellsticklive
-  input:
-    function: "on"
-    device: 1
-```
-
-Turn off device 1:
-
-```yaml
-service: hassio.addon_stdin
-data:
-  addon: 32b8266a_tellsticklive
-  input:
-    function: "off"
-    device: 1
-```
-
-Set dimmer level (0–255):
-
-```yaml
-service: hassio.addon_stdin
-data:
-  addon: 32b8266a_tellsticklive
-  input:
-    function: "dim"
-    device: 2
-    level: 128
-```
-
-List configured devices:
-
-```yaml
-service: hassio.addon_stdin
-data:
-  addon: 32b8266a_tellsticklive
-  input:
-    function: "list"
-```
-
-List detected sensors:
-
-```yaml
-service: hassio.addon_stdin
-data:
-  addon: 32b8266a_tellsticklive
-  input:
-    function: "list-sensors"
-```
+---
 
 ## Troubleshooting
 
+### App log shows errors at startup
+
+- Check **Settings → Apps → TellStick Local → Hardware** — the TellStick Duo
+  USB stick must be listed there
+- Try unplugging and re-plugging the USB stick, then restart the app
+
 ### Integration cannot connect
 
-1. Confirm the add-on is **running** and the log shows `TellStick Local is ready!`
-2. Verify the hostname in the integration matches the one in the add-on log
-3. Ports **50800** and **50801** must be reachable from the HA core container
+- Confirm the app is **running** and the log shows `TellStick Local is ready!`
+- Ports 50800 and 50801 are on the Supervisor internal network — no manual
+  firewall configuration is needed
 
-### No devices appear after pressing remote
+### No RF events in the log when pressing a remote
 
-1. Make sure **Automatically add new devices** is enabled in the integration options
-2. Check the add-on log – raw RF events should appear when a button is pressed
-3. Ensure the TellStick USB stick is connected (check **Settings → Add-ons → TellStick Local → Hardware**)
+- The TellStick Duo must be **physically connected** to the HAOS machine
+- Verify USB is visible under the app Hardware tab
+- Try a different USB port or a short USB extension cable to improve reception
 
-### Device protocol format
-
-| Field      | Example               | Notes                                                                            |
-| ---------- | --------------------- | -------------------------------------------------------------------------------- |
-| `protocol` | `arctech`             | Must be a supported protocol identifier                                          |
-| `model`    | `selflearning-switch` | Optional model name, optionally with brand suffix (`selflearning-switch:proove`) |
-
-**Supported protocols:** arctech, brateck, comen, everflourish, fineoffset, fuhaote,
-hasta, ikea, kangtai, mandolyn, oregon, risingsun, sartano, silvanchip, upm, waveman, x10, yidong
+---
 
 ## Support
 
@@ -172,9 +123,4 @@ GNU General Public License v3.0 or later
 Copyright (c) 2019–2024 Erik Hilton
 Copyright (c) 2024–2025 R00S (roosfork modifications)
 
-[aarch64-shield]: https://img.shields.io/badge/aarch64-yes-green.svg
-[amd64-shield]: https://img.shields.io/badge/amd64-yes-green.svg
-[armhf-shield]: https://img.shields.io/badge/armhf-yes-green.svg
-[armv7-shield]: https://img.shields.io/badge/armv7-yes-green.svg
-[i386-shield]: https://img.shields.io/badge/i386-yes-green.svg
 [issue]: https://github.com/R00S/addon-tellsticklive-roosfork/issues
