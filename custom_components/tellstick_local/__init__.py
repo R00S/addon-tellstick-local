@@ -8,6 +8,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .client import (
@@ -118,6 +119,48 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if ctrl:
             await ctrl.disconnect()
     return ok
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant, entry: ConfigEntry, device_entry: dr.DeviceEntry
+) -> bool:
+    """Remove a device from the integration (called from device page delete)."""
+    # Extract device UID from the device registry identifiers
+    device_uid: str | None = None
+    for identifier in device_entry.identifiers:
+        if identifier[0] == DOMAIN:
+            # identifier is (DOMAIN, "{entry_id}_{device_uid}")
+            prefix = f"{entry.entry_id}_"
+            if identifier[1].startswith(prefix):
+                device_uid = identifier[1][len(prefix):]
+            break
+
+    if device_uid is None:
+        return True
+
+    # Best-effort removal from telldusd
+    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
+    controller: TellStickController | None = entry_data.get(
+        ENTRY_TELLSTICK_CONTROLLER
+    )
+    device_id_map: dict[str, int] = entry_data.get(ENTRY_DEVICE_ID_MAP, {})
+    if controller and device_uid in device_id_map:
+        try:
+            await controller.remove_device(device_id_map.pop(device_uid))
+        except Exception:  # noqa: BLE001
+            _LOGGER.warning(
+                "Could not remove device %s from telldusd", device_uid
+            )
+
+    # Remove from stored devices if present
+    stored_devices: dict[str, Any] = dict(entry.options.get(CONF_DEVICES, {}))
+    if device_uid in stored_devices:
+        del stored_devices[device_uid]
+        new_options = dict(entry.options)
+        new_options[CONF_DEVICES] = stored_devices
+        hass.config_entries.async_update_entry(entry, options=new_options)
+
+    return True
 
 
 async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:

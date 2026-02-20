@@ -27,10 +27,10 @@
     "step": {
       "init": {
         "title": "TellStick Local",
+        "description": "To remove a device, go to the device page and use the delete option in the menu.",
         "menu_options": {
-          "settings": "Settings",
-          "add_device": "Add device",
-          "remove_device": "Remove device"
+          "settings": "Detection mode – enable or disable automatic device discovery",
+          "add_device": "Add device – manually pair a new 433 MHz device"
         }
       },
       "settings": {
@@ -62,18 +62,11 @@
       "add_device_confirm": {
         "title": "Send pairing signal",
         "description": "**{name}** ({protocol}/{model}) will learn house code **{house}**, unit **{unit}**.\n\nPut your 433 MHz receiver in **learn mode** now, then click **Submit** — the pairing signal is sent immediately."
-      },
-      "remove_device": {
-        "title": "Remove a device",
-        "data": {
-          "device": "Device to remove"
-        }
       }
     },
     "error": {
       "invalid_code": "Parameter values must not be empty.",
-      "teach_failed": "Failed to send pairing signal. Check that the TellStick app is running.",
-      "invalid_selection": "Please select a device to remove."
+      "teach_failed": "Failed to send pairing signal. Check that the TellStick app is running."
     }
   },
   "device_automation": {

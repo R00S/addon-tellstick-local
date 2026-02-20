@@ -31,7 +31,6 @@ from .const import (
     DEVICE_CATALOG_LABELS,
     DEVICE_CATALOG_MAP,
     DOMAIN,
-    ENTRY_DEVICE_ID_MAP,
     ENTRY_TELLSTICK_CONTROLLER,
     WIDGET_PARAMS,
     build_device_uid,
@@ -237,16 +236,11 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Show the main options menu."""
-        existing_devices: dict[str, Any] = self.config_entry.options.get(
-            CONF_DEVICES, {}
-        )
         self._automatic_add = self.config_entry.options.get(
             CONF_AUTOMATIC_ADD, DEFAULT_AUTOMATIC_ADD
         )
 
         menu_options = ["settings", "add_device"]
-        if existing_devices:
-            menu_options.append("remove_device")
 
         return self.async_show_menu(
             step_id="init",
@@ -438,61 +432,4 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
             errors=errors,
         )
 
-    async def async_step_remove_device(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Remove a manually-added device."""
-        existing_devices: dict[str, Any] = self.config_entry.options.get(
-            CONF_DEVICES, {}
-        )
-        errors: dict[str, str] = {}
 
-        if user_input is not None:
-            uid_to_remove = user_input.get("device")
-            if uid_to_remove and uid_to_remove in existing_devices:
-                # Best-effort removal from telldusd (non-fatal if it fails)
-                try:
-                    entry_data = self.hass.data[DOMAIN].get(
-                        self.config_entry.entry_id, {}
-                    )
-                    controller: TellStickController | None = entry_data.get(
-                        ENTRY_TELLSTICK_CONTROLLER
-                    )
-                    device_id_map: dict[str, int] = entry_data.get(
-                        ENTRY_DEVICE_ID_MAP, {}
-                    )
-                    if controller and uid_to_remove in device_id_map:
-                        await controller.remove_device(device_id_map[uid_to_remove])
-                except Exception:  # noqa: BLE001
-                    _LOGGER.warning(
-                        "Could not remove device %s from telldusd", uid_to_remove
-                    )
-
-                new_devices = {
-                    k: v
-                    for k, v in existing_devices.items()
-                    if k != uid_to_remove
-                }
-                return self.async_create_entry(
-                    title="",
-                    data={
-                        CONF_AUTOMATIC_ADD: self._automatic_add,
-                        CONF_DEVICES: new_devices,
-                    },
-                )
-            errors["base"] = "invalid_selection"
-
-        device_options = {
-            uid: data.get(CONF_DEVICE_NAME, uid)
-            for uid, data in existing_devices.items()
-        }
-
-        return self.async_show_form(
-            step_id="remove_device",
-            data_schema=vol.Schema(
-                {
-                    vol.Required("device"): vol.In(device_options),
-                }
-            ),
-            errors=errors,
-        )
