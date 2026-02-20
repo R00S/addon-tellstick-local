@@ -6,14 +6,115 @@ on:
   release:
     types:
       - published
-  workflow_run:
-    workflows: ["CI"]
-    branches: [main]
-    types:
-      - completed
+
+permissions:
+  contents: read
 
 jobs:
-  workflows:
-    uses: erik73/workflows/.github/workflows/addon-deploy.yaml@main
-    secrets:
-      DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+  information:
+    name: Gather app information
+    runs-on: ubuntu-latest
+    outputs:
+      architectures: ${{ steps.information.outputs.architectures }}
+      build: ${{ steps.information.outputs.build }}
+      description: ${{ steps.information.outputs.description }}
+      name: ${{ steps.information.outputs.name }}
+      slug: ${{ steps.information.outputs.slug }}
+      target: ${{ steps.information.outputs.target }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: ⤵️ Check out code from GitHub
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: 🚀 Run app information action
+        id: information
+        uses: frenck/action-addon-information@ce1377e9851cf569c29329e65fb2c57e67ca0f69
+      - name: 🏷 Extract release version
+        id: version
+        env:
+          GITHUB_REF: ${{ github.ref }}
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.architecture }}
+    needs:
+      - information
+    runs-on: ${{ matrix.architecture == 'aarch64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    permissions:
+      packages: write
+    strategy:
+      matrix:
+        architecture: ${{ fromJson(needs.information.outputs.architectures) }}
+    steps:
+      - name: ⤵️ Check out code from GitHub
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: 📦 Bundle integration into add-on build context
+        env:
+          TARGET: ${{ needs.information.outputs.target }}
+        run: |
+          mkdir -p "${TARGET}/rootfs/usr/share/tellstick_local"
+          cp -r custom_components/tellstick_local/. \
+            "${TARGET}/rootfs/usr/share/tellstick_local/"
+      - name: 🏷 Set release version in config.yaml
+        env:
+          TARGET: ${{ needs.information.outputs.target }}
+          VERSION: ${{ needs.information.outputs.version }}
+        run: |
+          sed -i "s/^version: dev/version: ${VERSION}/" "${TARGET}/config.yaml"
+      - name: 🏗 Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+      - name: 🔑 Login to GitHub Container Registry
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: ℹ️ Compose build flags
+        id: flags
+        env:
+          ARCHITECTURE: ${{ matrix.architecture }}
+          BUILD_FILE: ${{ needs.information.outputs.build }}
+        run: |
+          echo "date=$(date +"%Y-%m-%dT%H:%M:%SZ")" >> "$GITHUB_OUTPUT"
+          from=$(yq --no-colors eval ".build_from.${ARCHITECTURE}" "${BUILD_FILE}")
+          echo "from=${from}" >> "$GITHUB_OUTPUT"
+
+          if [[ "${ARCHITECTURE}" = "amd64" ]]; then
+            echo "platform=linux/amd64" >> "$GITHUB_OUTPUT"
+          elif [[ "${ARCHITECTURE}" = "aarch64" ]]; then
+            echo "platform=linux/arm64/v8" >> "$GITHUB_OUTPUT"
+          elif [[ "${ARCHITECTURE}" = "armv7" ]]; then
+            echo "platform=linux/arm/v7" >> "$GITHUB_OUTPUT"
+          elif [[ "${ARCHITECTURE}" = "armhf" ]]; then
+            echo "platform=linux/arm/v6" >> "$GITHUB_OUTPUT"
+          elif [[ "${ARCHITECTURE}" = "i386" ]]; then
+            echo "platform=linux/386" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error ::Could not determine platform for architecture ${ARCHITECTURE}"
+            exit 1
+          fi
+      - name: 🚀 Build and push
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          push: true
+          # zizmor: ignore[template-injection] - path input to action, not shell-executed
+          context: ${{ needs.information.outputs.target }}
+          file: ${{ needs.information.outputs.target }}/Dockerfile
+          platforms: ${{ steps.flags.outputs.platform }}
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/${{ needs.information.outputs.slug }}/${{ matrix.architecture }}:latest
+            ghcr.io/${{ github.repository_owner }}/${{ needs.information.outputs.slug }}/${{ matrix.architecture }}:${{ needs.information.outputs.version }}
+          build-args: |
+            BUILD_ARCH=${{ matrix.architecture }}
+            BUILD_DATE=${{ steps.flags.outputs.date }}
+            BUILD_DESCRIPTION=${{ needs.information.outputs.description }}
+            BUILD_FROM=${{ steps.flags.outputs.from }}
+            BUILD_NAME=${{ needs.information.outputs.name }}
+            BUILD_REF=${{ github.sha }}
+            BUILD_REPOSITORY=${{ github.repository }}
+            BUILD_VERSION=${{ needs.information.outputs.version }}

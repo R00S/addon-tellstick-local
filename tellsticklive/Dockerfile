@@ -45,26 +45,16 @@ RUN apk add --no-cache \
         -DFTDI_LIBRARY=/usr/lib/libftdi1.so \
     && make \
     && make install \
-    && pip install --no-cache-dir \ 
+    && pip install --no-cache-dir \
        tellcore-py \
-    && cd /usr/src/ \
-    && git clone -b master --depth 1 https://github.com/erijo/tellive-py \
-    && cd tellive-py \
-    && sed -i 's/ssl.PROTOCOL_TLSv1/ssl.PROTOCOL_TLS_CLIENT/g' tellive/tellstick.py \
-    && grep -q 'ssl.PROTOCOL_TLS_CLIENT' tellive/tellstick.py \
-    && sed -i 's/context.verify_mode = ssl.CERT_REQUIRED/# context.verify_mode = ssl.CERT_REQUIRED  # Already set by PROTOCOL_TLS_CLIENT/g' tellive/tellstick.py \
-    && sed -i 's/ssl.match_hostname(sock.getpeercert(), address\[0\])/# ssl.match_hostname handled by check_hostname=True/g' tellive/tellstick.py \
-    && sed -i 's/socket.SOCK_STREAM))/socket.SOCK_STREAM), server_hostname=address[0])/g' tellive/tellstick.py \
-    && grep -q 'server_hostname=address\[0\]' tellive/tellstick.py \
-    && sed -i 's/os_version = platform.linux_distribution()\[0\]/os_version = "linux"/g' tellive/tellstick.py \
-    && grep -q 'os_version = "linux"' tellive/tellstick.py \
-    && python setup.py install \
     && apk del .build-dependencies \
     && rm -rf /usr/src/telldus \
-    && rm -rf /usr/src/tellive-py \
     && cd /
 
-# Copy data for add-on
+# Bundle companion integration (pre-copied into rootfs/usr/share/tellstick_local/ by CI before build)
+# integration.sh copies it to /config/custom_components/tellstick_local/ at container startup
+
+# Copy data for add-on (includes rootfs/usr/share/tellstick_local/ bundled by CI)
 COPY rootfs /
 
 # Labels

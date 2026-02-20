@@ -1,8 +1,8 @@
 ---
-name: TellStick with Telldus Live
-version: 1.0.0
+name: TellStick Local
+version: dev
 slug: tellsticklive
-description: TellStick and TellStick Duo service with Telldus Live
+description: TellStick and TellStick Duo local service (no cloud)
 url: https://github.com/R00S/addon-tellsticklive-roosfork
 arch:
   - aarch64
@@ -14,10 +14,11 @@ startup: system
 init: false
 stdin: true
 usb: true
+map:
+  - config:rw
+discovery:
+  - tellstick_local
 options:
-  enable_local: true
-  enable_live: false
-  live_delay: 10
   devices:
     - id: 1
       name: Example device
@@ -31,31 +32,13 @@ options:
       model: selflearning-switch
       house: A
       unit: "2"
-  sensors:
-    - id: 199
-      name: Example sensor
-      protocol: fineoffset
-      model: temperature
-    - id: 215
-      name: Example sensor two
-      protocol: fineoffset
-      model: temperaturehumidity
 schema:
-  enable_local: bool
-  enable_live: bool
-  live_uuid: match(^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})?
-  live_delay: int
   devices:
     - id: int(1,)
       name: str
-      protocol: match(arctech|brateck|comen|everflourish|fineoffset|fuhaote|hasta|ikea|kangtai|mandolyn|oregon|risingsun|sartano|silvanchip|upm|waveman|x10|yidong)
+      protocol: match(arctech|brateck|comen|everflourish|fineoffset|fuhaote|hasta|ikea|mandolyn|oregon|risingsun|sartano|silvanchip|upm|waveman|x10|yidong)
       model: str?
       house: str?
       code: str?
       unit: str?
       fade: str?
-  sensors:
-    - id: int(1,)
-      name: str
-      protocol: match(arctech|brateck|comen|everflourish|fineoffset|fuhaote|hasta|ikea|kangtai|mandolyn|oregon|risingsun|sartano|silvanchip|upm|waveman|x10|yidong)
-      model: str?

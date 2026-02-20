@@ -50,12 +50,12 @@ tellsticklive/
 
 ### Key Files
 
-| File | Purpose |
-|------|---------|
+| File                  | Purpose                                                       |
+| --------------------- | ------------------------------------------------------------- |
 | `/etc/tellstick.conf` | TellStick device configuration (generated from add-on config) |
-| `/etc/tellive.conf` | Telldus Live connection configuration |
-| `/tmp/TelldusClient` | UNIX socket for TellStick commands |
-| `/tmp/TelldusEvents` | UNIX socket for TellStick events |
+| `/etc/tellive.conf`   | Telldus Live connection configuration                         |
+| `/tmp/TelldusClient`  | UNIX socket for TellStick commands                            |
+| `/tmp/TelldusEvents`  | UNIX socket for TellStick events                              |
 
 ### Communication Architecture
 
@@ -97,6 +97,7 @@ device {
 **Root Cause**: Race condition where socat TCP bridges started before telldusd created UNIX sockets.
 
 **Solution Applied** (in this fork):
+
 1. Modified `telldusd/run` to start telldusd first in background
 2. Wait up to 60 seconds for UNIX sockets to be created
 3. Only then start socat bridges
@@ -108,6 +109,7 @@ device {
 **Root Cause**: Empty UUID written to config, or service starting before telldusd is ready.
 
 **Solution Applied**:
+
 1. Only write UUID to config when it has a value
 2. Add socket readiness checks in tellivecore and runonce services
 3. 60-second timeout for socket readiness
@@ -129,6 +131,7 @@ device {
 Users need to configure both the add-on AND their configuration.yaml:
 
 **Add-on configuration** (devices with protocols/codes):
+
 ```yaml
 devices:
   - id: 1
@@ -140,6 +143,7 @@ devices:
 ```
 
 **configuration.yaml** (integration setup):
+
 ```yaml
 tellstick:
   host: 32b8266a-tellsticklive
@@ -187,6 +191,7 @@ tdtool --list-sensors
 ### Testing
 
 There is no automated test infrastructure. Testing requires:
+
 1. Building the Docker image locally
 2. Running in a Home Assistant environment with actual TellStick hardware
 3. Verifying device control and sensor reading
@@ -200,17 +205,18 @@ There is no automated test infrastructure. Testing requires:
 
 ## Key Dependencies
 
-| Dependency | Purpose |
-|------------|---------|
-| `telldusd` | TellStick daemon (built from source: github.com/erik73/telldus) |
-| `tellive-py` | Python library for Telldus Live connection |
-| `tellcore-py` | Python bindings for TellStick Core library |
-| `socat` | TCP to UNIX socket bridge |
-| `bashio` | Home Assistant add-on helper library |
+| Dependency    | Purpose                                                         |
+| ------------- | --------------------------------------------------------------- |
+| `telldusd`    | TellStick daemon (built from source: github.com/erik73/telldus) |
+| `tellive-py`  | Python library for Telldus Live connection                      |
+| `tellcore-py` | Python bindings for TellStick Core library                      |
+| `socat`       | TCP to UNIX socket bridge                                       |
+| `bashio`      | Home Assistant add-on helper library                            |
 
 ## Build Process
 
 The Dockerfile:
+
 1. Starts from `ghcr.io/erik73/base-python/amd64:4.0.8`
 2. Installs build dependencies (cmake, gcc, git)
 3. Clones and builds telldus-core from erik73's fork
@@ -229,6 +235,7 @@ The Dockerfile:
 ## Migration Notes
 
 Users migrating from the deprecated official add-on should:
+
 1. Change host in configuration.yaml from `core-tellstick` to `32b8266a-tellsticklive`
 2. Keep the same device configuration format (it's compatible)
 3. Restart both add-on and Home Assistant
