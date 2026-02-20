@@ -143,9 +143,26 @@ A `hacs.json` at the repo root declares the category.
 
 ### Why you need both — and why they can't be merged
 
-**Short answer: HAOS won't give a custom integration USB access. Only a Supervisor app (Docker container) can get USB passthrough.**
+**This is the same architecture as Z-Wave JS, deCONZ, and Zigbee Home Automation.**
+Both components run on the **same HAOS machine** — but HAOS enforces a hard separation
+between two execution environments:
 
-The detailed constraints:
+| Execution environment  | Who lives here                         | USB access? | HA API access? |
+| ---------------------- | -------------------------------------- | ----------- | -------------- |
+| Docker container (app) | `telldusd` C daemon, socat TCP bridges | ✅ Yes      | ❌ No          |
+| HA Core Python process | Our integration, all HA entities       | ❌ No       | ✅ Yes         |
+
+**Z-Wave JS does the exact same thing:**
+
+- Z-Wave JS Server **app** → Docker container, USB passthrough, runs `zwave-js-server` (Node.js)
+- Z-Wave JS **integration** → Python in HA Core, creates entities, connects to server via WebSocket
+
+We do the exact same thing for TellStick:
+
+- TellStick Local **app** → Docker container, USB passthrough, runs `telldusd` (C), exposes TCP
+- TellStick Local **integration** → Python in HA Core, creates entities, connects via TCP
+
+**Why the separation is unavoidable:**
 
 | Constraint                                  | App                            | Integration                      |
 | ------------------------------------------- | ------------------------------ | -------------------------------- |
@@ -153,7 +170,6 @@ The detailed constraints:
 | Runs compiled C daemon (`telldusd`)         | ✅ Built from source in Docker | ❌ Can't run native daemons      |
 | HA entities / config flow / device registry | ❌ Apps have no HA API access  | ✅ Integration's job             |
 | Automations / device triggers               | ❌                             | ✅                               |
-| Execution environment                       | Docker container (isolated)    | HA Core Python process           |
 
 `telldusd` is a **compiled C daemon** that needs `cmake`, `gcc`, and `libftdi` to build —
 it cannot run inside HA Core's Python process. And the TellStick USB device is only
@@ -161,10 +177,6 @@ accessible through the Supervisor's USB passthrough, which is only available to 
 
 The integration uses a **pure asyncio TCP client** (no native libraries) to talk to the
 TCP sockets the app exposes. It has zero Python dependencies outside stdlib + HA.
-
-**If you don't want the app:** You'd need `telldusd` running on some external
-Linux machine and configure the integration to point at that host instead of the
-app's hostname. The integration will work either way — it just needs a TCP host/port.
 
 ---
 
@@ -487,6 +499,17 @@ TellStick Duo USB
 ```
 
 **Why both are required — they cannot be merged:**
+
+> **This is the same architecture as Z-Wave JS (and deCONZ, Zigbee2MQTT broker + integration).**
+> Both components run on the **same HAOS machine**. The split is not about "network distance" —
+> it is about two different execution environments that HAOS enforces:
+>
+> - The **app** lives in a Docker container → the only place USB passthrough works.
+> - The **integration** lives in HA Core's Python process → the only place HA entities can be created.
+>
+> There is no way to put USB passthrough code into a Python integration, and no way to put
+> HA entity-creation into a Docker container. The TCP link (even over localhost) is the
+> only bridge between them.
 
 | Constraint                         | App (Docker)           | Integration (Python)           |
 | ---------------------------------- | ---------------------- | ------------------------------ |

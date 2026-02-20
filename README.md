@@ -60,9 +60,19 @@ YAML file editing.
 
 ## Installation
 
-This project has **two components** that must both be installed. They are installed
-through different channels because HAOS only grants USB hardware passthrough to
-Supervisor-managed Docker containers — a custom integration has no USB access.
+This project has **two components** — the same architecture used by Z-Wave JS,
+deCONZ, and other USB-dongle integrations. Both run on the **same HAOS machine**,
+but HAOS enforces a hard separation between two execution environments:
+
+| Component       | Runs in          | USB access | HA entities |
+| --------------- | ---------------- | ---------- | ----------- |
+| **App**         | Docker container | ✅ Yes     | ❌ No       |
+| **Integration** | HA Core (Python) | ❌ No      | ✅ Yes      |
+
+The app gets USB passthrough from the Supervisor, runs the `telldusd` C daemon, and
+exposes it via TCP. The integration connects over that TCP link to create HA entities.
+This split is unavoidable: HAOS never grants USB access to a Python integration, and
+the C daemon cannot run inside Python.
 
 ### Step 1 – Install the TellStick Local app (via Supervisor)
 
