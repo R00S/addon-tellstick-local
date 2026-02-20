@@ -60,13 +60,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     stored_devices: dict[str, Any] = entry.options.get(CONF_DEVICES, {})
     for device_uid, device_cfg in stored_devices.items():
         try:
-            telldusd_id = await controller.find_or_add_device(
-                device_cfg.get(CONF_DEVICE_NAME, device_uid),
-                device_cfg[CONF_DEVICE_PROTOCOL],
-                device_cfg.get(CONF_DEVICE_MODEL, ""),
-                device_cfg.get(CONF_DEVICE_HOUSE, ""),
-                device_cfg.get(CONF_DEVICE_UNIT, ""),
-            )
+            # Prefer the "params" dict (new format) over house/unit (old format)
+            params = device_cfg.get("params")
+            if params:
+                telldusd_id = await controller.add_device(
+                    device_cfg.get(CONF_DEVICE_NAME, device_uid),
+                    device_cfg[CONF_DEVICE_PROTOCOL],
+                    device_cfg.get(CONF_DEVICE_MODEL, ""),
+                    params,
+                )
+            else:
+                telldusd_id = await controller.find_or_add_device(
+                    device_cfg.get(CONF_DEVICE_NAME, device_uid),
+                    device_cfg[CONF_DEVICE_PROTOCOL],
+                    device_cfg.get(CONF_DEVICE_MODEL, ""),
+                    device_cfg.get(CONF_DEVICE_HOUSE, ""),
+                    device_cfg.get(CONF_DEVICE_UNIT, ""),
+                )
             device_id_map[device_uid] = telldusd_id
         except Exception as err:  # noqa: BLE001
             _LOGGER.warning(
