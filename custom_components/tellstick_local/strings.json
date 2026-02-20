@@ -1,9 +1,13 @@
 {
   "config": {
     "step": {
+      "hassio_confirm": {
+        "title": "TellStick Local detected",
+        "description": "The **{addon}** app is running and ready.\n\nIt will connect on **{host}** (command port **{command_port}**, event port **{event_port}**).\n\nClick **Submit** to set up TellStick Local."
+      },
       "user": {
         "title": "Connect to TellStick daemon",
-        "description": "Enter the host and port of the TellStick Local add-on (or a machine running telldusd with socat TCP bridges).",
+        "description": "Enter the host and port of the TellStick Local add-on.",
         "data": {
           "host": "Host",
           "command_port": "Command port",

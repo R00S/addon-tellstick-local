@@ -8,6 +8,7 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
+from homeassistant.components.hassio import HassioServiceInfo
 from homeassistant.const import CONF_HOST
 from homeassistant.data_entry_flow import FlowResult
 
@@ -59,6 +60,68 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for TellStick Local."""
 
     VERSION = 1
+
+    def __init__(self) -> None:
+        """Init config flow."""
+        self._host: str = DEFAULT_HOST
+        self._command_port: int = DEFAULT_COMMAND_PORT
+        self._event_port: int = DEFAULT_EVENT_PORT
+        self._hassio_discovery: bool = False
+
+    async def async_step_hassio(
+        self, discovery_info: HassioServiceInfo
+    ) -> FlowResult:
+        """Handle discovery by the Supervisor (app installed → HA auto-offers setup)."""
+        await self.async_set_unique_id(discovery_info.uuid)
+        self._abort_if_unique_id_configured()
+
+        self._host = discovery_info.config.get("host", DEFAULT_HOST)
+        self._command_port = discovery_info.config.get(
+            "port", DEFAULT_COMMAND_PORT
+        )
+        # Event port is always command port + 1
+        self._event_port = self._command_port + 1
+        self._hassio_discovery = True
+
+        return await self.async_step_hassio_confirm()
+
+    async def async_step_hassio_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Confirm the Supervisor-discovered setup."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            try:
+                await _validate_connection(
+                    self._host, self._command_port, self._event_port
+                )
+            except (asyncio.TimeoutError, OSError):
+                errors["base"] = "cannot_connect"
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception("Unexpected error during connection validation")
+                errors["base"] = "unknown"
+            else:
+                return self.async_create_entry(
+                    title="TellStick Local",
+                    data={
+                        CONF_HOST: self._host,
+                        CONF_COMMAND_PORT: self._command_port,
+                        CONF_EVENT_PORT: self._event_port,
+                    },
+                    options={CONF_AUTOMATIC_ADD: DEFAULT_AUTOMATIC_ADD},
+                )
+
+        return self.async_show_form(
+            step_id="hassio_confirm",
+            description_placeholders={
+                "addon": "TellStick Local",
+                "host": self._host,
+                "command_port": str(self._command_port),
+                "event_port": str(self._event_port),
+            },
+            errors=errors,
+        )
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
