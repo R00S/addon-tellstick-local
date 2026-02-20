@@ -1,4 +1,4 @@
-# Home Assistant Add-on: TellStick Local
+# Home Assistant: TellStick Local
 
 > [!WARNING]
 > **🚧 Development repository – not ready for public testing.**
@@ -21,16 +21,22 @@ Local-only TellStick / TellStick Duo support for Home Assistant – no cloud req
 
 ## About
 
-This repository contains:
+This repository contains **two components that work together**:
 
-1. **TellStick Local add-on** (`tellsticklive/`) – runs the `telldusd` daemon and
-   exposes it over TCP on ports **50800** (commands) and **50801** (events) via
-   socat bridges. No Telldus Live / cloud connection.
+1. **TellStick Local app** (`tellsticklive/`) – a HAOS app (Docker container managed
+   by the Supervisor) that runs the `telldusd` daemon and exposes it over TCP on ports
+   **50800** (commands) and **50801** (events) via socat bridges. No cloud.
+   _Installed via HAOS Supervisor — not via HACS._
 
-2. **TellStick Local custom integration** (`custom_components/tellstick_local/`) –
-   a config-flow–based HA integration that connects to the add-on, subscribes to
+2. **TellStick Local integration** (`custom_components/tellstick_local/`) –
+   a config-flow–based HA integration that connects to the app, subscribes to
    RF events, auto-adds devices, and provides switch, light and sensor entities
    plus device triggers for automations.
+   _Installed via HACS — not via the Supervisor._
+
+> **Terminology note:** HAOS 2026.2 renamed "Add-ons" to "Apps" in the UI.
+> The underlying system is unchanged — both names refer to the same
+> Supervisor-managed Docker container.
 
 > **Note**: The official Home Assistant TellStick add-on was deprecated in
 > December 2024 because the underlying Telldus library is no longer maintained.

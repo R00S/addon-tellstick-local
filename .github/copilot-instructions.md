@@ -34,10 +34,49 @@ shellcheck -s bash tellsticklive/rootfs/etc/cont-init.d/telldusd.sh
 python -m py_compile custom_components/tellstick_local/*.py
 python -m pyflakes custom_components/tellstick_local/
 
-# Check version consistency (both must match)
+# Check integration version
 grep '"version"' custom_components/tellstick_local/manifest.json
+# Add-on config.yaml always reads 'dev' on branches — that is correct, see below
 grep '^version:' tellsticklive/config.yaml
 ```
+
+## Version Numbering — Two Files, Different Rules
+
+There are **two version fields** and they are intentionally **different** on non-release branches:
+
+| File                                              | Value on branch        | Value on release        |
+| ------------------------------------------------- | ---------------------- | ----------------------- |
+| `custom_components/tellstick_local/manifest.json` | real version `2.0.1.0` | same real version       |
+| `tellsticklive/config.yaml`                       | **always `dev`**       | set by release workflow |
+
+### Why `config.yaml` must be `dev` on branches
+
+The CI runs `frenck/action-addon-linter` (the "Lint App" check). This linter enforces
+that the app `version` field in `config.yaml` is the literal string `dev` on every
+non-release branch. Putting a real version number there causes the linter to fail with:
+
+```
+Add-on version identifier must be 'dev'
+```
+
+The release workflow (`deploy.yaml`) replaces `dev` with the real version at release
+time. **Do not change `config.yaml` version away from `dev`** — it will break CI.
+
+### 🛑 You MUST bump `manifest.json` on every change
+
+**Always increment `manifest.json` → `"version"` when making any code change.**
+
+HACS and Home Assistant use the integration version to detect updates. If the version
+does not change, users will silently receive the old cached integration — Home
+Assistant will not reload it, HACS will not prompt for an update, and browsers will
+not re-fetch any frontend assets. This has caused multiple silent broken releases in
+similar projects.
+
+```
+□ EVERY commit with code changes → bump manifest.json "version": "X.Y.Z.W"
+```
+
+`tellsticklive/config.yaml` stays `version: dev` forever on branches.
 
 ## What File to Edit for Each Change
 
@@ -66,40 +105,57 @@ grep '^version:' tellsticklive/config.yaml
 This repository provides local 433 MHz TellStick / TellStick Duo support for
 Home Assistant — **no cloud, no Telldus Live account required**.
 
-It has two parts:
+It has **two independent components** that work together:
 
-### 1. Add-on (`tellsticklive/`)
+### Component 1 — HAOS App (`tellsticklive/`)
 
-Runs the `telldusd` daemon inside a Docker container and exposes it over TCP
-via socat bridges:
+> **Terminology note:** HAOS 2026.2 renamed "Add-ons" to "Apps" in the UI.
+> The underlying Supervisor system, `config.yaml` format, and Docker container
+> model are unchanged. "Add-on" and "App" refer to the same thing.
 
-- **Port 50800** → `TelldusClient` UNIX socket (commands: turn on/off, dim)
-- **Port 50801** → `TelldusEvents` UNIX socket (events: RF button presses,
-  sensor readings)
+A Docker container managed by the HAOS Supervisor that:
 
-USB passthrough to the TellStick hardware is enabled via the add-on config.
+- Builds `telldusd` from source and runs it inside the container
+- Exposes `telldusd` over TCP via socat bridges:
+  - **Port 50800** → `TelldusClient` UNIX socket (commands: turn on/off, dim)
+  - **Port 50801** → `TelldusEvents` UNIX socket (events: RF button presses, sensor readings)
+- Passes through the TellStick USB hardware via the `usb: true` config
 
-### 2. Custom Integration (`custom_components/tellstick_local/`)
+**How to install:** HAOS Settings → Apps → three-dot menu → Add custom repository
+→ `https://github.com/R00S/addon-tellsticklive-roosfork` → category **App**.
+**Not installed via HACS.**
 
-A config-flow hub integration that:
+### Component 2 — HA Custom Integration (`custom_components/tellstick_local/`)
 
-- Connects to the add-on TCP sockets
+A Home Assistant integration that runs inside the HA Core Python process:
+
+- Connects to the app's TCP sockets (host + ports 50800/50801)
 - Subscribes to 433 MHz RF events from the TelldusEvents socket
-- Builds a stable device identifier from RF parameters
-  (`protocol_model_house_unit`)
+- Builds a stable device identifier from RF parameters (`protocol_model_house_unit`)
 - Auto-adds switch / light / sensor entities when a 433 MHz signal is received
   (controlled by the `automatic_add` option)
 - Fires HA bus events and dispatcher signals for automations / device triggers
+
+**How to install:** HACS → three-dot menu → Custom repositories →
+`https://github.com/R00S/addon-tellsticklive-roosfork` → category **Integration**.
+A `hacs.json` at the repo root declares the category.
+**Not installed via the Supervisor Apps store.**
+
+### Why you need both
+
+The app runs the hardware driver (`telldusd`) and bridges it to TCP.
+The integration is the HA-native layer that turns those TCP events into entities,
+automations, and device triggers. Neither is useful without the other.
 
 ---
 
 ## Key Files
 
-### Add-on (`tellsticklive/`)
+### HAOS App (`tellsticklive/`)
 
 | File                                    | Purpose                                                                |
 | --------------------------------------- | ---------------------------------------------------------------------- |
-| `config.yaml`                           | Add-on metadata, version, device schema                                |
+| `config.yaml`                           | App metadata, version (`dev` on branches), device schema               |
 | `Dockerfile`                            | Container build: installs telldus-core from source, socat, tellcore-py |
 | `rootfs/etc/cont-init.d/telldusd.sh`    | Generates `/etc/tellstick.conf` from add-on config at startup          |
 | `rootfs/etc/services.d/telldusd/run`    | Starts `telldusd`, waits for UNIX sockets, launches socat bridges      |
@@ -152,24 +208,6 @@ HA custom integration (client.py)
 
 ---
 
-## Version Numbering
-
-The integration version lives in **two places** — both must stay in sync:
-
-```
-□ 1. custom_components/tellstick_local/manifest.json  → "version": "X.Y.Z"
-□ 2. tellsticklive/config.yaml                        → version: X.Y.Z
-```
-
-**Quick verification:**
-
-```bash
-grep '"version"' custom_components/tellstick_local/manifest.json
-grep '^version:' tellsticklive/config.yaml
-```
-
-If they don't match, fix them before committing.
-
 ---
 
 ## telldusd Binary Protocol
@@ -200,7 +238,7 @@ The stable device UID is built from: `protocol_model_house_unit`.
 
 ## Supported 433 MHz Protocols
 
-The add-on passes these through to `tellstick.conf` (enforced by config schema):
+The app passes these through to `tellstick.conf` (enforced by config schema):
 
 `arctech`, `brateck`, `comen`, `everflourish`, `fineoffset`, `fuhaote`,
 `hasta`, `ikea`, `kangtai`, `mandolyn`, `oregon`, `risingsun`, `sartano`,
@@ -217,8 +255,10 @@ Testing is manual on real HAOS with TellStick hardware:
 
 1. Create a GitHub release from the branch using the **Create Test Release** workflow
    (`.github/workflows/create-test-release.yaml`)
-2. Install the add-on from this repository in HA Supervisor
-3. Install the integration version via HACS
+2. Install the **HAOS app** from this repository:
+   HAOS Settings → Apps → Add custom repository → category **App**
+3. Install the **integration** via HACS:
+   HACS → Add custom repository → category **Integration** → install the test version
 4. Restart Home Assistant
 5. Add the **TellStick Local** integration via Settings → Devices & Services
 6. Enable **Automatically add new devices** in the integration options
@@ -232,7 +272,7 @@ No automated unit tests exist. All testing is on real hardware.
 
 1. ❌ Editing the integration without checking the actual `client.py` framing first
 2. ❌ Changing `const.py` event type IDs without verifying against telldusd source
-3. ❌ Forgetting to update **both** version locations (manifest.json + config.yaml)
+3. ❌ Forgetting to bump `manifest.json` version — HACS/HA won't detect the update and will silently keep the old cached version. AND ❌ Bumping `config.yaml` version away from `dev` — it must stay `dev` on branches (linter enforced)
 4. ❌ Using deprecated HA APIs — check HA 2024.1+ compatibility
 5. ❌ Adding Telldus Live / cloud dependencies — this is intentionally local-only
 6. ❌ **FABRICATING method/property names instead of reading the source code** (see below)
@@ -283,13 +323,13 @@ When writing ANY new code that calls existing methods or references existing pro
 
 ### Data Separation Principles
 
-- Add-on config (`config.yaml`) defines the device list for `tellstick.conf`
+- App config (`config.yaml`) defines the device list for `tellstick.conf`
 - Integration (`const.py`, `client.py`) defines the communication protocol
-- No duplication of protocol constants between the add-on and the integration
+- No duplication of protocol constants between the app and the integration
 
 ### Architecture Principles
 
-- Add-on is minimal: runs daemon + exposes TCP sockets; no business logic
+- App is minimal: runs daemon + exposes TCP sockets; no business logic
 - Integration handles all HA entity management and event dispatch
 - Device identity is protocol-derived (no manual ID assignment required)
 
