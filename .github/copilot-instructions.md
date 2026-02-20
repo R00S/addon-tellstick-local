@@ -257,13 +257,31 @@ The stable device UID is built from: `protocol_model_house_unit`.
 
 ## Supported 433 MHz Protocols
 
-The app passes these through to `tellstick.conf` (enforced by config schema):
+The app passes these through to `tellstick.conf` (enforced by config schema).
+The **full list** is what `telldusd` (telldus-core) supports for TellStick Duo:
 
-`arctech`, `brateck`, `comen`, `everflourish`, `fineoffset`, `fuhaote`,
-`hasta`, `ikea`, `kangtai`, `mandolyn`, `oregon`, `risingsun`, `sartano`,
-`silvanchip`, `upm`, `waveman`, `x10`, `yidong`
+| Protocol       | Typical brands / device types                                                                                                                                                                             |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `arctech`      | Nexa, KlikAanKlikUit (KAKU), Intertechno, Proove, HomeEasy, CoCo Technologies, Chacon, Byebye Standby, Rusta, Kappa — models: `codeswitch`, `selflearning-switch`, `selflearning-dimmer`, `bell`, `kp100` |
+| `brateck`      | Brateck motorised blinds                                                                                                                                                                                  |
+| `comen`        | Comen devices                                                                                                                                                                                             |
+| `everflourish` | Everflourish / Rusta selflearning switches                                                                                                                                                                |
+| `fineoffset`   | Fine Offset weather sensors (temperature, humidity, rain, wind) — WH1080, WH3080 families                                                                                                                 |
+| `fuhaote`      | Fuhaote remote switches                                                                                                                                                                                   |
+| `hasta`        | Hasta motorised blinds/screens                                                                                                                                                                            |
+| `ikea`         | IKEA Koppla/TRÅDFRI 433 MHz remotes                                                                                                                                                                       |
+| `kangtai`      | Kangtai remotes                                                                                                                                                                                           |
+| `mandolyn`     | Mandolyn/Summerbird switches                                                                                                                                                                              |
+| `oregon`       | Oregon Scientific weather sensors — temperature, humidity, rain, wind, UV, pressure                                                                                                                       |
+| `risingsun`    | Rising Sun remote switches                                                                                                                                                                                |
+| `sartano`      | Sartano / Kjell & Company switches (identical to x10)                                                                                                                                                     |
+| `silvanchip`   | Silvanchip devices                                                                                                                                                                                        |
+| `upm`          | UPM/Esic temperature/humidity sensors                                                                                                                                                                     |
+| `waveman`      | Waveman switches (old arctech codeswitch family)                                                                                                                                                          |
+| `x10`          | X10 protocol switches and sensors                                                                                                                                                                         |
+| `yidong`       | Yidong remotes                                                                                                                                                                                            |
 
-Common model types: `codeswitch`, `selflearning-switch`, `selflearning-dimmer`,
+Common model strings: `codeswitch`, `selflearning-switch`, `selflearning-dimmer`,
 `bell`, `kp100`, `ecosavers`, `temperature`, `temperaturehumidity`
 
 ---
@@ -327,33 +345,153 @@ When writing ANY new code that calls existing methods or references existing pro
 
 ---
 
-## Project Goals & Architecture (ToR)
+## Terms of Reference (ToR)
 
-- **Objective**: Provide reliable local 433 MHz device control and sensor
-  monitoring via TellStick hardware in Home Assistant, without any cloud dependency.
-- **Scope**: Cover switch, dimmer, and wireless sensor entities; automation
-  triggers; and automatic device pairing from RF events.
+### Objective
 
-### HAOS Compatibility Guidelines
+Make the **TellStick Duo USB stick** work in Home Assistant OS exactly like other
+433 MHz receivers do (e.g. RFXtrx) — entirely through the **HA GUI and HA companion
+app** (Android/iOS), locally, with no cloud, no YAML editing, and no separate web
+server.
 
-- Full compliance with Home Assistant OS add-on and integration standards
-- Use HA APIs for config flow, device registry, entity registry, dispatcher
-- Maintain backward compatibility with HA 2024.1.0+
+The TellStick Duo is a USB 433 MHz transceiver (receive _and_ transmit).
+`telldusd` is the C daemon that drives it. This project exposes `telldusd` to HA
+via TCP and wraps it in a native HA integration.
 
-### Data Separation Principles
+---
 
-- App config (`config.yaml`) defines the device list for `tellstick.conf`
-- Integration (`const.py`, `client.py`) defines the communication protocol
-- No duplication of protocol constants between the app and the integration
+### User Experience Goals
 
-### Architecture Principles
+Everything happens inside HA's own UI: **Settings → Devices & Services →
+TellStick Local → Configure**. The HA companion app (Android/iOS) uses the same UI
+— no browser required, no separate web server, no ingress panel.
 
-- App is minimal: runs daemon + exposes TCP sockets; no business logic
-- Integration handles all HA entity management and event dispatch
-- Device identity is protocol-derived (no manual ID assignment required)
+| Capability                   | How it looks in HA UI                                                                                                                                                       |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Automatic install prompt** | Install the app → HA automatically pops up "New device found: TellStick Local — Set up?"                                                                                    |
+| **Press-to-discover**        | Enable "Automatically add new devices" in integration options → press any 433 MHz remote/sensor → device appears in HA with the correct entity type (switch, light, sensor) |
+| **Self-learning teach**      | Options → "Add device" → pick protocol + generate house/unit code → put receiver in learn mode → click Send → receiver learns the code → device appears in HA (no YAML)     |
+| **GUI-only management**      | All add / rename / remove through HA UI — no YAML, no config file, no restart                                                                                               |
+| **Local push**               | RF events arrive in real time via TCP event stream; no polling, no cloud                                                                                                    |
+| **Automation triggers**      | Any 433 MHz button press fires a device trigger usable directly in HA automations                                                                                           |
+| **Companion app**            | Identical UX in the HA Android/iOS app — same config flows, same device cards                                                                                               |
+| **No Telldus Live**          | Zero cloud, zero account, zero internet dependency                                                                                                                          |
+
+---
+
+### Supported Devices
+
+All 17 protocols that `telldusd` (telldus-core) supports for TellStick Duo:
+
+| Protocol                          | Entity type(s)                               | Example brands / devices                                |
+| --------------------------------- | -------------------------------------------- | ------------------------------------------------------- |
+| `arctech` — `codeswitch`          | Switch                                       | Old Nexa, KAKU dial-based remotes                       |
+| `arctech` — `selflearning-switch` | Switch                                       | Nexa, KAKU, Intertechno, Proove, HomeEasy, Chacon, CoCo |
+| `arctech` — `selflearning-dimmer` | Light (dimmer)                               | Nexa, Proove, KAKU dimmers                              |
+| `arctech` — `bell`                | Event                                        | Nexa doorbell                                           |
+| `everflourish`                    | Switch                                       | Everflourish, Rusta selflearning                        |
+| `sartano`                         | Switch                                       | Sartano, Kjell & Company                                |
+| `waveman`                         | Switch                                       | Waveman (old arctech family)                            |
+| `x10`                             | Switch                                       | X10 wall switches                                       |
+| `risingsun`                       | Switch                                       | Rising Sun remotes                                      |
+| `fuhaote`                         | Switch                                       | Fuhaote remotes                                         |
+| `hasta`                           | Switch/Cover                                 | Hasta motorised blinds                                  |
+| `ikea`                            | Switch                                       | IKEA Koppla 433 MHz                                     |
+| `kangtai`                         | Switch                                       | Kangtai remotes                                         |
+| `silvanchip`                      | Switch                                       | Silvanchip devices                                      |
+| `brateck`                         | Cover                                        | Brateck motorised blinds                                |
+| `comen`                           | Switch                                       | Comen devices                                           |
+| `mandolyn`                        | Switch                                       | Mandolyn / Summerbird                                   |
+| `yidong`                          | Switch                                       | Yidong remotes                                          |
+| `fineoffset`                      | Sensor (temp/humidity/rain/wind)             | Fine Offset, WH1080, WH3080 weather stations            |
+| `oregon`                          | Sensor (temp/humidity/rain/wind/UV/pressure) | Oregon Scientific weather sensors                       |
+| `upm`                             | Sensor (temp/humidity)                       | UPM / Esic sensors                                      |
+
+---
+
+### How the Two Components Fit Together
+
+```
+TellStick Duo USB
+      │  USB passthrough (Supervisor only — no integration can get this)
+      ▼
+┌─────────────────────────────────────────────────┐
+│  HAOS App  (tellsticklive/)                     │  ← Install via Supervisor
+│  Docker container, Supervisor-managed           │     Settings → Apps →
+│  • Builds + runs telldusd (compiled C daemon)   │     Add custom repository
+│  • socat bridges: TCP 50800 (cmds), 50801 (evt) │
+│  • discovery: tellstick_local → triggers setup  │
+└────────────────────┬────────────────────────────┘
+                     │ TCP  (host: app slug, ports 50800/50801)
+                     ▼
+┌─────────────────────────────────────────────────┐
+│  HA Integration  (custom_components/            │  ← Install via HACS
+│                   tellstick_local/)             │     custom repository
+│  Pure asyncio, zero native dependencies         │
+│  • Config flow (Supervisor auto-offer on start) │
+│  • Receives raw RF events → auto-adds entities  │
+│  • Sends on/off/dim commands via TCP            │
+│  • Options flow: teach self-learning devices    │
+│  • Device triggers for automations             │
+└─────────────────────────────────────────────────┘
+```
+
+**Why both are required — they cannot be merged:**
+
+| Constraint                         | App (Docker)           | Integration (Python)           |
+| ---------------------------------- | ---------------------- | ------------------------------ |
+| USB hardware passthrough           | ✅ Supervisor provides | ❌ Unavailable to integrations |
+| Run compiled C daemon (`telldusd`) | ✅ Built in Docker     | ❌ Cannot run native binaries  |
+| HA entities / device registry      | ❌ No HA API access    | ✅ Integration's job           |
+| Config flow / options flow         | ❌                     | ✅                             |
+| HA companion app / automations     | ❌                     | ✅                             |
+
+---
+
+### Out of Scope (Non-Goals)
+
+- ❌ **Telldus Live / any cloud** — will never return
+- ❌ **External telldusd** — TellStick USB must be in the HAOS machine; no remote setup
+- ❌ **`configuration.yaml`-based setup** — config flow only
+- ❌ **Separate web server or ingress panel** — everything is native HA UI
+- ❌ **TellStick Net (LAN device)** — USB Duo only
+- ❌ **Firmware flashing** — out of scope
+- ❌ **HAOS older than 2026.2** — no backward compatibility
+
+---
+
+### Reference Implementations
+
+HA core is **Apache 2.0** licensed. This project is **GPL v3**. Apache 2.0 code
+can be incorporated into GPL v3 with attribution (see `NOTICE`).
+
+| Project                  | What to borrow                                                                                                                                                         |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`rfxtrx`** (HA core)   | **Primary reference.** 433 MHz, auto-add, options-flow device management (add by listening or by event code), device triggers with command subtypes, entity base class |
+| **`rflink`** (HA core)   | Asyncio TCP protocol handling, auto-add from received messages                                                                                                         |
+| **`zwave_js`** (HA core) | `async_step_hassio` — Supervisor discovery flow (app starts → HA auto-offers integration setup)                                                                        |
+
+When adapting HA core code: add a file-level comment noting the source URL and
+Apache 2.0 license. Update `NOTICE`.
+
+---
+
+### Implementation Phases
+
+| Phase                         | Status         | What it delivers                                                                                                                                     |
+| ----------------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1 – Foundation**            | ✅ Done        | App: no Telldus Live, TCP 50800/50801. Integration: config flow, auto-add, switch/light/sensor entities, device triggers                             |
+| **2 – Supervisor auto-setup** | 🔄 In progress | `discovery: tellstick_local` in app → `async_step_hassio` in integration → app start triggers HA setup prompt automatically                          |
+| **3 – Self-learning teach**   | ⬜ Planned     | Options flow "Add device": pick protocol, generate house+unit code, send pairing signal via TCP, device appears in HA (model: `rfxtrx` options flow) |
+| **4 – Full GUI device mgmt**  | ⬜ Planned     | Remove/re-teach via HA UI; `options.devices` in app config eliminated                                                                                |
+
+---
 
 ### Development Workflow
 
-- `main` for stable releases, feature branches for new development
-- Use **Create Test Release** workflow to publish prerelease versions for testing
-- CI runs yamllint, shellcheck, hadolint, and pyflakes on every push
+- `main` for stable releases; feature branches for new development
+- **Bump `manifest.json` version on every code change** — HACS and HA use it to
+  detect updates; browsers cache old versions if it doesn't change
+- `tellsticklive/config.yaml` version stays `dev` on all branches (linter rule)
+- Use **Create Test Release** workflow for prerelease HACS testing
+- CI: yamllint, shellcheck, hadolint, pyflakes, Prettier, zizmor on every push
