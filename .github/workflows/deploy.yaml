@@ -6,6 +6,12 @@ on:
   release:
     types:
       - published
+  workflow_call:
+    inputs:
+      version:
+        description: Release version (without v prefix)
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -34,8 +40,13 @@ jobs:
         id: version
         env:
           GITHUB_REF: ${{ github.ref }}
+          INPUT_VERSION: ${{ inputs.version || '' }}
         run: |
-          VERSION="${GITHUB_REF#refs/tags/v}"
+          if [ -n "${INPUT_VERSION}" ]; then
+            VERSION="${INPUT_VERSION}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          fi
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
   build:

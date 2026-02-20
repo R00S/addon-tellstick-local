@@ -20,12 +20,16 @@ on:
         required: false
         type: string
 
+permissions:
+  contents: write
+  packages: write
+  pull-requests: read
+
 jobs:
   create-test-release:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: read
+    outputs:
+      version: ${{ steps.version.outputs.test }}
 
     steps:
       - name: Checkout repository
@@ -182,3 +186,10 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "### Release URL" >> "$GITHUB_STEP_SUMMARY"
           echo "https://github.com/${REPO}/releases/tag/${TEST_TAG}" >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    needs: create-test-release
+    uses: ./.github/workflows/deploy.yaml
+    with:
+      version: ${{ needs.create-test-release.outputs.version }}
+    secrets: inherit
