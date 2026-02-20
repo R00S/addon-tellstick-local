@@ -1,6 +1,6 @@
 ---
 name: TellStick Local
-version: 2.0.10.3-test.copilot-fix-integration-installation-issue.20260220-211221
+version: dev
 slug: tellsticklive
 image: ghcr.io/r00s/tellsticklive/{arch}
 description: TellStick and TellStick Duo local service (no cloud)
@@ -8,15 +8,12 @@ url: https://github.com/R00S/addon-tellsticklive-roosfork
 arch:
   - aarch64
   - amd64
-  - armhf
-  - armv7
-  - i386
 startup: system
 init: false
 stdin: true
 usb: true
 map:
-  - config:rw
+  - homeassistant_config:rw
 discovery:
   - tellstick_local
 options:
