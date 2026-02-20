@@ -3,14 +3,7 @@
 ```
 ████████████████████████████████████████████████████████████████████████████████
 █                                                                              █
-█   🛑 CRITICAL: DEVELOPMENT STATUS 🛑                                         █
-█                                                                              █
-█   ⚠️  THIS IS AN EXPERIMENTAL REPO — NOT READY FOR PUBLIC TESTING            █
-█                                                                              █
-█   Features may be incomplete, APIs may change without notice, and            █
-█   there may be known bugs. Do not use in production.                         █
-█                                                                              █
-█   SOURCE OF TRUTH FOR DIFFERENT DATA:                                        █
+█   🛑 CRITICAL: SOURCE OF TRUTH FOR DIFFERENT DATA 🛑                        █
 █                                                                              █
 █   ADD-ON CONFIG (devices, protocols):                                        █
 █     → Edit: tellsticklive/config.yaml                                        █
