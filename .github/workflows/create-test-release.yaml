@@ -150,7 +150,7 @@ jobs:
           cat release_notes.md
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@c062e08bd532815e2082a7e09ce9571a6dabefd0
+        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: "Test Release ${{ steps.version.outputs.test }}"
