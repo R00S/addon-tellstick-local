@@ -16,6 +16,7 @@ import os
 import shutil
 import sys
 import tempfile
+import traceback
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
@@ -70,7 +71,6 @@ async def run_tests() -> None:
         )
     except Exception as e:
         report("Load integration", False, str(e))
-        import traceback
 
         traceback.print_exc()
         shutil.rmtree(config_dir)
@@ -85,7 +85,6 @@ async def run_tests() -> None:
         report("Get config_flow", True, str(config_flow_mod))
     except Exception as e:
         report("Import config flow", False, str(e))
-        import traceback
 
         traceback.print_exc()
 
@@ -104,7 +103,6 @@ async def run_tests() -> None:
         )
     except Exception as e:
         report("User flow", False, str(e))
-        import traceback
 
         traceback.print_exc()
 
@@ -132,7 +130,6 @@ async def run_tests() -> None:
         )
     except Exception as e:
         report("Hassio discovery", False, str(e))
-        import traceback
 
         traceback.print_exc()
 
@@ -148,7 +145,6 @@ async def run_tests() -> None:
         report("OptionsFlow", ok)
     except Exception as e:
         report("OptionsFlow", False, str(e))
-        import traceback
 
         traceback.print_exc()
 
