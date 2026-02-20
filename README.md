@@ -29,10 +29,18 @@ This repository contains **two components that work together**:
    _Installed via HAOS Supervisor — not via HACS._
 
 2. **TellStick Local integration** (`custom_components/tellstick_local/`) –
-   a config-flow–based HA integration that connects to the app, subscribes to
-   RF events, auto-adds devices, and provides switch, light and sensor entities
-   plus device triggers for automations.
+   a config-flow–based HA integration (pure asyncio, no native dependencies) that
+   connects to the app's TCP sockets, subscribes to RF events, auto-adds devices,
+   and provides switch, light and sensor entities plus device triggers for automations.
    _Installed via HACS — not via the Supervisor._
+
+> **Why are both needed?**
+> HAOS only allows USB hardware passthrough to Supervisor-managed Docker containers
+> (apps) — custom integrations running inside HA Core have no USB access.
+> `telldusd` is also a compiled C daemon that cannot run in a Python process.
+> The app handles the hardware; the integration handles the HA-native experience.
+> Advanced users with `telldusd` running on an external machine can skip the app and
+> point the integration directly at that host.
 
 > **Terminology note:** HAOS 2026.2 renamed "Add-ons" to "Apps" in the UI.
 > The underlying system is unchanged — both names refer to the same

@@ -141,11 +141,30 @@ A Home Assistant integration that runs inside the HA Core Python process:
 A `hacs.json` at the repo root declares the category.
 **Not installed via the Supervisor Apps store.**
 
-### Why you need both
+### Why you need both — and why they can't be merged
 
-The app runs the hardware driver (`telldusd`) and bridges it to TCP.
-The integration is the HA-native layer that turns those TCP events into entities,
-automations, and device triggers. Neither is useful without the other.
+**Short answer: HAOS won't give a custom integration USB access. Only a Supervisor app (Docker container) can get USB passthrough.**
+
+The detailed constraints:
+
+| Constraint                                  | App                            | Integration                      |
+| ------------------------------------------- | ------------------------------ | -------------------------------- |
+| USB hardware passthrough (`usb: true`)      | ✅ Supervisor provides this    | ❌ Not available to integrations |
+| Runs compiled C daemon (`telldusd`)         | ✅ Built from source in Docker | ❌ Can't run native daemons      |
+| HA entities / config flow / device registry | ❌ Apps have no HA API access  | ✅ Integration's job             |
+| Automations / device triggers               | ❌                             | ✅                               |
+| Execution environment                       | Docker container (isolated)    | HA Core Python process           |
+
+`telldusd` is a **compiled C daemon** that needs `cmake`, `gcc`, and `libftdi` to build —
+it cannot run inside HA Core's Python process. And the TellStick USB device is only
+accessible through the Supervisor's USB passthrough, which is only available to apps.
+
+The integration uses a **pure asyncio TCP client** (no native libraries) to talk to the
+TCP sockets the app exposes. It has zero Python dependencies outside stdlib + HA.
+
+**If you don't want the app:** You'd need `telldusd` running on some external
+Linux machine and configure the integration to point at that host instead of the
+app's hostname. The integration will work either way — it just needs a TCP host/port.
 
 ---
 
@@ -153,20 +172,20 @@ automations, and device triggers. Neither is useful without the other.
 
 ### HAOS App (`tellsticklive/`)
 
-| File                                    | Purpose                                                                |
-| --------------------------------------- | ---------------------------------------------------------------------- |
-| `config.yaml`                           | App metadata, version (`dev` on branches), device schema               |
-| `Dockerfile`                            | Container build: installs telldus-core from source, socat, tellcore-py |
-| `rootfs/etc/cont-init.d/telldusd.sh`    | Generates `/etc/tellstick.conf` from add-on config at startup          |
-| `rootfs/etc/services.d/telldusd/run`    | Starts `telldusd`, waits for UNIX sockets, launches socat bridges      |
-| `rootfs/etc/services.d/telldusd/finish` | Halts add-on if telldusd crashes unexpectedly                          |
-| `rootfs/etc/services.d/stdin/run`       | Processes `hassio.addon_stdin` service calls (on/off/dim/list)         |
+| File                                    | Purpose                                                            |
+| --------------------------------------- | ------------------------------------------------------------------ |
+| `config.yaml`                           | App metadata, version (`dev` on branches), device schema           |
+| `Dockerfile`                            | Container build: compiles telldus-core from source, installs socat |
+| `rootfs/etc/cont-init.d/telldusd.sh`    | Generates `/etc/tellstick.conf` from add-on config at startup      |
+| `rootfs/etc/services.d/telldusd/run`    | Starts `telldusd`, waits for UNIX sockets, launches socat bridges  |
+| `rootfs/etc/services.d/telldusd/finish` | Halts add-on if telldusd crashes unexpectedly                      |
+| `rootfs/etc/services.d/stdin/run`       | Processes `hassio.addon_stdin` service calls (on/off/dim/list)     |
 
 ### Custom Integration (`custom_components/tellstick_local/`)
 
 | File                   | Purpose                                                                                                              |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `manifest.json`        | Domain, version, requirements (`tellcore-py`)                                                                        |
+| `manifest.json`        | Domain, version, no external requirements (pure asyncio TCP client)                                                  |
 | `const.py`             | **SOURCE OF TRUTH** – all domain constants, event type IDs, method bitmasks, signal templates                        |
 | `client.py`            | **SOURCE OF TRUTH** – asyncio TCP client; telldusd binary framing (big-endian uint32-prefixed frames, UTF-8 strings) |
 | `config_flow.py`       | Config flow: host/port entry, live connection validation, options flow                                               |
