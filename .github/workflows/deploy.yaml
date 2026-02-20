@@ -12,6 +12,13 @@ on:
         description: Release version (without v prefix)
         required: true
         type: string
+      architectures:
+        description: >-
+          JSON array of architectures to build
+          (default: all from config.yaml)
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -25,6 +32,7 @@ jobs:
       build: ${{ steps.information.outputs.build }}
       description: ${{ steps.information.outputs.description }}
       name: ${{ steps.information.outputs.name }}
+      owner: ${{ steps.owner.outputs.owner }}
       slug: ${{ steps.information.outputs.slug }}
       target: ${{ steps.information.outputs.target }}
       version: ${{ steps.version.outputs.version }}
@@ -36,6 +44,11 @@ jobs:
       - name: 🚀 Run app information action
         id: information
         uses: frenck/action-addon-information@ce1377e9851cf569c29329e65fb2c57e67ca0f69
+      - name: 🔡 Lowercase repository owner for Docker tags
+        id: owner
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: echo "owner=${OWNER,,}" >> "$GITHUB_OUTPUT"
       - name: 🏷 Extract release version
         id: version
         env:
@@ -58,7 +71,9 @@ jobs:
       packages: write
     strategy:
       matrix:
-        architecture: ${{ fromJson(needs.information.outputs.architectures) }}
+        architecture: >-
+          ${{ fromJson(inputs.architectures
+              || needs.information.outputs.architectures) }}
     steps:
       - name: ⤵️ Check out code from GitHub
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
@@ -118,8 +133,8 @@ jobs:
           file: ${{ needs.information.outputs.target }}/Dockerfile
           platforms: ${{ steps.flags.outputs.platform }}
           tags: |
-            ghcr.io/${{ github.repository_owner }}/${{ needs.information.outputs.slug }}/${{ matrix.architecture }}:latest
-            ghcr.io/${{ github.repository_owner }}/${{ needs.information.outputs.slug }}/${{ matrix.architecture }}:${{ needs.information.outputs.version }}
+            ghcr.io/${{ needs.information.outputs.owner }}/${{ needs.information.outputs.slug }}/${{ matrix.architecture }}:latest
+            ghcr.io/${{ needs.information.outputs.owner }}/${{ needs.information.outputs.slug }}/${{ matrix.architecture }}:${{ needs.information.outputs.version }}
           build-args: |
             BUILD_ARCH=${{ matrix.architecture }}
             BUILD_DATE=${{ steps.flags.outputs.date }}
