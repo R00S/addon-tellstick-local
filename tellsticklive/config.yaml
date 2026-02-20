@@ -1,6 +1,6 @@
 ---
 name: TellStick Local
-version: 2.0.10.0-test.main.20260220-194535
+version: 2.0.10.1-test.copilot-fix-integration-installation-issue.20260220-200221
 slug: tellsticklive
 image: ghcr.io/r00s/tellsticklive/{arch}
 description: TellStick and TellStick Duo local service (no cloud)
