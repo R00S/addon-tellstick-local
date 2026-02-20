@@ -189,15 +189,15 @@ TCP sockets the app exposes. It has zero Python dependencies outside stdlib + HA
 
 ### HAOS App (`tellsticklive/`)
 
-| File                                       | Purpose                                                            |
-| ------------------------------------------ | ------------------------------------------------------------------ |
-| `config.yaml`                              | App metadata, version (`dev` on branches), device schema           |
-| `Dockerfile`                               | Container build: compiles telldus-core from source, installs socat; bundles integration files |
-| `rootfs/etc/cont-init.d/integration.sh`    | Copies bundled integration to `/config/custom_components/` at startup |
-| `rootfs/etc/cont-init.d/telldusd.sh`       | Generates `/etc/tellstick.conf` from add-on config at startup      |
-| `rootfs/etc/services.d/telldusd/run`       | Starts `telldusd`, waits for UNIX sockets, launches socat bridges  |
-| `rootfs/etc/services.d/telldusd/finish`    | Halts add-on if telldusd crashes unexpectedly                      |
-| `rootfs/etc/services.d/stdin/run`          | Processes `hassio.addon_stdin` service calls (on/off/dim/list)     |
+| File                                    | Purpose                                                                                       |
+| --------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `config.yaml`                           | App metadata, version (`dev` on branches), device schema                                      |
+| `Dockerfile`                            | Container build: compiles telldus-core from source, installs socat; bundles integration files |
+| `rootfs/etc/cont-init.d/integration.sh` | Copies bundled integration to `/config/custom_components/` at startup                         |
+| `rootfs/etc/cont-init.d/telldusd.sh`    | Generates `/etc/tellstick.conf` from add-on config at startup                                 |
+| `rootfs/etc/services.d/telldusd/run`    | Starts `telldusd`, waits for UNIX sockets, launches socat bridges                             |
+| `rootfs/etc/services.d/telldusd/finish` | Halts add-on if telldusd crashes unexpectedly                                                 |
+| `rootfs/etc/services.d/stdin/run`       | Processes `hassio.addon_stdin` service calls (on/off/dim/list)                                |
 
 ### Custom Integration (`custom_components/tellstick_local/`)
 
