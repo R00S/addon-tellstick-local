@@ -399,6 +399,94 @@ Testing is manual on real HAOS with TellStick hardware:
 
 ---
 
+## 🛑 Known HA Breaking Changes (verified the hard way)
+
+These are **real breaking changes that broke this integration in production**.
+Always check the [HA developer blog](https://developers.home-assistant.io/blog/)
+for new ones when a user reports failures on a newer HA version.
+
+### `HassioServiceInfo` import moved (HA 2025.11)
+
+The old import was **removed** (not just deprecated) in HA Core 2025.11:
+
+```python
+# ❌ OLD — removed in HA 2025.11, causes ImportError:
+from homeassistant.components.hassio import HassioServiceInfo
+
+# ✅ NEW — required since HA 2025.2, sole path since 2025.11:
+from homeassistant.helpers.service_info.hassio import HassioServiceInfo
+```
+
+Same pattern applies to all ServiceInfo classes: `DhcpServiceInfo`,
+`SsdpServiceInfo`, `UsbServiceInfo`, `ZeroconfServiceInfo` — all moved from
+`homeassistant.components.<type>` to `homeassistant.helpers.service_info.<type>`.
+
+### OptionsFlow `config_entry` explicit assignment (HA 2025.12)
+
+Passing `config_entry` to `OptionsFlow.__init__` and setting
+`self.config_entry = config_entry` was **removed** in HA 2025.12:
+
+```python
+# ❌ OLD — raises error in HA 2025.12+:
+class MyOptionsFlow(OptionsFlow):
+    def __init__(self, config_entry):
+        self.config_entry = config_entry  # ← BREAKS
+
+# ✅ NEW — framework auto-provides self.config_entry after init:
+class MyOptionsFlow(OptionsFlow):
+    def __init__(self):
+        self._my_state = some_default
+    # Access self.config_entry in step methods (NOT in __init__)
+```
+
+Also update `async_get_options_flow` to not pass the entry:
+```python
+return MyOptionsFlow()  # ✅ no argument
+```
+
+### How to detect these early
+
+**Always run the integration test** after any change to integration Python code:
+```bash
+pip install homeassistant pyflakes
+python tests/test_ha_integration.py
+```
+If a new HA version breaks an import, the test will fail immediately with the
+exact `ImportError` or `TypeError`.
+
+---
+
+## 🛑 Shell Script Pitfalls (Alpine / BusyBox)
+
+The add-on container runs **Alpine Linux with BusyBox**. Many GNU tools behave
+differently or are missing entirely.
+
+### `grep -P` does not exist
+
+BusyBox `grep` does **not** support `-P` (Perl regex). This includes `\K`,
+lookahead, lookbehind, and other PCRE features. Commands using `grep -oP` will
+**silently fail** with exit code 2.
+
+```bash
+# ❌ BROKEN in Alpine — grep -P not supported:
+VERSION=$(grep -oP '"version":\s*"\K[^"]+' manifest.json)
+
+# ✅ CORRECT — use jq (always available via bashio):
+VERSION=$(jq -r '.version' manifest.json)
+```
+
+**Rule:** For JSON parsing in shell scripts, **always use `jq`**, never `grep`.
+`jq` is guaranteed available in all bashio-based add-on containers.
+
+### Other BusyBox gotchas
+
+- `sed -i` works but some GNU extensions don't (e.g. `\x00` hex escapes)
+- `find` lacks `-printf` — use `-exec` instead
+- `date` lacks `--date` — use busybox-compatible format strings
+- No `realpath` — use `readlink -f` instead
+
+---
+
 ## 🛑 NEVER Fabricate Code — Always Read the Source First
 
 **This is the #1 cause of failed releases.** AI agents tend to generate

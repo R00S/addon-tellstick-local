@@ -172,6 +172,22 @@ sensor:
 - Use `bashio::config 'option'` to read add-on configuration
 - Use `bashio::config.true "option"` to check boolean options
 
+**⚠️ Alpine / BusyBox pitfalls:**
+
+- `grep -P` (Perl regex) does **not exist** in BusyBox — use `jq` for JSON parsing
+- `jq` is always available in bashio-based containers
+- `sed -i` works but some GNU extensions don't (e.g. `\x00` hex escapes)
+- `find` lacks `-printf` — use `-exec` instead
+- No `realpath` — use `readlink -f` instead
+
+```bash
+# ❌ BROKEN: grep -oP not supported in Alpine BusyBox
+VERSION=$(grep -oP '"version":\s*"\K[^"]+' manifest.json)
+
+# ✅ CORRECT: use jq
+VERSION=$(jq -r '.version' manifest.json)
+```
+
 ### Service Call Handling (stdin service)
 
 The stdin service reads JSON from Home Assistant and executes tdtool commands:
@@ -215,6 +231,24 @@ Full end-to-end testing requires:
 - ShellCheck for bash scripts (use `-s bash` flag due to bashio shebang)
 - yamllint for YAML files
 - hadolint for Dockerfile
+
+### Known HA Breaking Changes
+
+These broke the integration in production. Check the
+[HA developer blog](https://developers.home-assistant.io/blog/) when users
+report failures on newer HA versions.
+
+- **`HassioServiceInfo` import** (removed from old path in HA 2025.11):
+  Must use `from homeassistant.helpers.service_info.hassio import HassioServiceInfo`
+  (not `from homeassistant.components.hassio`). Same for all `*ServiceInfo` classes.
+
+- **OptionsFlow `config_entry`** (broken in HA 2025.12):
+  `OptionsFlow.__init__` must NOT take `config_entry` param or set
+  `self.config_entry` manually. Framework auto-provides it after init.
+  Access `self.config_entry` in step methods, not in `__init__`.
+
+- **Always run `python tests/test_ha_integration.py`** after any integration
+  Python change to catch broken imports early.
 
 ## Key Dependencies
 
