@@ -14,6 +14,8 @@ startup: system
 init: false
 stdin: true
 usb: true
+discovery:
+  - tellstick_local
 options:
   devices:
     - id: 1
