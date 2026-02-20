@@ -52,7 +52,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     @callback
     def _event_callback(event: Any) -> None:
-        _handle_event(hass, entry, controller, event)
+        _handle_event(hass, entry, event)
 
     controller.add_callback(_event_callback)
     controller.start_event_listener()
@@ -94,7 +94,6 @@ async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> Non
 def _handle_event(
     hass: HomeAssistant,
     entry: ConfigEntry,
-    controller: TellStickController,
     event: Any,
 ) -> None:
     """Dispatch an incoming telldusd event."""
@@ -121,6 +120,17 @@ def _handle_raw_event(
 
     # Broadcast for entity listeners (state updates)
     async_dispatcher_send(hass, SIGNAL_EVENT.format(entry.entry_id), event)
+
+    # Fire an HA bus event so device triggers (automations) can listen
+    method = params.get("method", "")
+    if method in ("turnon", "turnoff"):
+        hass.bus.async_fire(
+            f"{DOMAIN}_event",
+            {
+                "device_uid": device_uid,
+                "type": "turned_on" if method == "turnon" else "turned_off",
+            },
+        )
 
     # Auto-add: fire a signal for platforms to create new entities
     if entry.options.get(CONF_AUTOMATIC_ADD, False):

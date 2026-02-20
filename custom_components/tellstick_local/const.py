@@ -3,8 +3,7 @@ from __future__ import annotations
 
 DOMAIN = "tellstick_local"
 
-# Config keys
-CONF_HOST = "host"
+# Config keys (CONF_HOST from homeassistant.const is used for host)
 CONF_COMMAND_PORT = "command_port"
 CONF_EVENT_PORT = "event_port"
 CONF_AUTOMATIC_ADD = "automatic_add"
