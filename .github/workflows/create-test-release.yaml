@@ -62,25 +62,31 @@ jobs:
             SUFFIX="${SAFE_BRANCH}"
           fi
 
-          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          # AwesomeVersion (used by HA Supervisor) classifies versions with
+          # hyphens as UNKNOWN and refuses to compare them, which causes
+          # "No update available" errors.  Use dots-only for the VERSION
+          # (which goes into config.yaml and Docker tags) and keep the
+          # human-readable git TAG separate.
+          TIMESTAMP=$(date +%Y%m%d%H%M%S)
 
+          # Version: dots-only so Supervisor can compare (SIMPLEVER strategy)
+          TEST_VERSION="${VERSION}.${TIMESTAMP}"
+
+          # Tag: human-readable, includes release type and branch
           case "$INPUT_RELEASE_TYPE" in
-            test)
-              TEST_VERSION="${VERSION}-test.${SUFFIX}.${TIMESTAMP}"
-              ;;
             beta)
-              TEST_VERSION="${VERSION}-beta.${SUFFIX}"
+              TAG_SUFFIX="beta.${SUFFIX}"
               ;;
             rc)
-              TEST_VERSION="${VERSION}-rc.${SUFFIX}"
+              TAG_SUFFIX="rc.${SUFFIX}"
               ;;
             *)
-              TEST_VERSION="${VERSION}-test.${SUFFIX}.${TIMESTAMP}"
+              TAG_SUFFIX="test.${SUFFIX}"
               ;;
           esac
 
           echo "test=$TEST_VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=v${TEST_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${TEST_VERSION}-${TAG_SUFFIX}" >> "$GITHUB_OUTPUT"
 
       - name: Update manifest.json with test version
         env:
