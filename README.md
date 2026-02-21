@@ -34,17 +34,17 @@ YAML file editing.
 
 ### What you get
 
-| Capability              | Description                                                                    |
-| ----------------------- | ------------------------------------------------------------------------------ |
-| **Auto install prompt** | Install the app → HA automatically offers "Set up TellStick Local?"            |
-| **Press-to-discover**   | Enable automatic add → press any remote → device appears in HA                 |
+| Capability              | Description                                                                      |
+| ----------------------- | -------------------------------------------------------------------------------- |
+| **Auto install prompt** | Install the app → HA automatically offers "Set up TellStick Local?"              |
+| **Press-to-discover**   | Enable automatic add → press any remote → device appears in HA                   |
 | **Add device button**   | Click "Add device" on the integration card → pick protocol → send pairing signal |
-| **Per-device deletion** | Delete any device (including auto-detected) from its device page ⋮ menu        |
-| **GUI-only management** | Add, rename and remove devices via HA UI — no YAML, no restart                 |
-| **Local push**          | RF events arrive in real time; no polling, no cloud                            |
-| **Automations**         | Device triggers on any 433 MHz button press, usable directly in HA automations |
-| **Companion app**       | Identical UX in the HA Android/iOS app                                         |
-| **No Telldus Live**     | Zero cloud, zero account, zero internet dependency                             |
+| **Per-device deletion** | Delete any device (including auto-detected) from its device page ⋮ menu          |
+| **GUI-only management** | Add, rename and remove devices via HA UI — no YAML, no restart                   |
+| **Local push**          | RF events arrive in real time; no polling, no cloud                              |
+| **Automations**         | Device triggers on any 433 MHz button press, usable directly in HA automations   |
+| **Companion app**       | Identical UX in the HA Android/iOS app                                           |
+| **No Telldus Live**     | Zero cloud, zero account, zero internet dependency                               |
 
 ---
 
