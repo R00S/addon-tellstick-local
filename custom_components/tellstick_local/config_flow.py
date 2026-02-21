@@ -235,24 +235,12 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Show the main options menu."""
-        self._automatic_add = self.config_entry.options.get(
-            CONF_AUTOMATIC_ADD, DEFAULT_AUTOMATIC_ADD
-        )
-
-        menu_options = ["settings", "add_device"]
-
-        return self.async_show_menu(
-            step_id="init",
-            menu_options=menu_options,
-        )
-
-    async def async_step_settings(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Manage automatic-add toggle."""
+        """Show detection mode settings (sprocket → direct form, no menu)."""
         existing_devices: dict[str, Any] = self.config_entry.options.get(
             CONF_DEVICES, {}
+        )
+        self._automatic_add = self.config_entry.options.get(
+            CONF_AUTOMATIC_ADD, DEFAULT_AUTOMATIC_ADD
         )
 
         if user_input is not None:
@@ -265,7 +253,7 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
             )
 
         return self.async_show_form(
-            step_id="settings",
+            step_id="init",
             data_schema=vol.Schema(
                 {
                     vol.Required(

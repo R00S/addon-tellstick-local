@@ -26,15 +26,8 @@
   "options": {
     "step": {
       "init": {
-        "title": "TellStick Local",
-        "description": "To remove a device, go to the device page and select **Delete** from the device menu (⋮ icon).",
-        "menu_options": {
-          "settings": "Detection mode – enable or disable automatic device discovery",
-          "add_device": "Add device – manually pair a new 433 MHz device"
-        }
-      },
-      "settings": {
-        "title": "Settings",
+        "title": "TellStick Local – Detection mode",
+        "description": "Enable automatic discovery to add devices by pressing their 433 MHz remote.\n\nTo remove a device, go to the device page and select **Delete** from the device menu (⋮ icon).",
         "data": {
           "automatic_add": "Automatically add new devices when they send a signal"
         }
