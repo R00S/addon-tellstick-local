@@ -432,12 +432,19 @@ class TellStickLocalAddDeviceFlow(ConfigSubentryFlow):
 
                 # Dispatch SIGNAL_NEW_DEVICE so platform listeners create
                 # the entity immediately (without needing a restart).
+                # The synthetic event's raw string must produce an
+                # event.device_id that matches device_uid exactly.
+                # device_uid is "proto_model_house_unit" (normalized),
+                # so we split it back into the components.
+                uid_parts = device_uid.split("_")
+                # uid_parts: [protocol, model, house, unit] (may have
+                # fewer if some parts were empty)
                 raw_parts = [
                     "class:command",
-                    f"protocol:{self._new_device.get(CONF_DEVICE_PROTOCOL, '')}",
-                    f"model:{self._new_device.get(CONF_DEVICE_MODEL, '')}",
-                    f"house:{self._new_device.get(CONF_DEVICE_HOUSE, '')}",
-                    f"unit:{self._new_device.get(CONF_DEVICE_UNIT, '')}",
+                    f"protocol:{uid_parts[0] if len(uid_parts) > 0 else ''}",
+                    f"model:{uid_parts[1] if len(uid_parts) > 1 else ''}",
+                    f"house:{uid_parts[2] if len(uid_parts) > 2 else ''}",
+                    f"unit:{uid_parts[3] if len(uid_parts) > 3 else ''}",
                     "method:turnon",
                 ]
                 synthetic_event = RawDeviceEvent(
