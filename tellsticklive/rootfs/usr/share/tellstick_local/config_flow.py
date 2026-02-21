@@ -9,12 +9,17 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.config_entries import (
-    ConfigEntry,
-    ConfigSubentryFlow,
-    SubentryFlowResult,
-)
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import callback
+
+try:
+    from homeassistant.config_entries import (
+        ConfigSubentryFlow,
+        SubentryFlowResult,
+    )
+except ImportError:
+    ConfigSubentryFlow = None  # type: ignore[assignment,misc]
+    SubentryFlowResult = dict  # type: ignore[assignment,misc]
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.service_info.hassio import HassioServiceInfo
 from homeassistant.const import CONF_HOST
@@ -22,6 +27,7 @@ from homeassistant.data_entry_flow import FlowResult
 
 from .client import RawDeviceEvent, SensorEvent, TellStickController
 from .const import (
+    CONF_AUTOMATIC_ADD,
     CONF_COMMAND_PORT,
     CONF_DEVICE_HOUSE,
     CONF_DEVICE_MODEL,
@@ -30,12 +36,14 @@ from .const import (
     CONF_DEVICE_UNIT,
     CONF_DEVICES,
     CONF_EVENT_PORT,
+    DEFAULT_AUTOMATIC_ADD,
     DEFAULT_COMMAND_PORT,
     DEFAULT_EVENT_PORT,
     DEFAULT_HOST,
     DEVICE_CATALOG_LABELS,
     DEVICE_CATALOG_MAP,
     DOMAIN,
+    ENTRY_DEVICE_ID_MAP,
     ENTRY_TELLSTICK_CONTROLLER,
     SIGNAL_NEW_DEVICE,
     WIDGET_PARAMS,
@@ -287,6 +295,15 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             device_uid = info["device_uid"]
             name = user_input.get("name", default_name)
 
+            # Register RF device with telldusd so on/off commands work
+            entry_data = self.hass.data.get(DOMAIN, {}).get(entry_id, {})
+            controller: TellStickController | None = entry_data.get(
+                ENTRY_TELLSTICK_CONTROLLER
+            )
+            device_id_map: dict[str, int] = entry_data.get(
+                ENTRY_DEVICE_ID_MAP, {}
+            )
+
             # Store the device in entry.options
             existing_devices = dict(entry.options.get(CONF_DEVICES, {}))
             if dev_type == "sensor":
@@ -305,6 +322,22 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_DEVICE_HOUSE: info.get("house", ""),
                     CONF_DEVICE_UNIT: info.get("unit", ""),
                 }
+                # Register with telldusd so commands work immediately
+                if controller:
+                    try:
+                        protocol = info.get("protocol", "")
+                        model_str = info.get("model", "")
+                        house_str = info.get("house", "")
+                        unit_str = info.get("unit", "")
+                        telldusd_id = await controller.find_or_add_device(
+                            name, protocol, model_str, house_str, unit_str,
+                        )
+                        device_id_map[device_uid] = telldusd_id
+                    except Exception:  # noqa: BLE001
+                        _LOGGER.warning(
+                            "Could not register discovered device %s with telldusd",
+                            device_uid,
+                        )
             new_options = dict(entry.options)
             new_options[CONF_DEVICES] = existing_devices
             self.hass.config_entries.async_update_entry(
@@ -356,16 +389,152 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             },
         )
 
-    @classmethod
+    @staticmethod
     @callback
-    def async_get_supported_subentry_types(
-        cls, config_entry: ConfigEntry
-    ) -> dict[str, type[ConfigSubentryFlow]]:
-        """Return subentries supported by this handler."""
-        return {SUBENTRY_TYPE_DEVICE: TellStickLocalAddDeviceFlow}
+    def async_get_options_flow(
+        config_entry: ConfigEntry,
+    ) -> config_entries.OptionsFlow:
+        """Return the options flow handler."""
+        return TellStickLocalOptionsFlow()
+
+    if ConfigSubentryFlow is not None:
+
+        @classmethod  # type: ignore[misc]
+        @callback
+        def async_get_supported_subentry_types(
+            cls, config_entry: ConfigEntry
+        ) -> dict[str, type[ConfigSubentryFlow]]:
+            """Return subentries supported by this handler."""
+            return {SUBENTRY_TYPE_DEVICE: TellStickLocalAddDeviceFlow}
 
 
-class TellStickLocalAddDeviceFlow(ConfigSubentryFlow):
+class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
+    """Handle options for TellStick Local."""
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Show options menu."""
+        devices = self.config_entry.options.get(CONF_DEVICES, {})
+        menu_options = ["settings"]
+        if devices:
+            menu_options.append("edit_device")
+        return self.async_show_menu(step_id="init", menu_options=menu_options)
+
+    async def async_step_settings(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Configure integration settings."""
+        if user_input is not None:
+            new_options = dict(self.config_entry.options)
+            new_options[CONF_AUTOMATIC_ADD] = user_input[CONF_AUTOMATIC_ADD]
+            return self.async_create_entry(title="", data=new_options)
+
+        current = self.config_entry.options.get(
+            CONF_AUTOMATIC_ADD, DEFAULT_AUTOMATIC_ADD
+        )
+        return self.async_show_form(
+            step_id="settings",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_AUTOMATIC_ADD, default=current): bool,
+                }
+            ),
+        )
+
+    async def async_step_edit_device(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Select a device to view/edit."""
+        devices = self.config_entry.options.get(CONF_DEVICES, {})
+        if not devices:
+            return self.async_abort(reason="no_devices")
+
+        if user_input is not None:
+            self._edit_uid = user_input["device"]
+            return await self.async_step_device_detail()
+
+        # Build device selector: "name (protocol/model house:X unit:Y)"
+        labels: dict[str, str] = {}
+        for uid, cfg in devices.items():
+            name = cfg.get(CONF_DEVICE_NAME, uid)
+            protocol = cfg.get(CONF_DEVICE_PROTOCOL, "")
+            model = cfg.get(CONF_DEVICE_MODEL, "")
+            house = cfg.get(CONF_DEVICE_HOUSE, "")
+            unit = cfg.get(CONF_DEVICE_UNIT, "")
+            detail = f"{protocol}/{model}" if model else protocol
+            if house:
+                detail += f" house:{house}"
+            if unit:
+                detail += f" unit:{unit}"
+            labels[uid] = f"{name} ({detail})" if detail else name
+
+        return self.async_show_form(
+            step_id="edit_device",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("device"): vol.In(labels),
+                }
+            ),
+        )
+
+    async def async_step_device_detail(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """View and edit device house/unit codes."""
+        uid = self._edit_uid
+        devices = dict(self.config_entry.options.get(CONF_DEVICES, {}))
+        cfg = dict(devices.get(uid, {}))
+
+        if user_input is not None:
+            # Update the device config
+            cfg[CONF_DEVICE_NAME] = user_input["name"]
+            if "house" in user_input:
+                cfg[CONF_DEVICE_HOUSE] = str(user_input["house"])
+            if "unit" in user_input:
+                cfg[CONF_DEVICE_UNIT] = str(user_input["unit"])
+            # Update params dict if present
+            if "params" in cfg:
+                params = dict(cfg["params"])
+                if "house" in user_input:
+                    params["house"] = str(user_input["house"])
+                if "unit" in user_input:
+                    params["unit"] = str(user_input["unit"])
+                cfg["params"] = params
+            devices[uid] = cfg
+            new_options = dict(self.config_entry.options)
+            new_options[CONF_DEVICES] = devices
+            return self.async_create_entry(title="", data=new_options)
+
+        name = cfg.get(CONF_DEVICE_NAME, uid)
+        house = cfg.get(CONF_DEVICE_HOUSE, "")
+        unit = cfg.get(CONF_DEVICE_UNIT, "")
+        protocol = cfg.get(CONF_DEVICE_PROTOCOL, "")
+        model = cfg.get(CONF_DEVICE_MODEL, "")
+
+        schema_dict: dict[Any, Any] = {
+            vol.Required("name", default=name): str,
+        }
+        # Only show house/unit for non-sensor devices
+        if not uid.startswith("sensor_"):
+            schema_dict[vol.Optional("house", default=house)] = str
+            schema_dict[vol.Optional("unit", default=unit)] = str
+
+        return self.async_show_form(
+            step_id="device_detail",
+            data_schema=vol.Schema(schema_dict),
+            description_placeholders={
+                "device_uid": uid,
+                "protocol": protocol,
+                "model": model,
+            },
+        )
+
+
+_SubentryBase = ConfigSubentryFlow if ConfigSubentryFlow is not None else config_entries.OptionsFlow
+
+
+class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
     """Handle adding a 433 MHz device via the 'Add device' button."""
 
     _device_type: str = ""
@@ -493,6 +662,14 @@ class TellStickLocalAddDeviceFlow(ConfigSubentryFlow):
                     self._new_device.get(CONF_DEVICE_HOUSE, ""),
                     self._new_device.get(CONF_DEVICE_UNIT, ""),
                 )
+
+                # Store telldusd_id in runtime map so the entity can
+                # send commands immediately (without a restart)
+                device_id_map: dict[str, int] = entry_data.get(
+                    ENTRY_DEVICE_ID_MAP, {}
+                )
+                device_id_map[device_uid] = telldusd_id
+
                 # Store in entry.options[CONF_DEVICES]
                 existing_devices = dict(entry.options.get(CONF_DEVICES, {}))
                 existing_devices[device_uid] = {

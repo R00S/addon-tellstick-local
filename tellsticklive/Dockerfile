@@ -36,7 +36,7 @@ RUN apk add --no-cache \
     && sed -i \
         "/\<sys\/socket.h\>/a \#include \<sys\/select.h\>" \
         common/Socket_unix.cpp \
-    && python3 -c "f=open('service/ProtocolNexa.cpp'); c=f.read(); f.close(); old='\t\t}\n\t\treturn str;\n\t}\n\treturn getStringSelflearning(method, data);'; new='\t\t} else if (ts->pid() == 0x0c31) {\n\t\t\t// TellStick Duo: repeat learn signal for receivers that need\n\t\t\t// multiple transmissions for reliable learning\n\t\t\tfor (int i = 0; i < 5; ++i) {\n\t\t\t\tcontroller->send(str);\n\t\t\t}\n\t\t}\n\t\treturn str;\n\t}\n\treturn getStringSelflearning(method, data);'; assert old in c, 'Patch target not found in ProtocolNexa.cpp'; c=c.replace(old,new,1); f=open('service/ProtocolNexa.cpp','w'); f.write(c); f.close(); print('ProtocolNexa.cpp patched: TellStick Duo learn signal repetition added')" \
+    && python3 -c "f=open('service/ProtocolNexa.cpp'); c=f.read(); f.close(); old='\t\t}\n\t\treturn str;\n\t}\n\treturn getStringSelflearning(method, data);'; new='\t\t} else if (ts->pid() == 0x0c31) {\n\t\t\t// TellStick Duo: use firmware-level repeat for picky receivers\n\t\t\tstr.insert(0, 1, 2);  // Repeat two times\n\t\t\tstr.insert(0, 1, (char)0x52);  // R prefix\n\t\t\tfor (int i = 0; i < 5; ++i) {\n\t\t\t\tcontroller->send(str);\n\t\t\t}\n\t\t}\n\t\treturn str;\n\t}\n\treturn getStringSelflearning(method, data);'; assert old in c, 'Patch target not found in ProtocolNexa.cpp'; c=c.replace(old,new,1); f=open('service/ProtocolNexa.cpp','w'); f.write(c); f.close(); print('ProtocolNexa.cpp patched: TellStick Duo learn signal with R-prefix added')" \
     && grep -q 'pid() == 0x0c31' service/ProtocolNexa.cpp \
     && cmake . \
         -DBUILD_LIBTELLDUS-CORE=ON \

@@ -34,6 +34,41 @@
       "entry_not_found": "TellStick Local integration not found. Please set it up first."
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "menu_options": {
+          "settings": "Settings",
+          "edit_device": "View / edit a device"
+        }
+      },
+      "settings": {
+        "title": "TellStick Local settings",
+        "data": {
+          "automatic_add": "Automatically add new devices (when off, new devices appear as 'Discovered' for manual confirmation)"
+        }
+      },
+      "edit_device": {
+        "title": "Select a device",
+        "description": "Pick a device to view or edit its house/unit codes.",
+        "data": {
+          "device": "Device"
+        }
+      },
+      "device_detail": {
+        "title": "Edit device: {device_uid}",
+        "description": "Protocol: **{protocol}** / Model: **{model}**\n\nChange the name or house/unit codes below.",
+        "data": {
+          "name": "Device name",
+          "house": "House code",
+          "unit": "Unit code"
+        }
+      }
+    },
+    "abort": {
+      "no_devices": "No devices to edit."
+    }
+  },
   "config_subentries": {
     "device": {
       "initiate_flow": {

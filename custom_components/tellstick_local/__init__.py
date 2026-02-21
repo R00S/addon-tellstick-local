@@ -18,6 +18,7 @@ from .client import (
     TellStickController,
 )
 from .const import (
+    CONF_AUTOMATIC_ADD,
     CONF_COMMAND_PORT,
     CONF_DEVICE_HOUSE,
     CONF_DEVICE_MODEL,
@@ -26,6 +27,7 @@ from .const import (
     CONF_DEVICE_UNIT,
     CONF_DEVICES,
     CONF_EVENT_PORT,
+    DEFAULT_AUTOMATIC_ADD,
     DOMAIN,
     ENTRY_DEVICE_ID_MAP,
     ENTRY_TELLSTICK_CONTROLLER,
@@ -122,9 +124,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _on_hass_stop)
     )
 
+    # Listen for options changes (reload only when automatic_add changes)
+    entry.async_on_unload(entry.add_update_listener(_async_options_updated))
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     return True
+
+
+async def _async_options_updated(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> None:
+    """Reload the integration only when the automatic_add toggle changes."""
+    # We read the current automatic_add from entry.options.  On initial setup
+    # it defaults to True.  When the user toggles it via the options flow, the
+    # option changes and we must reload so the event handler picks up the new
+    # value.  Device additions/edits must NOT trigger a reload — they use
+    # signals to create entities on the fly.
+    pass  # No reload needed — options are read live from entry.options
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -235,6 +252,7 @@ def _handle_raw_event(
         )
 
     stored_devices = entry.options.get(CONF_DEVICES, {})
+    automatic_add = entry.options.get(CONF_AUTOMATIC_ADD, DEFAULT_AUTOMATIC_ADD)
 
     if device_uid in stored_devices:
         # Known device — fire SIGNAL_NEW_DEVICE so platforms can revive
@@ -243,8 +261,11 @@ def _handle_raw_event(
         async_dispatcher_send(
             hass, SIGNAL_NEW_DEVICE.format(entry.entry_id), event
         )
+    elif automatic_add:
+        # Auto-add mode: immediately add the device and fire signal
+        _auto_add_device(hass, entry, device_uid, params, event)
     else:
-        # Unknown device — fire a discovery config flow.  The device will
+        # Discovery mode: fire a discovery config flow.  The device will
         # appear in the "Discovered" section of Settings → Devices & Services.
         # The user clicks Configure → names it → it becomes a stored device.
         _fire_device_discovery(hass, entry, device_uid, params)
@@ -281,6 +302,63 @@ def _fire_device_discovery(
     )
 
 
+def _auto_add_device(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    device_uid: str,
+    params: dict[str, str],
+    event: RawDeviceEvent,
+) -> None:
+    """Auto-add a new device: persist in options, register with telldusd, fire signal."""
+    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
+    discovered: set[str] = entry_data.get("_discovered_uids", set())
+    if device_uid in discovered:
+        return
+    discovered.add(device_uid)
+
+    protocol = params.get("protocol", "")
+    model = params.get("model", "")
+    house = params.get("house", "")
+    unit = params.get("unit", params.get("code", ""))
+    name = f"TellStick {device_uid}"
+
+    # Persist immediately
+    existing_devices = dict(entry.options.get(CONF_DEVICES, {}))
+    existing_devices[device_uid] = {
+        CONF_DEVICE_NAME: name,
+        CONF_DEVICE_PROTOCOL: protocol,
+        CONF_DEVICE_MODEL: model,
+        CONF_DEVICE_HOUSE: house,
+        CONF_DEVICE_UNIT: unit,
+    }
+    new_options = dict(entry.options)
+    new_options[CONF_DEVICES] = existing_devices
+    hass.config_entries.async_update_entry(entry, options=new_options)
+
+    # Register with telldusd and store ID so commands work
+    async def _register_and_signal() -> None:
+        controller: TellStickController | None = entry_data.get(
+            ENTRY_TELLSTICK_CONTROLLER
+        )
+        device_id_map: dict[str, int] = entry_data.get(ENTRY_DEVICE_ID_MAP, {})
+        if controller:
+            try:
+                telldusd_id = await controller.find_or_add_device(
+                    name, protocol, model, house, unit,
+                )
+                device_id_map[device_uid] = telldusd_id
+            except Exception:  # noqa: BLE001
+                _LOGGER.warning(
+                    "Could not register auto-added device %s with telldusd",
+                    device_uid,
+                )
+        async_dispatcher_send(
+            hass, SIGNAL_NEW_DEVICE.format(entry.entry_id), event
+        )
+
+    hass.async_create_task(_register_and_signal())
+
+
 def _handle_device_event(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -314,6 +392,7 @@ def _handle_sensor_event(
 
     # Check if this sensor is already stored (known)
     stored_devices = entry.options.get(CONF_DEVICES, {})
+    automatic_add = entry.options.get(CONF_AUTOMATIC_ADD, DEFAULT_AUTOMATIC_ADD)
     suffix = _SENSOR_SUFFIX.get(event.data_type)
     sensor_prefix = f"sensor_{event.sensor_id}_"
     is_known = any(uid.startswith(sensor_prefix) for uid in stored_devices)
@@ -323,6 +402,27 @@ def _handle_sensor_event(
         async_dispatcher_send(
             hass, SIGNAL_NEW_DEVICE.format(entry.entry_id), event
         )
+    elif suffix and automatic_add:
+        # Auto-add: persist sensor and fire signal
+        sensor_uid = f"sensor_{event.sensor_id}_{suffix}"
+        entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
+        discovered: set[str] = entry_data.get("_discovered_uids", set())
+        if sensor_uid not in discovered:
+            discovered.add(sensor_uid)
+            existing_devices = dict(stored_devices)
+            existing_devices[sensor_uid] = {
+                CONF_DEVICE_NAME: f"TellStick sensor {event.sensor_id} {suffix}",
+                CONF_DEVICE_PROTOCOL: event.protocol or "",
+                CONF_DEVICE_MODEL: event.model or "",
+                "sensor_id": event.sensor_id,
+                "data_type": event.data_type,
+            }
+            new_options = dict(entry.options)
+            new_options[CONF_DEVICES] = existing_devices
+            hass.config_entries.async_update_entry(entry, options=new_options)
+            async_dispatcher_send(
+                hass, SIGNAL_NEW_DEVICE.format(entry.entry_id), event
+            )
     elif suffix:
         # Unknown sensor — fire a discovery config flow
         sensor_uid = f"sensor_{event.sensor_id}_{suffix}"

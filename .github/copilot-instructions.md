@@ -3,6 +3,27 @@
 ```
 ████████████████████████████████████████████████████████████████████████████████
 █                                                                              █
+█   🛑🛑🛑 READ THIS FIRST — VERSION BUMPING RULES 🛑🛑🛑                    █
+█                                                                              █
+█   manifest.json version = X.Y.Z.W                                           █
+█                                                                              █
+█   W = bump between prompts WITHIN SAME AGENT SESSION (same PR)              █
+█   Z = bump when a NEW AGENT starts (new session / new PR)                   █
+█   Y = minor feature release                                                 █
+█   X = major release                                                          █
+█                                                                              █
+█   CURRENT VERSION: 2.1.0.7                                                   █
+█   (bump W → 2.1.0.8, 2.1.0.9, etc. for next prompt in this session)        █
+█   (new agent → 2.1.1.0)                                                     █
+█                                                                              █
+█   config.yaml version MUST ALWAYS be 'dev' on branches (linter-enforced)    █
+█                                                                              █
+████████████████████████████████████████████████████████████████████████████████
+```
+
+```
+████████████████████████████████████████████████████████████████████████████████
+█                                                                              █
 █   🛑 CRITICAL: SOURCE OF TRUTH FOR DIFFERENT DATA 🛑                        █
 █                                                                              █
 █   ADD-ON CONFIG (devices, protocols):                                        █

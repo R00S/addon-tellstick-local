@@ -160,32 +160,27 @@ the house/unit code.
 Once paired, you can control the device with normal on/off commands through the
 **TellStick Local** integration.
 
-### Luxorparts 50969 and similar switches
+### ⚠️ Luxorparts 50969/50970 — NOT compatible
 
-The Luxorparts 50969 remote sends a **two-part signal**: first a codeswitch signal,
-then a self-learning signal. The TellStick Duo detects the remote as a **codeswitch**
-device (e.g., house A, unit 3), but the 50969 **receiver only responds to the
-self-learning protocol**.
+The Luxorparts / Cleverio 433 MHz switches (50969, 50970, 50988, 50989, 50990, etc.)
+use a **proprietary encrypted protocol** that is NOT arctech/selflearning.
 
-**If you configure the device as `codeswitch` based on what the TellStick Duo detects
-from the remote, the switch will NOT respond.** You must configure it as
-`selflearning-switch` and pair it using the learn function described above.
+The TellStick Duo will **detect** button presses from a Luxorparts remote (they show up
+as arctech/selflearning, everflourish, and waveman events), but these are **false positive
+decodings** — the actual data uses nibble-based substitution encryption with XOR tables
+that no telldus-core protocol supports.
 
-The 50969 receiver learns from **ON signals only**. The `learn` function handles
-this correctly.
+**The TellStick Duo cannot teach or control Luxorparts receivers.** Sending arctech
+learn signals will not work because the receiver expects encrypted Luxorparts-specific
+data. This is a hardware/firmware limitation — the TellStick's fixed protocol set does
+not include the Luxorparts protocol.
 
-**Example configuration for Luxorparts 50969:**
+**Verified by analysis of the [Homey Luxorparts app](https://github.com/TheHomeyAppBackupRepositories/se.luxorparts-1):**
+the protocol uses a custom 24-bit encrypted payload (3 bytes: address + count + state + unit),
+encrypted using substitution tables before transmission.
 
-```yaml
-devices:
-  - id: 1
-    name: "Luxorparts Switch"
-    protocol: arctech
-    model: selflearning-switch
-    house: "5096900"
-    unit: "1"
-    learn: true
-```
+For Luxorparts devices, consider using a Homey hub or an RFXtrx433E (which has
+firmware-updateable protocol support).
 
 ---
 

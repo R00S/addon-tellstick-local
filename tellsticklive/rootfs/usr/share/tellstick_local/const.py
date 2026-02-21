@@ -6,6 +6,7 @@ DOMAIN = "tellstick_local"
 # Config keys (CONF_HOST from homeassistant.const is used for host)
 CONF_COMMAND_PORT = "command_port"
 CONF_EVENT_PORT = "event_port"
+CONF_AUTOMATIC_ADD = "automatic_add"
 # Device storage keys (in entry.options["devices"])
 CONF_DEVICES = "devices"
 CONF_DEVICE_PROTOCOL = "protocol"
@@ -18,6 +19,7 @@ CONF_DEVICE_NAME = "name"
 DEFAULT_HOST = "tellsticklive"  # add-on slug = hostname on the Supervisor network
 DEFAULT_COMMAND_PORT = 50800
 DEFAULT_EVENT_PORT = 50801
+DEFAULT_AUTOMATIC_ADD = True
 
 # telldusd event types
 TELLDUSD_DEVICE_EVENT = 1
@@ -232,7 +234,6 @@ DEVICE_CATALOG: list[tuple[str, str, str, int]] = [
     ("KlikAanKlikUit — Code switch", "arctech", "codeswitch:klikaanklikuit", 1),
     ("KlikAanKlikUit — Self-learning dimmer", "arctech", "selflearning-dimmer:klikaanklikuit", 8),
     ("KlikAanKlikUit — Self-learning on/off", "arctech", "selflearning-switch:klikaanklikuit", 8),
-    ("Luxorparts — Self-learning on/off", "arctech", "selflearning-switch:luxorparts", 8),
     ("Nexa — Bell", "arctech", "bell:nexa", 4),
     ("Nexa — Code switch", "arctech", "codeswitch:nexa", 1),
     ("Nexa — Self-learning dimmer", "arctech", "selflearning-dimmer:nexa", 8),
