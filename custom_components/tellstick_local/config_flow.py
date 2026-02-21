@@ -15,11 +15,12 @@ from homeassistant.config_entries import (
     SubentryFlowResult,
 )
 from homeassistant.core import callback
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.service_info.hassio import HassioServiceInfo
 from homeassistant.const import CONF_HOST
 from homeassistant.data_entry_flow import FlowResult
 
-from .client import TellStickController
+from .client import RawDeviceEvent, TellStickController
 from .const import (
     CONF_AUTOMATIC_ADD,
     CONF_COMMAND_PORT,
@@ -37,7 +38,9 @@ from .const import (
     DEVICE_CATALOG_LABELS,
     DEVICE_CATALOG_MAP,
     DOMAIN,
+    ENTRY_DEVICE_ID_MAP,
     ENTRY_TELLSTICK_CONTROLLER,
+    SIGNAL_NEW_DEVICE,
     WIDGET_PARAMS,
     build_device_uid,
 )
@@ -419,6 +422,34 @@ class TellStickLocalAddDeviceFlow(ConfigSubentryFlow):
                 self.hass.config_entries.async_update_entry(
                     entry, options=new_options
                 )
+
+                # Record the telldusd ID so the new entity can control it
+                entry_data = self.hass.data.get(DOMAIN, {}).get(
+                    entry.entry_id, {}
+                )
+                device_id_map = entry_data.get(ENTRY_DEVICE_ID_MAP, {})
+                device_id_map[device_uid] = telldusd_id
+
+                # Dispatch SIGNAL_NEW_DEVICE so platform listeners create
+                # the entity immediately (without needing a restart).
+                raw_parts = [
+                    "class:command",
+                    f"protocol:{self._new_device.get(CONF_DEVICE_PROTOCOL, '')}",
+                    f"model:{self._new_device.get(CONF_DEVICE_MODEL, '')}",
+                    f"house:{self._new_device.get(CONF_DEVICE_HOUSE, '')}",
+                    f"unit:{self._new_device.get(CONF_DEVICE_UNIT, '')}",
+                    "method:turnon",
+                ]
+                synthetic_event = RawDeviceEvent(
+                    raw=";".join(raw_parts) + ";",
+                    controller_id=0,
+                )
+                async_dispatcher_send(
+                    self.hass,
+                    SIGNAL_NEW_DEVICE.format(entry.entry_id),
+                    synthetic_event,
+                )
+
                 # Device is stored in options — don't create a subentry
                 # record because orphan subentry records cause the HA
                 # frontend to show a confusing "Devices that don't belong

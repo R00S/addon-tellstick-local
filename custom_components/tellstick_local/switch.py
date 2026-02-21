@@ -12,7 +12,6 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .client import DeviceEvent, RawDeviceEvent, TellStickController
 from .const import (
-    CONF_AUTOMATIC_ADD,
     CONF_DEVICE_MODEL,
     CONF_DEVICE_NAME,
     CONF_DEVICE_PROTOCOL,
@@ -93,7 +92,9 @@ async def async_setup_entry(
         if not _is_switch(protocol, model):
             return
         known.add(uid)
-        name = f"TellStick {uid}"
+        # Use stored name if available, otherwise generate one
+        stored = entry.options.get(CONF_DEVICES, {}).get(uid, {})
+        name = stored.get(CONF_DEVICE_NAME) or f"TellStick {uid}"
         entity = TellStickSwitch(
             entry_id=entry.entry_id,
             device_uid=uid,
@@ -101,13 +102,16 @@ async def async_setup_entry(
             protocol=protocol,
             model=model,
             controller=controller,
+            device_id=device_id_map.get(uid),
         )
         async_add_entities([entity])
 
-    if entry.options.get(CONF_AUTOMATIC_ADD, False):
-        entry.async_on_unload(
-            async_dispatcher_connect(hass, new_device_signal, _async_new_device)
-        )
+    # Always listen for new device signals — manually added devices (via the
+    # "Add device" button) dispatch this signal immediately, while auto-detected
+    # devices are gated by automatic_add in __init__._handle_raw_event.
+    entry.async_on_unload(
+        async_dispatcher_connect(hass, new_device_signal, _async_new_device)
+    )
 
 
 class TellStickSwitch(TellStickEntity, SwitchEntity):
