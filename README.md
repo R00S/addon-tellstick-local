@@ -1,9 +1,9 @@
 # Home Assistant: TellStick Local
 
 > [!NOTE]
-> **🧪 Beta – looking for testers!** This version has a reworked device
-> management UI. If you have a TellStick Duo USB stick and run Home Assistant OS,
-> please install, test, and [open an issue][issue] if anything doesn't work.
+> **🧪 Beta – looking for testers!** If you have a TellStick Duo USB stick and
+> run Home Assistant OS, please install, test, and [open an issue][issue] if
+> anything doesn't work.
 
 ![Project Stage][project-stage-shield]
 
@@ -34,17 +34,19 @@ YAML file editing.
 
 ### What you get
 
-| Capability              | Description                                                                      |
-| ----------------------- | -------------------------------------------------------------------------------- |
-| **Auto install prompt** | Install the app → HA automatically offers "Set up TellStick Local?"              |
-| **Press-to-discover**   | Enable automatic add → press any remote → device appears in HA                   |
-| **Add device button**   | Click "Add device" on the integration card → pick protocol → send pairing signal |
-| **Per-device deletion** | Delete any device (including auto-detected) from its device page ⋮ menu          |
-| **GUI-only management** | Add, rename and remove devices via HA UI — no YAML, no restart                   |
-| **Local push**          | RF events arrive in real time; no polling, no cloud                              |
-| **Automations**         | Device triggers on any 433 MHz button press, usable directly in HA automations   |
-| **Companion app**       | Identical UX in the HA Android/iOS app                                           |
-| **No Telldus Live**     | Zero cloud, zero account, zero internet dependency                               |
+| Capability                | Description                                                                       |
+| ------------------------- | --------------------------------------------------------------------------------- |
+| **Auto install prompt**   | Install the app → HA automatically offers "Set up TellStick Local?"               |
+| **Press-to-discover**     | Press any 433 MHz remote → device appears in HA (auto-add or discovery prompt)    |
+| **Add device button**     | Click "Add device" on the integration card → pick protocol → send pairing signal  |
+| **Edit existing devices** | View and change house/unit codes for any device via Configure → Edit device       |
+| **Per-device deletion**   | Delete any device (including auto-detected) from its device page ⋮ menu           |
+| **Device state info**     | Protocol, model, house code and unit code shown as entity state attributes         |
+| **GUI-only management**   | Add, rename, edit and remove devices via HA UI — no YAML, no restart              |
+| **Local push**            | RF events arrive in real time; no polling, no cloud                               |
+| **Automations**           | Device triggers on any 433 MHz button press, usable directly in HA automations    |
+| **Companion app**         | Identical UX in the HA Android/iOS app                                            |
+| **No Telldus Live**       | Zero cloud, zero account, zero internet dependency                                |
 
 ---
 
@@ -54,7 +56,8 @@ YAML file editing.
 - **Software:** Home Assistant OS with **HA Core 2025.2 or later**
 
 > **Why 2025.2?** The "Add device" button on the integration card uses the
-> ConfigSubentryFlow API introduced in HA 2025.2.
+> ConfigSubentryFlow API introduced in HA 2025.2. Older HA versions still work
+> for auto-add and discovery — only the manual "Add device" button requires 2025.2+.
 
 No HACS required — the integration is bundled inside the app and installs itself
 automatically.
@@ -119,9 +122,13 @@ wall switches, sensors).
 
 1. Go to **Settings → Devices & Services → TellStick Local**
 2. Click **Configure** (⚙ icon)
-3. Enable **Automatically add new devices** and click **Submit**
+3. Make sure **Automatically add new devices** is enabled and click **Submit**
 4. Press the button or remote you want to pair
 5. The device appears in HA — click its name to rename it
+
+> **Tip:** With automatic add disabled, detected devices still show up in the
+> **Discovered** section of Devices & Services (like BLE devices). You can review
+> them and click **Configure** to accept only the ones you want.
 
 ### Method B – Self-learning teach (Add device button)
 
@@ -136,6 +143,16 @@ that need to be taught a code before they respond.
 6. HA sends the pairing signal — the receiver learns the code
 7. The device appears in HA and can now be controlled
 
+### Editing a device
+
+View and change house/unit codes for any existing device:
+
+1. Go to **Settings → Devices & Services → TellStick Local**
+2. Click **Configure** (⚙ icon)
+3. Select **Edit device** from the menu
+4. Pick the device to edit — its current protocol, model, house and unit are shown
+5. Change the name, house code, or unit code as needed
+
 ### Removing a device
 
 Go to the **device page** of the device you want to remove, click the **⋮ menu**
@@ -147,13 +164,14 @@ auto-detected devices.
 ## Supported devices
 
 The device picker in the integration shows all brands from the TelldusCenter
-device library. The table below summarizes what each protocol supports.
+device library (56 devices across 25+ brands). The table below summarizes what
+each protocol supports.
 
 ### Auto-discoverable (press a button → device appears)
 
 | Protocol       | Entity type    | Brands                                                                                          |
 | -------------- | -------------- | ----------------------------------------------------------------------------------------------- |
-| `arctech`      | Switch / Light | Nexa, Proove, KlikAanKlikUit, Intertechno, HomeEasy, Chacon, CoCo, Kappa, Bye Bye Standby, Elro |
+| `arctech`      | Switch / Light | Nexa, Proove, KlikAanKlikUit, Intertechno, HomeEasy, Chacon, CoCo, Luxorparts, Cleverio, Kappa, Bye Bye Standby, Elro |
 | `everflourish` | Switch         | GAO, Everflourish, Rusta                                                                        |
 | `hasta`        | Cover          | Hasta, Rollertrol motorised blinds                                                              |
 | `mandolyn`     | Switch         | Mandolyn / Summerbird                                                                           |
@@ -166,6 +184,11 @@ device library. The table below summarizes what each protocol supports.
 > **Nexa note:** Nexa _switches, dimmers, remotes and buttons_ use the `arctech`
 > protocol. Nexa _thermometers and weather sensors_ (LMST-606, WDS-100 etc.) use
 > the `fineoffset` protocol — they appear automatically as sensor entities.
+
+> **Self-learning receivers (Luxorparts 50969/50970, Nexa, etc.):** These receivers
+> are dual-protocol — they learn whatever code is sent during pairing. Use
+> Method B (Add device → pick brand → send teach signal) to pair them. The TellStick
+> Duo includes a firmware-level repeat patch for reliable pairing with picky receivers.
 
 ### TX only (can be controlled but not auto-discovered)
 
@@ -210,6 +233,7 @@ and run the manual setup flow.
 ### "No devices appear after pressing remote"
 
 1. Check that **Automatically add new devices** is enabled in the integration options
+   (Configure → Settings → enable toggle)
 2. Open the app log — raw RF events should appear when a button is pressed
 3. Confirm the TellStick Duo USB stick is connected:
    **Settings → Apps → TellStick Local → Hardware**
@@ -218,6 +242,21 @@ and run the manual setup flow.
 
 1. Make sure the receiver was in learn mode _before_ clicking Submit
 2. Try again — the pairing signal can be re-sent as many times as needed
+3. For picky receivers (like Luxorparts 50969), the TellStick Duo firmware patch
+   repeats the learn signal 5 times automatically
+
+### "On/off commands don't work (TellStick doesn't blink)"
+
+1. Check the HA log for warnings like "No telldusd device ID for …"
+2. Try deleting the device and re-adding it via the "Add device" button
+3. Verify house/unit codes via Configure → Edit device
+
+### "Multiple devices appear from one remote button press"
+
+This is normal — `telldusd` runs all protocol decoders on every RF signal. A single
+button press can trigger 2-3 different protocol interpretations (e.g. arctech +
+everflourish + waveman). Add only the correct one for your device brand and ignore
+or delete the others.
 
 ---
 
