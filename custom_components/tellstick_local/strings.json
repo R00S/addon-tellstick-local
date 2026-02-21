@@ -29,7 +29,8 @@
         "title": "TellStick Local – Detection mode",
         "description": "Enable automatic discovery to add devices by pressing their 433 MHz remote.\n\nTo remove a device, go to the device page and select **Delete** from the device menu (⋮ icon).",
         "data": {
-          "automatic_add": "Automatically add new devices when they send a signal"
+          "automatic_add": "Automatically add new devices when they send a signal",
+          "add_device": "Pair a new device manually (self-learning)"
         }
       },
       "add_device": {

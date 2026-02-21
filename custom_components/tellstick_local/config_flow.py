@@ -244,10 +244,17 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
         )
 
         if user_input is not None:
+            # Save detection mode setting
+            self._automatic_add = user_input[CONF_AUTOMATIC_ADD]
+
+            # If user checked "pair a new device", redirect to add_device flow
+            if user_input.get("add_device"):
+                return await self.async_step_add_device()
+
             return self.async_create_entry(
                 title="",
                 data={
-                    CONF_AUTOMATIC_ADD: user_input[CONF_AUTOMATIC_ADD],
+                    CONF_AUTOMATIC_ADD: self._automatic_add,
                     CONF_DEVICES: existing_devices,
                 },
             )
@@ -260,6 +267,7 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                         CONF_AUTOMATIC_ADD,
                         default=self._automatic_add,
                     ): bool,
+                    vol.Optional("add_device", default=False): bool,
                 }
             ),
         )
