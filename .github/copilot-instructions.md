@@ -12,8 +12,8 @@
 █   Y = minor feature release                                                 █
 █   X = major release                                                          █
 █                                                                              █
-█   CURRENT VERSION: 2.1.0.7                                                   █
-█   (bump W → 2.1.0.8, 2.1.0.9, etc. for next prompt in this session)        █
+█   CURRENT VERSION: 2.1.0.8                                                   █
+█   (bump W → 2.1.0.9, 2.1.0.10, etc. for next prompt in this session)       █
 █   (new agent → 2.1.1.0)                                                     █
 █                                                                              █
 █   config.yaml version MUST ALWAYS be 'dev' on branches (linter-enforced)    █
@@ -401,7 +401,40 @@ TellStick ZNet (which also uses telldus-core). The Homey app (se.luxorparts-1) u
 its own proprietary encrypted protocol stack, but that is Homey-specific — the actual
 RF signal is standard arctech selflearning.
 
-If learning fails on TellStick Duo, the most likely cause is insufficient signal
+### Luxorparts protocol deep-dive (verified from source code)
+
+The Homey `se.luxorparts-1` app defines a **separate proprietary protocol**:
+- **Signal**: SOF=[375µs, 2250µs], bit 0=[375µs, 1125µs], bit 1=[1125µs, 375µs]
+- **Payload**: 24 bits (3 bytes) — 16-bit address + 2-bit count + 1-bit state + 5-bit unit
+- **Encryption**: Nibble substitution cipher (two 16-element lookup tables) + XOR chain
+  (see `lib/PayloadEncryption.js`)
+
+**This is NOT arctech selflearning.** Arctech selflearning is:
+- 26-bit house + 1-bit group + 1-bit on/off + 4-bit unit = 32+ data bits
+- T-packet timing: T0=127(~1270µs), T1=255(~2550µs), T2=24(~240µs), T3=1(~10µs)
+- Manchester-like encoding with ~240µs/~1270µs pulse durations
+
+**BUT Luxorparts receivers are dual-protocol**: they accept BOTH the proprietary
+Luxorparts signal AND standard arctech/selflearning. Self-learning 433 MHz receivers
+memorize whatever bit pattern they hear during learn mode. TellStick ZNet uses
+telldus-core's arctech selflearning to control them — confirmed by user.
+
+### Critical bug found: vendor suffix in model name
+
+Device catalog entries include a vendor suffix (e.g. `selflearning-switch:luxorparts`).
+This suffix is for display/matching in the integration only. When registering devices
+with telldusd, the suffix MUST be stripped because telldusd's `ProtocolNexa::methods()`
+only recognizes `selflearning-switch` (without suffix). If the full
+`selflearning-switch:luxorparts` is passed as the model:
+1. `methods()` returns 0 (no recognized model)
+2. `isMethodSupported(TELLSTICK_LEARN)` returns METHOD_NOT_SUPPORTED
+3. Learn signal silently fails → receiver never learns the code
+4. On/off commands also fail → device appears dead
+
+**Fix**: `client.py::add_device()` strips vendor suffix via `model.split(":")[0]`
+before calling `tdSetModel`.
+
+If learning still fails on TellStick Duo, the most likely cause is insufficient signal
 repetitions. The R-prefix Dockerfile patch (adding firmware-level repeats for
 pid 0x0c31) addresses this.
 

@@ -282,9 +282,12 @@ class TellStickController:
         await self._call_int(
             "tdSetProtocol", [_encode_int(device_id), _encode_string(protocol)]
         )
-        if model:
+        # Strip vendor suffix (e.g. "selflearning-switch:luxorparts" →
+        # "selflearning-switch") — telldusd only knows the base model name.
+        td_model = model.split(":")[0] if model else ""
+        if td_model:
             await self._call_int(
-                "tdSetModel", [_encode_int(device_id), _encode_string(model)]
+                "tdSetModel", [_encode_int(device_id), _encode_string(td_model)]
             )
         for param_name, param_value in parameters.items():
             await self._call_int(
