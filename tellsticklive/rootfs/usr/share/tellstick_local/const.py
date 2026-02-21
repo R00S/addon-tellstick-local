@@ -96,107 +96,173 @@ PROTOCOL_DEFAULT_MODELS: dict[str, str] = {
 }
 
 # ---------------------------------------------------------------------------
-# Device catalog — user-friendly brand/device picker → (protocol, model)
+# Widget parameter definitions — from TelldusCenter 2.1.2
+# (telldus-gui-2.1.2/TelldusGui/editdevicedialog.cpp)
+#
+# Each widget ID maps to a list of field specs.  A field spec is a dict:
+#   name     – telldusd parameter name (e.g. "house", "unit", "code")
+#   type     – "int", "letter", "str", or "bool"
+#   default  – default value
+#   min/max  – for "int": numeric bounds; for "letter": start/end character
+#   random   – True if the field should get a random default
+# ---------------------------------------------------------------------------
+WIDGET_PARAMS: dict[int, list[dict]] = {
+    # 1: DeviceSettingNexa – arctech codeswitch, waveman, x10, byebye, elro-ab600
+    1: [
+        {"name": "house", "type": "letter", "default": "A", "min": "A", "max": "P"},
+        {"name": "unit", "type": "int", "default": 1, "min": 1, "max": 16},
+    ],
+    # 2: DeviceSettingSartano – sartano, fuhaote
+    2: [
+        {"name": "code", "type": "str", "default": "0000000000"},
+    ],
+    # 3: DeviceSettingIkea
+    3: [
+        {"name": "system", "type": "int", "default": 1, "min": 1, "max": 16},
+        {"name": "units", "type": "str", "default": "1"},
+        {"name": "fade", "type": "bool", "default": False},
+    ],
+    # 4: DeviceSettingNexaBell – arctech bell (house only, no unit)
+    4: [
+        {"name": "house", "type": "letter", "default": "A", "min": "A", "max": "P"},
+    ],
+    # 5: DeviceSettingRisingSun – risingsun codeswitch (Kjell & Company)
+    5: [
+        {"name": "house", "type": "int", "default": 1, "min": 1, "max": 4},
+        {"name": "unit", "type": "int", "default": 1, "min": 1, "max": 4},
+    ],
+    # 6: DeviceSettingBrateck – brateck (8-char string of 0/-/1)
+    6: [
+        {"name": "house", "type": "str", "default": "00000000"},
+    ],
+    # 8: DeviceSettingArctechSelflearning – default (26-bit house)
+    8: [
+        {"name": "house", "type": "int", "default": 1, "min": 1, "max": 67108863, "random": True},
+        {"name": "unit", "type": "int", "default": 1, "min": 1, "max": 16},
+    ],
+    # 9: ArctechSelflearning – UPM (house 0-4095, unit 1-4)
+    9: [
+        {"name": "house", "type": "int", "default": 0, "min": 0, "max": 4095},
+        {"name": "unit", "type": "int", "default": 1, "min": 1, "max": 4},
+    ],
+    # 10: DeviceSettingGAO – risingsun codeswitch:gao (4 houses × 3 units)
+    10: [
+        {"name": "house", "type": "int", "default": 1, "min": 1, "max": 4},
+        {"name": "unit", "type": "int", "default": 1, "min": 1, "max": 3},
+    ],
+    # 11: ArctechSelflearning – everflourish (house 0-16383, unit 1-4)
+    11: [
+        {"name": "house", "type": "int", "default": 0, "min": 0, "max": 16383, "random": True},
+        {"name": "unit", "type": "int", "default": 1, "min": 1, "max": 4},
+    ],
+    # 12: ArctechSelflearning – risingsun selflearning (Conrad, Otio)
+    12: [
+        {"name": "house", "type": "int", "default": 1, "min": 1, "max": 33554432, "random": True},
+        {"name": "unit", "type": "int", "default": 1, "min": 1, "max": 16},
+    ],
+    # 13: DeviceSettingUnitcode – yidong (Goobay) – unit only
+    13: [
+        {"name": "unit", "type": "int", "default": 1, "min": 1, "max": 4},
+    ],
+    # 14: ArctechSelflearning – silvanchip ecosavers
+    14: [
+        {"name": "house", "type": "int", "default": 1, "min": 1, "max": 1048575, "random": True},
+        {"name": "unit", "type": "int", "default": 1, "min": 1, "max": 4},
+    ],
+    # 15: DeviceSettingSelflearning – silvanchip KP100 (house only)
+    15: [
+        {"name": "house", "type": "int", "default": 1, "min": 1, "max": 1048575, "random": True},
+    ],
+    # 16: ArctechSelflearning – hasta blinds
+    16: [
+        {"name": "house", "type": "int", "default": 1, "min": 1, "max": 65536, "random": True},
+        {"name": "unit", "type": "int", "default": 1, "min": 1, "max": 15},
+    ],
+    # 17: ArctechSelflearning – comen (Anslut/Jula)
+    17: [
+        {"name": "house", "type": "int", "default": 1, "min": 1, "max": 16777215, "random": True},
+        {"name": "unit", "type": "int", "default": 1, "min": 1, "max": 16},
+    ],
+}
+
+# ---------------------------------------------------------------------------
+# Device catalog — user-friendly brand/device picker → (protocol, model, widget)
 # Extracted from TelldusCenter 2.1.2 (TelldusGui/data/telldus/devices.xml).
-# Each entry: (label, protocol, model).  The model includes the vendor suffix
-# after ":" exactly as TelldusCenter sends it to telldusd.
+# Each entry: (label, protocol, model, widget).  The model includes the vendor
+# suffix after ":" exactly as TelldusCenter sends it to telldusd.
+# The widget number selects the parameter form (ranges/defaults) from
+# WIDGET_PARAMS above.
 # Popular Nordic brands (Nexa, Proove, KlikAanKlikUit) are listed first.
 # ---------------------------------------------------------------------------
-DEVICE_CATALOG: list[tuple[str, str, str]] = [
-    # --- Nexa (most popular Nordic brand) ---
-    ("Nexa — Self-learning on/off", "arctech", "selflearning-switch:nexa"),
-    ("Nexa — Self-learning dimmer", "arctech", "selflearning-dimmer:nexa"),
-    ("Nexa — Code switch", "arctech", "codeswitch:nexa"),
-    ("Nexa — Bell", "arctech", "bell:nexa"),
-    # --- Proove ---
-    ("Proove — Self-learning on/off", "arctech", "selflearning-switch:proove"),
-    ("Proove — Self-learning dimmer", "arctech", "selflearning-dimmer:proove"),
-    ("Proove — Code switch", "arctech", "codeswitch:proove"),
-    ("Proove — Bell", "arctech", "bell:proove"),
-    # --- KlikAanKlikUit (KAKU) ---
-    ("KlikAanKlikUit — Self-learning on/off", "arctech", "selflearning-switch:klikaanklikuit"),
-    ("KlikAanKlikUit — Self-learning dimmer", "arctech", "selflearning-dimmer:klikaanklikuit"),
-    ("KlikAanKlikUit — Code switch", "arctech", "codeswitch:klikaanklikuit"),
-    ("KlikAanKlikUit — Bell", "arctech", "bell:klikaanklikuit"),
-    # --- Intertechno ---
-    ("Intertechno — Self-learning on/off", "arctech", "selflearning-switch:intertechno"),
-    ("Intertechno — Self-learning dimmer", "arctech", "selflearning-dimmer:intertechno"),
-    ("Intertechno — Code switch", "arctech", "codeswitch:intertechno"),
-    ("Intertechno — Bell", "arctech", "bell:intertechno"),
-    # --- HomeEasy ---
-    ("HomeEasy — Self-learning on/off", "arctech", "selflearning-switch:homeeasy"),
-    ("HomeEasy — Self-learning dimmer", "arctech", "selflearning-dimmer:homeeasy"),
-    ("HomeEasy — Code switch", "arctech", "codeswitch:homeeasy"),
-    # --- Chacon ---
-    ("Chacon — Self-learning on/off", "arctech", "selflearning-switch:chacon"),
-    ("Chacon — Self-learning dimmer", "arctech", "selflearning-dimmer:chacon"),
-    ("Chacon — Code switch", "arctech", "codeswitch:chacon"),
-    ("Chacon — Bell", "arctech", "bell:chacon"),
-    # --- CoCo Technologies ---
-    ("CoCo Technologies — Self-learning on/off", "arctech", "selflearning-switch:coco"),
-    ("CoCo Technologies — Self-learning dimmer", "arctech", "selflearning-dimmer:coco"),
-    ("CoCo Technologies — Code switch", "arctech", "codeswitch:coco"),
-    ("CoCo Technologies — Bell", "arctech", "bell:coco"),
-    # --- Kappa ---
-    ("Kappa — Self-learning on/off", "arctech", "selflearning-switch:kappa"),
-    ("Kappa — Self-learning dimmer", "arctech", "selflearning-dimmer:kappa"),
-    ("Kappa — Code switch", "arctech", "codeswitch:kappa"),
-    ("Kappa — Bell", "arctech", "bell:kappa"),
-    # --- Bye Bye Standby ---
-    ("Bye Bye Standby — Code switch", "arctech", "codeswitch:byebyestandby"),
-    # --- Anslut / Jula ---
-    ("Anslut — Self-learning on/off", "comen", "selflearning-switch:jula"),
-    # --- Brennenstuhl ---
-    ("Brennenstuhl — Code switch", "sartano", "codeswitch:brennenstuhl"),
-    # --- Conrad ---
-    ("Conrad — Self-learning", "risingsun", "selflearning:conrad"),
-    # --- Ecosavers ---
-    ("Ecosavers — Self-learning", "silvanchip", "ecosavers:ecosavers"),
-    # --- Elro ---
-    ("Elro — Code switch", "sartano", "codeswitch:elro"),
-    ("Elro — Code switch (AB600)", "arctech", "codeswitch:elro-ab600"),
-    # --- GAO / Everflourish ---
-    ("GAO — Self-learning on/off", "everflourish", "selflearning-switch:gao"),
-    ("GAO — Code switch", "risingsun", "codeswitch:gao"),
-    # --- Goobay ---
-    ("Goobay — Code switch", "yidong", "goobay:goobay"),
-    # --- HQ ---
-    ("HQ — Code switch", "fuhaote", "codeswitch:fuhaote"),
-    # --- IKEA ---
-    ("IKEA — Koppla on/off", "ikea", "selflearning-switch:ikea"),
-    ("IKEA — Koppla dimmer", "ikea", "selflearning:ikea"),
-    # --- Kjell & Company ---
-    ("Kjell & Company — Code switch", "risingsun", "codeswitch:kjelloco"),
-    # --- Luxorparts ---
-    ("Luxorparts — Self-learning on/off", "arctech", "selflearning-switch:luxorparts"),
-    # --- Otio ---
-    ("Otio — Self-learning", "risingsun", "selflearning:otio"),
-    # --- Rusta ---
-    ("Rusta — Code switch", "sartano", "codeswitch:rusta"),
-    ("Rusta — Self-learning dimmer", "arctech", "selflearning-dimmer:rusta"),
-    # --- Sartano ---
-    ("Sartano — Code switch", "sartano", "codeswitch:sartano"),
-    # --- UPM ---
-    ("UPM — Self-learning", "upm", "selflearning:upm"),
-    # --- Waveman ---
-    ("Waveman — Code switch", "waveman", "codeswitch:waveman"),
-    # --- X10 ---
-    ("X10 — Code switch", "x10", "codeswitch:x10"),
-    # --- Blinds / projector screens ---
-    ("Hasta — Blinds", "hasta", "selflearning:hasta"),
-    ("Hasta — Blinds (v2)", "hasta", "selflearningv2:hasta"),
-    ("Rollertrol — Blinds", "hasta", "selflearningv2:rollertrol"),
-    ("Roxcore — Projector screen", "brateck", "codeswitch:roxcore"),
-    ("KingPin — KP100", "silvanchip", "kp100:kingpin"),
+DEVICE_CATALOG: list[tuple[str, str, str, int]] = [
+    ("Anslut — Self-learning on/off", "comen", "selflearning-switch:jula", 17),
+    ("Brennenstuhl — Code switch", "sartano", "codeswitch:brennenstuhl", 2),
+    ("Bye Bye Standby — Code switch", "arctech", "codeswitch:byebyestandby", 1),
+    ("Chacon — Bell", "arctech", "bell:chacon", 4),
+    ("Chacon — Code switch", "arctech", "codeswitch:chacon", 1),
+    ("Chacon — Self-learning dimmer", "arctech", "selflearning-dimmer:chacon", 8),
+    ("Chacon — Self-learning on/off", "arctech", "selflearning-switch:chacon", 8),
+    ("CoCo Technologies — Bell", "arctech", "bell:coco", 4),
+    ("CoCo Technologies — Code switch", "arctech", "codeswitch:coco", 1),
+    ("CoCo Technologies — Self-learning dimmer", "arctech", "selflearning-dimmer:coco", 8),
+    ("CoCo Technologies — Self-learning on/off", "arctech", "selflearning-switch:coco", 8),
+    ("Conrad — Self-learning", "risingsun", "selflearning:conrad", 12),
+    ("Ecosavers — Self-learning", "silvanchip", "ecosavers:ecosavers", 14),
+    ("Elro — Code switch", "sartano", "codeswitch:elro", 2),
+    ("Elro — Code switch (AB600)", "arctech", "codeswitch:elro-ab600", 1),
+    ("GAO — Code switch", "risingsun", "codeswitch:gao", 10),
+    ("GAO — Self-learning on/off", "everflourish", "selflearning-switch:gao", 11),
+    ("Goobay — Code switch", "yidong", "goobay:goobay", 13),
+    ("Hasta — Blinds", "hasta", "selflearning:hasta", 16),
+    ("Hasta — Blinds (v2)", "hasta", "selflearningv2:hasta", 16),
+    ("HomeEasy — Code switch", "arctech", "codeswitch:homeeasy", 1),
+    ("HomeEasy — Self-learning dimmer", "arctech", "selflearning-dimmer:homeeasy", 8),
+    ("HomeEasy — Self-learning on/off", "arctech", "selflearning-switch:homeeasy", 8),
+    ("HQ — Code switch", "fuhaote", "codeswitch:fuhaote", 2),
+    ("IKEA — Koppla dimmer", "ikea", "selflearning:ikea", 3),
+    ("IKEA — Koppla on/off", "ikea", "selflearning-switch:ikea", 3),
+    ("Intertechno — Bell", "arctech", "bell:intertechno", 4),
+    ("Intertechno — Code switch", "arctech", "codeswitch:intertechno", 1),
+    ("Intertechno — Self-learning dimmer", "arctech", "selflearning-dimmer:intertechno", 8),
+    ("Intertechno — Self-learning on/off", "arctech", "selflearning-switch:intertechno", 8),
+    ("Kappa — Bell", "arctech", "bell:kappa", 4),
+    ("Kappa — Code switch", "arctech", "codeswitch:kappa", 1),
+    ("Kappa — Self-learning dimmer", "arctech", "selflearning-dimmer:kappa", 8),
+    ("Kappa — Self-learning on/off", "arctech", "selflearning-switch:kappa", 8),
+    ("KingPin — KP100", "silvanchip", "kp100:kingpin", 15),
+    ("Kjell & Company — Code switch", "risingsun", "codeswitch:kjelloco", 5),
+    ("KlikAanKlikUit — Bell", "arctech", "bell:klikaanklikuit", 4),
+    ("KlikAanKlikUit — Code switch", "arctech", "codeswitch:klikaanklikuit", 1),
+    ("KlikAanKlikUit — Self-learning dimmer", "arctech", "selflearning-dimmer:klikaanklikuit", 8),
+    ("KlikAanKlikUit — Self-learning on/off", "arctech", "selflearning-switch:klikaanklikuit", 8),
+    ("Luxorparts — Self-learning on/off", "arctech", "selflearning-switch:luxorparts", 8),
+    ("Nexa — Bell", "arctech", "bell:nexa", 4),
+    ("Nexa — Code switch", "arctech", "codeswitch:nexa", 1),
+    ("Nexa — Self-learning dimmer", "arctech", "selflearning-dimmer:nexa", 8),
+    ("Nexa — Self-learning on/off", "arctech", "selflearning-switch:nexa", 8),
+    ("Otio — Self-learning", "risingsun", "selflearning:otio", 12),
+    ("Proove — Bell", "arctech", "bell:proove", 4),
+    ("Proove — Code switch", "arctech", "codeswitch:proove", 1),
+    ("Proove — Self-learning dimmer", "arctech", "selflearning-dimmer:proove", 8),
+    ("Proove — Self-learning on/off", "arctech", "selflearning-switch:proove", 8),
+    ("Rollertrol — Blinds", "hasta", "selflearningv2:rollertrol", 16),
+    ("Roxcore — Projector screen", "brateck", "codeswitch:roxcore", 6),
+    ("Rusta — Code switch", "sartano", "codeswitch:rusta", 2),
+    ("Rusta — Self-learning dimmer", "arctech", "selflearning-dimmer:rusta", 8),
+    ("Sartano — Code switch", "sartano", "codeswitch:sartano", 2),
+    ("UPM — Self-learning", "upm", "selflearning:upm", 9),
+    ("Waveman — Code switch", "waveman", "codeswitch:waveman", 1),
+    ("X10 — Code switch", "x10", "codeswitch:x10", 1),
 ]
 
-# Build a lookup dict: label → (protocol, model)
-DEVICE_CATALOG_MAP: dict[str, tuple[str, str]] = {
-    label: (proto, model) for label, proto, model in DEVICE_CATALOG
+# Build a lookup dict: label → (protocol, model, widget)
+DEVICE_CATALOG_MAP: dict[str, tuple[str, str, int]] = {
+    label: (proto, model, widget)
+    for label, proto, model, widget in DEVICE_CATALOG
 }
 
 # Ordered list of labels for the dropdown
-DEVICE_CATALOG_LABELS: list[str] = [label for label, _, _ in DEVICE_CATALOG]
+DEVICE_CATALOG_LABELS: list[str] = [label for label, _, _, _ in DEVICE_CATALOG]
 
 # Model normalization: arctech selflearning devices always report "selflearning" in
 # raw RF events regardless of whether they were configured as -switch or -dimmer.

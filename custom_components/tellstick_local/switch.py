@@ -12,9 +12,11 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .client import DeviceEvent, RawDeviceEvent, TellStickController
 from .const import (
+    CONF_DEVICE_HOUSE,
     CONF_DEVICE_MODEL,
     CONF_DEVICE_NAME,
     CONF_DEVICE_PROTOCOL,
+    CONF_DEVICE_UNIT,
     CONF_DEVICES,
     DOMAIN,
     ENTRY_DEVICE_ID_MAP,
@@ -74,6 +76,8 @@ async def async_setup_entry(
                 model=model,
                 controller=controller,
                 device_id=device_id_map.get(device_uid),
+                house=device_cfg.get(CONF_DEVICE_HOUSE, ""),
+                unit=device_cfg.get(CONF_DEVICE_UNIT, ""),
             )
         )
     if stored_entities:
@@ -103,6 +107,8 @@ async def async_setup_entry(
             model=model,
             controller=controller,
             device_id=device_id_map.get(uid),
+            house=params.get("house", ""),
+            unit=params.get("unit", params.get("code", "")),
         )
         async_add_entities([entity])
 
@@ -126,6 +132,8 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
         model: str,
         controller: TellStickController,
         device_id: int | None = None,
+        house: str = "",
+        unit: str = "",
     ) -> None:
         """Initialize a TellStick switch."""
         super().__init__(
@@ -134,6 +142,8 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
             name=name,
             protocol=protocol,
             model=model,
+            house=house,
+            unit=unit,
         )
         self._controller = controller
         self._telldusd_device_id = device_id

@@ -15,11 +15,12 @@ from homeassistant.config_entries import (
     SubentryFlowResult,
 )
 from homeassistant.core import callback
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.service_info.hassio import HassioServiceInfo
 from homeassistant.const import CONF_HOST
 from homeassistant.data_entry_flow import FlowResult
 
-from .client import TellStickController
+from .client import RawDeviceEvent, TellStickController
 from .const import (
     CONF_AUTOMATIC_ADD,
     CONF_COMMAND_PORT,
@@ -38,6 +39,7 @@ from .const import (
     DEVICE_CATALOG_MAP,
     DOMAIN,
     ENTRY_TELLSTICK_CONTROLLER,
+    SIGNAL_NEW_DEVICE,
     WIDGET_PARAMS,
     build_device_uid,
 )
@@ -392,7 +394,7 @@ class TellStickLocalAddDeviceFlow(ConfigSubentryFlow):
                     params,
                 )
                 # Send the RF teach signal – receiver must already be in learn mode
-                await controller.turn_on(telldusd_id)
+                await controller.learn(telldusd_id)
             except Exception:  # noqa: BLE001
                 _LOGGER.exception("Failed to teach device")
                 errors["base"] = "teach_failed"
@@ -420,9 +422,25 @@ class TellStickLocalAddDeviceFlow(ConfigSubentryFlow):
                     entry, options=new_options
                 )
 
-                # The integration will reload via _async_options_updated
-                # (triggered by async_update_entry above), which re-runs
-                # async_setup_entry and creates entities for stored devices.
+                # Dispatch a synthetic event so platforms create the entity
+                # immediately (the reload guard suppresses reload for device
+                # additions — only automatic_add changes trigger a reload).
+                protocol = self._new_device[CONF_DEVICE_PROTOCOL]
+                model_str = self._new_device.get(CONF_DEVICE_MODEL, "")
+                house_str = self._new_device.get(CONF_DEVICE_HOUSE, "")
+                unit_str = self._new_device.get(CONF_DEVICE_UNIT, "")
+                synthetic = RawDeviceEvent(
+                    raw=(
+                        f"class:command;protocol:{protocol};model:{model_str};"
+                        f"house:{house_str};unit:{unit_str};method:turnon;"
+                    ),
+                    controller_id=0,
+                )
+                async_dispatcher_send(
+                    self.hass,
+                    SIGNAL_NEW_DEVICE.format(entry.entry_id),
+                    synthetic,
+                )
 
                 # Don't create a subentry record — they cause the HA
                 # frontend to show a confusing "Devices that don't belong

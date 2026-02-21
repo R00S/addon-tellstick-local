@@ -239,6 +239,12 @@ class TellStickController:
             "tdTurnOn", [_encode_int(device_id)]
         )
 
+    async def learn(self, device_id: int) -> int:
+        """Send tdLearn command (self-learning teach signal). Returns 0 on success."""
+        return await self._call_int(
+            "tdLearn", [_encode_int(device_id)]
+        )
+
     async def turn_off(self, device_id: int) -> int:
         """Send tdTurnOff command. Returns 0 on success."""
         return await self._call_int(
