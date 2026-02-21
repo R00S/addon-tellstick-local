@@ -177,18 +177,7 @@ async def async_remove_config_entry_device(
 
 
 async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Handle options update — only reload when automatic_add changes.
-
-    Device storage updates (from subentry flow) should NOT trigger a reload
-    because that would destroy all auto-detected entities (sensors, switches,
-    lights) that are not persisted in entry.options[CONF_DEVICES].
-    """
-    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
-    prev = entry_data.get("_prev_automatic_add")
-    curr = entry.options.get(CONF_AUTOMATIC_ADD, False)
-    entry_data["_prev_automatic_add"] = curr
-    if prev is not None and prev == curr:
-        return
+    """Handle options update — reload integration to apply changes."""
     await hass.config_entries.async_reload(entry.entry_id)
 
 
