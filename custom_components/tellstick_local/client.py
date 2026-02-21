@@ -284,7 +284,12 @@ class TellStickController:
         )
         # Strip vendor suffix (e.g. "selflearning-switch:luxorparts" →
         # "selflearning-switch") — telldusd only knows the base model name.
+        # Also map RF event model names to telldusd model names: RF events
+        # report "selflearning" but ProtocolNexa::methods() only recognises
+        # "selflearning-switch" and "selflearning-dimmer".
         td_model = model.split(":")[0] if model else ""
+        _RF_TO_TELLDUSD = {"selflearning": "selflearning-switch"}
+        td_model = _RF_TO_TELLDUSD.get(td_model, td_model)
         if td_model:
             await self._call_int(
                 "tdSetModel", [_encode_int(device_id), _encode_string(td_model)]
