@@ -6,8 +6,6 @@ DOMAIN = "tellstick_local"
 # Config keys (CONF_HOST from homeassistant.const is used for host)
 CONF_COMMAND_PORT = "command_port"
 CONF_EVENT_PORT = "event_port"
-CONF_AUTOMATIC_ADD = "automatic_add"
-
 # Device storage keys (in entry.options["devices"])
 CONF_DEVICES = "devices"
 CONF_DEVICE_PROTOCOL = "protocol"
@@ -20,7 +18,6 @@ CONF_DEVICE_NAME = "name"
 DEFAULT_HOST = "tellsticklive"  # add-on slug = hostname on the Supervisor network
 DEFAULT_COMMAND_PORT = 50800
 DEFAULT_EVENT_PORT = 50801
-DEFAULT_AUTOMATIC_ADD = False
 
 # telldusd event types
 TELLDUSD_DEVICE_EVENT = 1

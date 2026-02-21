@@ -20,9 +20,8 @@ from homeassistant.helpers.service_info.hassio import HassioServiceInfo
 from homeassistant.const import CONF_HOST
 from homeassistant.data_entry_flow import FlowResult
 
-from .client import RawDeviceEvent, TellStickController
+from .client import RawDeviceEvent, SensorEvent, TellStickController
 from .const import (
-    CONF_AUTOMATIC_ADD,
     CONF_COMMAND_PORT,
     CONF_DEVICE_HOUSE,
     CONF_DEVICE_MODEL,
@@ -31,7 +30,6 @@ from .const import (
     CONF_DEVICE_UNIT,
     CONF_DEVICES,
     CONF_EVENT_PORT,
-    DEFAULT_AUTOMATIC_ADD,
     DEFAULT_COMMAND_PORT,
     DEFAULT_EVENT_PORT,
     DEFAULT_HOST,
@@ -122,6 +120,7 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._command_port: int = DEFAULT_COMMAND_PORT
         self._event_port: int = DEFAULT_EVENT_PORT
         self._hassio_discovery: bool = False
+        self._rf_discovery: dict[str, Any] = {}
 
     async def async_step_hassio(
         self, discovery_info: HassioServiceInfo
@@ -165,7 +164,6 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_EVENT_PORT: self._event_port,
                     },
                     options={
-                        CONF_AUTOMATIC_ADD: DEFAULT_AUTOMATIC_ADD,
                         CONF_DEVICES: {},
                     },
                 )
@@ -214,7 +212,6 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_EVENT_PORT: evt_port,
                     },
                     options={
-                        CONF_AUTOMATIC_ADD: DEFAULT_AUTOMATIC_ADD,
                         CONF_DEVICES: {},
                     },
                 )
@@ -225,12 +222,139 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    @staticmethod
-    def async_get_options_flow(
-        config_entry: config_entries.ConfigEntry,
-    ) -> TellStickLocalOptionsFlow:
-        """Return the options flow."""
-        return TellStickLocalOptionsFlow()
+    # -----------------------------------------------------------------
+    # RF device discovery (BLE-like UX)
+    # -----------------------------------------------------------------
+
+    async def async_step_integration_discovery(
+        self, discovery_info: dict[str, Any]
+    ) -> FlowResult:
+        """Handle discovery of a new 433 MHz device via RF signal.
+
+        Fired by __init__._handle_raw_event / _handle_sensor_event when an
+        unknown device sends an RF signal.  Shows in the 'Discovered' section
+        of Settings → Devices & Services, just like BLE devices.
+        """
+        self._rf_discovery = discovery_info
+        device_uid = discovery_info["device_uid"]
+
+        # Deduplicate: one discovery flow per device UID
+        await self.async_set_unique_id(f"rf_{device_uid}")
+        self._abort_if_unique_id_in_progress()
+
+        # Abort if the device was already added while this flow was pending
+        for existing_entry in self._async_current_entries():
+            if device_uid in existing_entry.options.get(CONF_DEVICES, {}):
+                return self.async_abort(reason="already_added")
+
+        # Set title for the "Discovered" card in the UI
+        protocol = discovery_info.get("protocol", "")
+        model = discovery_info.get("model", "")
+        dev_type = discovery_info.get("type", "device")
+        if dev_type == "sensor":
+            title = f"Sensor {discovery_info.get('sensor_id', '')} ({protocol}/{model})"
+        else:
+            house = discovery_info.get("house", "")
+            unit = discovery_info.get("unit", "")
+            title = f"{protocol}/{model} (house: {house}, unit: {unit})"
+        self.context["title_placeholders"] = {"name": title}
+
+        return await self.async_step_confirm_rf_device()
+
+    async def async_step_confirm_rf_device(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Show confirmation form for a discovered 433 MHz device."""
+        info = self._rf_discovery
+        dev_type = info.get("type", "device")
+
+        if dev_type == "sensor":
+            sensor_id = info.get("sensor_id", "")
+            suffix = {1: "temperature", 2: "humidity"}.get(
+                info.get("data_type", 0), "sensor"
+            )
+            default_name = f"TellStick sensor {sensor_id} {suffix}"
+        else:
+            default_name = f"TellStick {info['device_uid']}"
+
+        if user_input is not None:
+            # Find the existing config entry to add the device to
+            entry_id = info["entry_id"]
+            entry = self.hass.config_entries.async_get_entry(entry_id)
+            if entry is None:
+                return self.async_abort(reason="entry_not_found")
+
+            device_uid = info["device_uid"]
+            name = user_input.get("name", default_name)
+
+            # Store the device in entry.options
+            existing_devices = dict(entry.options.get(CONF_DEVICES, {}))
+            if dev_type == "sensor":
+                existing_devices[device_uid] = {
+                    CONF_DEVICE_NAME: name,
+                    CONF_DEVICE_PROTOCOL: info.get("protocol", ""),
+                    CONF_DEVICE_MODEL: info.get("model", ""),
+                    "sensor_id": info.get("sensor_id"),
+                    "data_type": info.get("data_type"),
+                }
+            else:
+                existing_devices[device_uid] = {
+                    CONF_DEVICE_NAME: name,
+                    CONF_DEVICE_PROTOCOL: info.get("protocol", ""),
+                    CONF_DEVICE_MODEL: info.get("model", ""),
+                    CONF_DEVICE_HOUSE: info.get("house", ""),
+                    CONF_DEVICE_UNIT: info.get("unit", ""),
+                }
+            new_options = dict(entry.options)
+            new_options[CONF_DEVICES] = existing_devices
+            self.hass.config_entries.async_update_entry(
+                entry, options=new_options
+            )
+
+            # Fire SIGNAL_NEW_DEVICE so platforms create the entity immediately
+            if dev_type == "sensor":
+                synthetic = SensorEvent(
+                    protocol=info.get("protocol", ""),
+                    model=info.get("model", ""),
+                    sensor_id=info.get("sensor_id", 0),
+                    data_type=info.get("data_type", 0),
+                    value="",
+                )
+            else:
+                protocol = info.get("protocol", "")
+                model_str = info.get("model", "")
+                house_str = info.get("house", "")
+                unit_str = info.get("unit", "")
+                synthetic = RawDeviceEvent(
+                    raw=(
+                        f"class:command;protocol:{protocol};model:{model_str};"
+                        f"house:{house_str};unit:{unit_str};method:turnon;"
+                    ),
+                    controller_id=0,
+                )
+            async_dispatcher_send(
+                self.hass,
+                SIGNAL_NEW_DEVICE.format(entry.entry_id),
+                synthetic,
+            )
+
+            return self.async_abort(reason="device_added")
+
+        return self.async_show_form(
+            step_id="confirm_rf_device",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("name", default=default_name): str,
+                }
+            ),
+            description_placeholders={
+                "protocol": info.get("protocol", ""),
+                "model": info.get("model", ""),
+                "house": info.get("house", ""),
+                "unit": info.get("unit", ""),
+                "device_uid": info["device_uid"],
+            },
+        )
 
     @classmethod
     @callback
@@ -239,42 +363,6 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> dict[str, type[ConfigSubentryFlow]]:
         """Return subentries supported by this handler."""
         return {SUBENTRY_TYPE_DEVICE: TellStickLocalAddDeviceFlow}
-
-
-class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
-    """Handle TellStick Local options (sprocket → detection mode only)."""
-
-    async def async_step_init(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Show detection mode settings."""
-        existing_devices: dict[str, Any] = self.config_entry.options.get(
-            CONF_DEVICES, {}
-        )
-        current = self.config_entry.options.get(
-            CONF_AUTOMATIC_ADD, DEFAULT_AUTOMATIC_ADD
-        )
-
-        if user_input is not None:
-            return self.async_create_entry(
-                title="",
-                data={
-                    CONF_AUTOMATIC_ADD: user_input[CONF_AUTOMATIC_ADD],
-                    CONF_DEVICES: existing_devices,
-                },
-            )
-
-        return self.async_show_form(
-            step_id="init",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(
-                        CONF_AUTOMATIC_ADD,
-                        default=current,
-                    ): bool,
-                }
-            ),
-        )
 
 
 class TellStickLocalAddDeviceFlow(ConfigSubentryFlow):
@@ -405,8 +493,7 @@ class TellStickLocalAddDeviceFlow(ConfigSubentryFlow):
                     self._new_device.get(CONF_DEVICE_HOUSE, ""),
                     self._new_device.get(CONF_DEVICE_UNIT, ""),
                 )
-                # Also store in entry.options[CONF_DEVICES] so __init__.py
-                # can re-register existing devices with telldusd on startup
+                # Store in entry.options[CONF_DEVICES]
                 existing_devices = dict(entry.options.get(CONF_DEVICES, {}))
                 existing_devices[device_uid] = {
                     CONF_DEVICE_NAME: self._new_device[CONF_DEVICE_NAME],
@@ -423,8 +510,6 @@ class TellStickLocalAddDeviceFlow(ConfigSubentryFlow):
                 )
 
                 # Dispatch a synthetic event so platforms create the entity
-                # immediately (the reload guard suppresses reload for device
-                # additions — only automatic_add changes trigger a reload).
                 protocol = self._new_device[CONF_DEVICE_PROTOCOL]
                 model_str = self._new_device.get(CONF_DEVICE_MODEL, "")
                 house_str = self._new_device.get(CONF_DEVICE_HOUSE, "")
@@ -442,9 +527,7 @@ class TellStickLocalAddDeviceFlow(ConfigSubentryFlow):
                     synthetic,
                 )
 
-                # Don't create a subentry record — they cause the HA
-                # frontend to show a confusing "Devices that don't belong
-                # in a sub-entry" grouping for auto-detected devices.
+                # Don't create a subentry record
                 return self.async_abort(reason="device_added")
 
         return self.async_show_form(
@@ -458,5 +541,3 @@ class TellStickLocalAddDeviceFlow(ConfigSubentryFlow):
             },
             errors=errors,
         )
-
-

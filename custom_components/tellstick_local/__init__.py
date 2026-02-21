@@ -7,10 +7,9 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, EVENT_HOMEASSISTANT_STOP
-from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.dispatcher import async_dispatcher_send
-from homeassistant.helpers.event import async_call_later
 
 from .client import (
     DeviceEvent,
@@ -19,7 +18,6 @@ from .client import (
     TellStickController,
 )
 from .const import (
-    CONF_AUTOMATIC_ADD,
     CONF_COMMAND_PORT,
     CONF_DEVICE_HOUSE,
     CONF_DEVICE_MODEL,
@@ -37,11 +35,6 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
-
-# Debounce delay for persisting auto-detected devices to options.
-# Multiple devices discovered in quick succession are batched into a
-# single options update to avoid rapid reloads.
-_PERSIST_DELAY = 5.0
 
 # Sensor data-type → suffix (mirrors sensor.py _SENSOR_META keys)
 _SENSOR_SUFFIX: dict[int, str] = {1: "temperature", 2: "humidity"}
@@ -110,7 +103,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         ENTRY_TELLSTICK_CONTROLLER: controller,
         ENTRY_DEVICE_ID_MAP: device_id_map,
-        "_prev_automatic_add": entry.options.get(CONF_AUTOMATIC_ADD, False),
+        # Track UIDs for which discovery flows have been fired this session
+        # to avoid flooding the UI with duplicate notifications.
+        "_discovered_uids": set(),
     }
 
     @callback
@@ -129,8 +124,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    entry.async_on_unload(entry.add_update_listener(_async_options_updated))
-
     return True
 
 
@@ -142,10 +135,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         ctrl: TellStickController | None = entry_data.get(ENTRY_TELLSTICK_CONTROLLER)
         if ctrl:
             await ctrl.disconnect()
-        # Cancel pending device persist timer
-        unsub: CALLBACK_TYPE | None = entry_data.get("_persist_unsub")
-        if unsub:
-            unsub()
     return ok
 
 
@@ -189,60 +178,11 @@ async def async_remove_config_entry_device(
         new_options[CONF_DEVICES] = stored_devices
         hass.config_entries.async_update_entry(entry, options=new_options)
 
+    # Allow re-discovery if the device sends again
+    discovered: set[str] = entry_data.get("_discovered_uids", set())
+    discovered.discard(device_uid)
+
     return True
-
-
-async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Handle options update — only reload when detection mode changes.
-
-    Device additions/removals are handled by dispatcher signals and do not
-    require a full reload.  Reloading on every options update would destroy
-    auto-detected entities that haven't been persisted yet.
-    """
-    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
-    prev = entry_data.get("_prev_automatic_add")
-    curr = entry.options.get(CONF_AUTOMATIC_ADD, False)
-    if prev != curr:
-        await hass.config_entries.async_reload(entry.entry_id)
-    else:
-        entry_data["_prev_automatic_add"] = curr
-
-
-# ---------------------------------------------------------------------------
-# Auto-detected device persistence
-# ---------------------------------------------------------------------------
-
-@callback
-def _schedule_device_persist(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Debounce-save pending auto-detected devices to entry.options."""
-    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
-
-    # Cancel any existing timer
-    unsub: CALLBACK_TYPE | None = entry_data.get("_persist_unsub")
-    if unsub:
-        unsub()
-
-    @callback
-    def _do_persist(_now: Any) -> None:
-        entry_data.pop("_persist_unsub", None)
-        pending: dict[str, dict] = entry_data.pop("_pending_devices", {})
-        if not pending:
-            return
-        stored = dict(entry.options.get(CONF_DEVICES, {}))
-        changed = False
-        for uid, info in pending.items():
-            if uid not in stored:
-                stored[uid] = info
-                changed = True
-        if changed:
-            new_options = dict(entry.options)
-            new_options[CONF_DEVICES] = stored
-            hass.config_entries.async_update_entry(entry, options=new_options)
-            _LOGGER.debug("Persisted %d auto-detected device(s)", len(pending))
-
-    entry_data["_persist_unsub"] = async_call_later(
-        hass, _PERSIST_DELAY, _do_persist
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -268,7 +208,11 @@ def _handle_raw_event(
     entry: ConfigEntry,
     event: RawDeviceEvent,
 ) -> None:
-    """Handle a raw RF device event (auto-add if enabled)."""
+    """Handle a raw RF device event.
+
+    Known devices → update entity state + revive after restart.
+    Unknown devices → fire a discovery config flow (BLE-like UX).
+    """
     params = event.params
     device_uid = event.device_id
     if not device_uid:
@@ -276,7 +220,7 @@ def _handle_raw_event(
 
     _LOGGER.debug("Raw RF event from %s: %s", device_uid, params)
 
-    # Broadcast for entity listeners (state updates)
+    # Broadcast for entity listeners (state updates for existing entities)
     async_dispatcher_send(hass, SIGNAL_EVENT.format(entry.entry_id), event)
 
     # Fire an HA bus event so device triggers (automations) can listen
@@ -291,28 +235,50 @@ def _handle_raw_event(
         )
 
     stored_devices = entry.options.get(CONF_DEVICES, {})
-    is_known = device_uid in stored_devices
 
-    # Always fire SIGNAL_NEW_DEVICE for known (stored) devices so platforms
-    # can revive entities after a restart.  For truly new devices, only fire
-    # when automatic_add is enabled (prevents neighbor device flooding).
-    if is_known or entry.options.get(CONF_AUTOMATIC_ADD, False):
-        if not is_known:
-            # Persist new auto-detected device so it survives future restarts
-            entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
-            pending = entry_data.setdefault("_pending_devices", {})
-            if device_uid not in pending:
-                pending[device_uid] = {
-                    CONF_DEVICE_NAME: f"TellStick {device_uid}",
-                    CONF_DEVICE_PROTOCOL: params.get("protocol", ""),
-                    CONF_DEVICE_MODEL: params.get("model", ""),
-                    CONF_DEVICE_HOUSE: params.get("house", ""),
-                    CONF_DEVICE_UNIT: params.get("unit", params.get("code", "")),
-                }
-                _schedule_device_persist(hass, entry)
+    if device_uid in stored_devices:
+        # Known device — fire SIGNAL_NEW_DEVICE so platforms can revive
+        # entities after a restart (the entity is pre-created from stored
+        # config, but the signal lets late-starting platforms pick it up).
         async_dispatcher_send(
             hass, SIGNAL_NEW_DEVICE.format(entry.entry_id), event
         )
+    else:
+        # Unknown device — fire a discovery config flow.  The device will
+        # appear in the "Discovered" section of Settings → Devices & Services.
+        # The user clicks Configure → names it → it becomes a stored device.
+        _fire_device_discovery(hass, entry, device_uid, params)
+
+
+def _fire_device_discovery(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    device_uid: str,
+    params: dict[str, str],
+) -> None:
+    """Fire an integration_discovery config flow for a new 433 MHz device."""
+    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
+    discovered: set[str] = entry_data.get("_discovered_uids", set())
+
+    if device_uid in discovered:
+        return  # Already fired a discovery for this device this session
+
+    discovered.add(device_uid)
+    hass.async_create_task(
+        hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={"source": "integration_discovery"},
+            data={
+                "device_uid": device_uid,
+                "protocol": params.get("protocol", ""),
+                "model": params.get("model", ""),
+                "house": params.get("house", ""),
+                "unit": params.get("unit", params.get("code", "")),
+                "entry_id": entry.entry_id,
+                "type": "device",
+            },
+        )
+    )
 
 
 def _handle_device_event(
@@ -352,23 +318,30 @@ def _handle_sensor_event(
     sensor_prefix = f"sensor_{event.sensor_id}_"
     is_known = any(uid.startswith(sensor_prefix) for uid in stored_devices)
 
-    # Always fire SIGNAL_NEW_DEVICE for known sensors (revival after restart).
-    # For truly new sensors, only fire when automatic_add is enabled.
-    if is_known or entry.options.get(CONF_AUTOMATIC_ADD, False):
-        if not is_known and suffix:
-            # Persist new auto-detected sensor
-            sensor_uid = f"sensor_{event.sensor_id}_{suffix}"
-            entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
-            pending = entry_data.setdefault("_pending_devices", {})
-            if sensor_uid not in pending:
-                pending[sensor_uid] = {
-                    CONF_DEVICE_NAME: f"TellStick sensor {event.sensor_id} {suffix}",
-                    CONF_DEVICE_PROTOCOL: event.protocol or "",
-                    CONF_DEVICE_MODEL: event.model or "",
-                    "sensor_id": event.sensor_id,
-                    "data_type": event.data_type,
-                }
-                _schedule_device_persist(hass, entry)
+    if is_known:
+        # Known sensor — revive entity after restart
         async_dispatcher_send(
             hass, SIGNAL_NEW_DEVICE.format(entry.entry_id), event
         )
+    elif suffix:
+        # Unknown sensor — fire a discovery config flow
+        sensor_uid = f"sensor_{event.sensor_id}_{suffix}"
+        entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
+        discovered: set[str] = entry_data.get("_discovered_uids", set())
+        if sensor_uid not in discovered:
+            discovered.add(sensor_uid)
+            hass.async_create_task(
+                hass.config_entries.flow.async_init(
+                    DOMAIN,
+                    context={"source": "integration_discovery"},
+                    data={
+                        "device_uid": sensor_uid,
+                        "protocol": event.protocol or "",
+                        "model": event.model or "",
+                        "sensor_id": event.sensor_id,
+                        "data_type": event.data_type,
+                        "entry_id": entry.entry_id,
+                        "type": "sensor",
+                    },
+                )
+            )
