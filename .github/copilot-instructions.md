@@ -3,6 +3,27 @@
 ```
 ████████████████████████████████████████████████████████████████████████████████
 █                                                                              █
+█   🛑🛑🛑 READ THIS FIRST — VERSION BUMPING RULES 🛑🛑🛑                    █
+█                                                                              █
+█   manifest.json version = X.Y.Z.W                                           █
+█                                                                              █
+█   W = bump between prompts WITHIN SAME AGENT SESSION (same PR)              █
+█   Z = bump when a NEW AGENT starts (new session / new PR)                   █
+█   Y = minor feature release                                                 █
+█   X = major release                                                          █
+█                                                                              █
+█   CURRENT VERSION: 2.1.0.11                                                  █
+█   (bump W → 2.1.0.12, 2.1.0.13, etc. for next prompt in this session)      █
+█   (new agent → 2.1.1.0)                                                     █
+█                                                                              █
+█   config.yaml version MUST ALWAYS be 'dev' on branches (linter-enforced)    █
+█                                                                              █
+████████████████████████████████████████████████████████████████████████████████
+```
+
+```
+████████████████████████████████████████████████████████████████████████████████
+█                                                                              █
 █   🛑 CRITICAL: SOURCE OF TRUTH FOR DIFFERENT DATA 🛑                        █
 █                                                                              █
 █   ADD-ON CONFIG (devices, protocols):                                        █
@@ -82,6 +103,20 @@ similar projects.
 ```
 
 `tellsticklive/config.yaml` stays `version: dev` forever on branches.
+
+### Version ticking scheme (`X.Y.Z.W`)
+
+The version in `manifest.json` follows `X.Y.Z.W`:
+
+| Digit | When to bump                                                |
+| ----- | ----------------------------------------------------------- |
+| **W** | Between prompts **within the same agent session** (same PR) |
+| **Z** | When a **new agent** starts working (new session/PR)        |
+| **Y** | Minor feature release                                       |
+| **X** | Major release                                               |
+
+Example: Agent starts at `2.1.0.0`. After each user prompt it bumps to
+`2.1.0.1`, `2.1.0.2`, etc. A new agent on the next PR starts at `2.1.1.0`.
 
 ## What File to Edit for Each Change
 
@@ -341,6 +376,149 @@ possibly can within telldus-core's constraints.
 
 Common model strings: `codeswitch`, `selflearning-switch`, `selflearning-dimmer`,
 `bell`, `kp100`, `ecosavers`, `temperature`, `temperaturehumidity`
+
+### ⚠️ Multi-protocol detection (one button = multiple events)
+
+`telldusd` runs **all** protocol decoders on every RF signal. A single button press
+from one remote can produce **multiple** raw device events with different protocol
+interpretations. This is normal behaviour, not a bug.
+
+**Verified example — Luxorparts 50969 remote (A-on button):**
+
+| #   | device_uid                         | protocol     | model        | house   | unit |
+| --- | ---------------------------------- | ------------ | ------------ | ------- | ---- |
+| 1   | `arctech_selflearning_2673666_1`   | arctech      | selflearning | 2673666 | 1    |
+| 2   | `everflourish_selflearning_3264_1` | everflourish | selflearning | 3264    | 1    |
+| 3   | `waveman_codeswitch_a_10`          | waveman      | codeswitch   | A       | 10   |
+
+The **correct** interpretation for this remote is **arctech / selflearning-switch**.
+The everflourish and waveman detections are false positives caused by similar bit
+patterns. The discovery flow will show all three as separate "Discovered" devices —
+the user should only add the arctech one.
+
+**Luxorparts receivers accept arctech/selflearning** — confirmed by user testing with
+TellStick ZNet (which also uses telldus-core). The Homey app (se.luxorparts-1) uses
+its own proprietary encrypted protocol stack, but that is Homey-specific — the actual
+RF signal is standard arctech selflearning.
+
+### Luxorparts protocol deep-dive (verified from source code)
+
+The Homey `se.luxorparts-1` app defines a **separate proprietary protocol**:
+
+- **Signal**: SOF=[375µs, 2250µs], bit 0=[375µs, 1125µs], bit 1=[1125µs, 375µs]
+- **Payload**: 24 bits (3 bytes) — 16-bit address + 2-bit count + 1-bit state + 5-bit unit
+- **Encryption**: Nibble substitution cipher (two 16-element lookup tables) + XOR chain
+  (see `lib/PayloadEncryption.js`)
+
+**This is NOT arctech selflearning.** Arctech selflearning is:
+
+- 26-bit house + 1-bit group + 1-bit on/off + 4-bit unit = 32+ data bits
+- T-packet timing: T0=127(~1270µs), T1=255(~2550µs), T2=24(~240µs), T3=1(~10µs)
+- Manchester-like encoding with ~240µs/~1270µs pulse durations
+
+**BUT Luxorparts receivers are dual-protocol**: they accept BOTH the proprietary
+Luxorparts signal AND standard arctech/selflearning. Self-learning 433 MHz receivers
+memorize whatever bit pattern they hear during learn mode. TellStick ZNet uses
+telldus-core's arctech selflearning to control them — confirmed by user.
+
+### Critical bug found: vendor suffix in model name
+
+Device catalog entries include a vendor suffix (e.g. `selflearning-switch:luxorparts`).
+This suffix is for display/matching in the integration only. When registering devices
+with telldusd, the suffix MUST be stripped because telldusd's `ProtocolNexa::methods()`
+only recognizes `selflearning-switch` (without suffix). If the full
+`selflearning-switch:luxorparts` is passed as the model:
+
+1. `methods()` returns 0 (no recognized model)
+2. `isMethodSupported(TELLSTICK_LEARN)` returns METHOD_NOT_SUPPORTED
+3. Learn signal silently fails → receiver never learns the code
+4. On/off commands also fail → device appears dead
+
+**Fix**: `client.py::add_device()` strips vendor suffix via `model.split(":")[0]`
+before calling `tdSetModel`.
+
+### Critical bug found: UID mismatch in synthetic events
+
+When the "Add device" flow dispatches a synthetic `RawDeviceEvent` to create the
+entity, the model in the raw string MUST be the RF-normalized name (e.g.
+`selflearning`), NOT the catalog name (e.g. `selflearning-switch:luxorparts`).
+
+`build_device_uid()` normalizes: `selflearning-switch:luxorparts` → `selflearning`
+`RawDeviceEvent.device_id` does NOT normalize — it uses whatever model is in the raw string.
+
+If the synthetic event uses the catalog model, the entity gets a different UID than
+what's stored in `device_id_map`. Result: `device_id_map.get(uid)` returns `None`,
+and `async_turn_on()` silently skips the command (Duo doesn't blink).
+
+**Fix**: `config_flow.py::async_step_confirm()` uses `normalize_rf_model()` to
+convert the catalog model to the RF-compatible name before building the synthetic event.
+
+**Symptom**: Learn/teach works (Duo blinks) but on/off does nothing (Duo silent).
+This is because `learn()` uses `telldusd_id` directly, but `turn_on()`/`turn_off()`
+look up the device via the mismatched UID.
+
+If learning still fails on TellStick Duo, the most likely cause is insufficient signal
+repetitions. The R-prefix Dockerfile patch (adding firmware-level repeats for
+pid 0x0c31) addresses this.
+
+**Impact on integration code:**
+
+- Discovery must deduplicate per `device_uid` (each UID is unique per protocol
+  interpretation, so three distinct discoveries fire — this is correct).
+- The `_discovered_uids` set in `__init__.py` prevents the same UID from
+  triggering duplicate discovery flows within a single session.
+
+### TellStick ZNet MQTT plugin confirms arctech/selflearning
+
+The ZNet MQTT plugin (`quazzie/tellstick-plugin-mqtt-hass`) uses telldus-core's
+Python SDK internally: `device.command(Device.TURNON)` → `tdTurnOn()`. The ZNet
+configures Luxorparts as arctech/selflearning-switch and it works. This confirms:
+
+- The protocol IS arctech/selflearning (not proprietary Luxorparts encryption)
+- The same `tdTurnOn`/`tdTurnOff` commands we send work on ZNet
+- The Duo should work identically once the UID mismatch is fixed
+
+### Future feature: Raw Record & Replay (bypasses protocol decoding)
+
+**The user explicitly requested this feature for future implementation.**
+
+`telldusd` always decodes received signals into protocol parameters (arctech,
+everflourish, waveman, etc.) before exposing them. One button press can trigger
+**multiple** protocol decoders simultaneously, creating multiple "phantom" devices.
+Example: Luxorparts 50969 A-on → 3 devices (arctech, everflourish, waveman).
+
+A **raw record/replay** approach would bypass protocol decoding entirely:
+
+**How it works (verified from telldus-core source):**
+
+1. **Receive raw:** TellStick Duo firmware sends raw pulse data via `+R` prefix.
+   `processData()` in `TellStick_libftdi.cpp:129` calls `publishData()` which
+   emits the raw pulse string **before** any protocol decoding.
+   (Compare: `+W` prefix → `decodePublishData()` → `Protocol::decodeData()` →
+   protocol-decoded events. This is the decoded path we currently use.)
+
+2. **Send raw:** `tdSendRawCommand(const char *command, int reserved)` sends a
+   raw firmware command string directly to the TellStick hardware via
+   `controller->send()`. The string format is TellStick firmware pulse encoding,
+   e.g. `S$k$k$k$k$k$k$k$k$k$k$k$k$k$k$k$k$k$k$kk$$kk$$kk$$}+`
+   (from `tdtool --raw` documentation).
+
+3. **No protocol encoding/decoding** — the exact received waveform is replayed.
+
+**Why this matters:**
+
+- Works for **any** 433 MHz device, even unrecognized protocols
+- No multi-protocol phantom devices (one button = one recorded signal)
+- Could solve Luxorparts if the arctech/selflearning approach fails
+
+**Implementation requirements:**
+
+- Expose `+R` raw data through the event socket (or a new raw socket)
+- Add `tdSendRawCommand` to `client.py`
+- New UI flow: "Record" → press remote button → capture `+R` data → "Replay"
+- Store raw ON/OFF pulse strings per device
+
+**NOT YET IMPLEMENTED — queued for future development.**
 
 ---
 

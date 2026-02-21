@@ -239,6 +239,12 @@ class TellStickController:
             "tdTurnOn", [_encode_int(device_id)]
         )
 
+    async def learn(self, device_id: int) -> int:
+        """Send tdLearn command (self-learning teach signal). Returns 0 on success."""
+        return await self._call_int(
+            "tdLearn", [_encode_int(device_id)]
+        )
+
     async def turn_off(self, device_id: int) -> int:
         """Send tdTurnOff command. Returns 0 on success."""
         return await self._call_int(
@@ -276,9 +282,17 @@ class TellStickController:
         await self._call_int(
             "tdSetProtocol", [_encode_int(device_id), _encode_string(protocol)]
         )
-        if model:
+        # Strip vendor suffix (e.g. "selflearning-switch:luxorparts" →
+        # "selflearning-switch") — telldusd only knows the base model name.
+        # Also map RF event model names to telldusd model names: RF events
+        # report "selflearning" but ProtocolNexa::methods() only recognises
+        # "selflearning-switch" and "selflearning-dimmer".
+        td_model = model.split(":")[0] if model else ""
+        _RF_TO_TELLDUSD = {"selflearning": "selflearning-switch"}
+        td_model = _RF_TO_TELLDUSD.get(td_model, td_model)
+        if td_model:
             await self._call_int(
-                "tdSetModel", [_encode_int(device_id), _encode_string(model)]
+                "tdSetModel", [_encode_int(device_id), _encode_string(td_model)]
             )
         for param_name, param_value in parameters.items():
             await self._call_int(

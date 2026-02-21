@@ -12,10 +12,11 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .client import DeviceEvent, RawDeviceEvent, TellStickController
 from .const import (
-    CONF_AUTOMATIC_ADD,
+    CONF_DEVICE_HOUSE,
     CONF_DEVICE_MODEL,
     CONF_DEVICE_NAME,
     CONF_DEVICE_PROTOCOL,
+    CONF_DEVICE_UNIT,
     CONF_DEVICES,
     DOMAIN,
     ENTRY_DEVICE_ID_MAP,
@@ -41,7 +42,8 @@ _SWITCH_MODELS = {
 
 
 def _is_switch(protocol: str, model: str) -> bool:
-    return model.lower() in _SWITCH_MODELS
+    base = model.split(":")[0].lower() if ":" in model else model.lower()
+    return base in _SWITCH_MODELS
 
 
 async def async_setup_entry(
@@ -74,6 +76,8 @@ async def async_setup_entry(
                 model=model,
                 controller=controller,
                 device_id=device_id_map.get(device_uid),
+                house=device_cfg.get(CONF_DEVICE_HOUSE, ""),
+                unit=device_cfg.get(CONF_DEVICE_UNIT, ""),
             )
         )
     if stored_entities:
@@ -92,7 +96,9 @@ async def async_setup_entry(
         if not _is_switch(protocol, model):
             return
         known.add(uid)
-        name = f"TellStick {uid}"
+        # Use stored name if available, otherwise generate one
+        stored = entry.options.get(CONF_DEVICES, {}).get(uid, {})
+        name = stored.get(CONF_DEVICE_NAME) or f"TellStick {uid}"
         entity = TellStickSwitch(
             entry_id=entry.entry_id,
             device_uid=uid,
@@ -100,13 +106,18 @@ async def async_setup_entry(
             protocol=protocol,
             model=model,
             controller=controller,
+            device_id=device_id_map.get(uid),
+            house=params.get("house", ""),
+            unit=params.get("unit", params.get("code", "")),
         )
         async_add_entities([entity])
 
-    if entry.options.get(CONF_AUTOMATIC_ADD, False):
-        entry.async_on_unload(
-            async_dispatcher_connect(hass, new_device_signal, _async_new_device)
-        )
+    # Always listen for new device signals — manually added devices (via the
+    # "Add device" button) dispatch this signal immediately, while auto-detected
+    # devices are gated by automatic_add in __init__._handle_raw_event.
+    entry.async_on_unload(
+        async_dispatcher_connect(hass, new_device_signal, _async_new_device)
+    )
 
 
 class TellStickSwitch(TellStickEntity, SwitchEntity):
@@ -121,6 +132,8 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
         model: str,
         controller: TellStickController,
         device_id: int | None = None,
+        house: str = "",
+        unit: str = "",
     ) -> None:
         """Initialize a TellStick switch."""
         super().__init__(
@@ -129,6 +142,8 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
             name=name,
             protocol=protocol,
             model=model,
+            house=house,
+            unit=unit,
         )
         self._controller = controller
         self._telldusd_device_id = device_id
@@ -169,6 +184,11 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
         """Turn the switch on."""
         if self._telldusd_device_id is not None:
             await self._controller.turn_on(self._telldusd_device_id)
+        else:
+            _LOGGER.warning(
+                "Cannot send on command for %s: no telldusd device ID (UID mismatch?)",
+                self._device_uid,
+            )
         self._attr_is_on = True
         self.async_write_ha_state()
 
@@ -176,5 +196,10 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
         """Turn the switch off."""
         if self._telldusd_device_id is not None:
             await self._controller.turn_off(self._telldusd_device_id)
+        else:
+            _LOGGER.warning(
+                "Cannot send off command for %s: no telldusd device ID (UID mismatch?)",
+                self._device_uid,
+            )
         self._attr_is_on = False
         self.async_write_ha_state()

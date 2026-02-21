@@ -17,7 +17,11 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .client import SensorEvent
 from .const import (
-    CONF_AUTOMATIC_ADD,
+    CONF_DEVICE_MODEL,
+    CONF_DEVICE_NAME,
+    CONF_DEVICE_PROTOCOL,
+    CONF_DEVICES,
+    DOMAIN,
     SIGNAL_EVENT,
     SIGNAL_NEW_DEVICE,
     TELLSTICK_HUMIDITY,
@@ -42,6 +46,33 @@ async def async_setup_entry(
     new_device_signal = SIGNAL_NEW_DEVICE.format(entry.entry_id)
 
     known: set[str] = set()
+
+    # Pre-create entities for stored sensor devices (persisted auto-detections)
+    stored_entities: list[TellStickSensor] = []
+    for device_uid, device_cfg in entry.options.get(CONF_DEVICES, {}).items():
+        if not device_uid.startswith("sensor_"):
+            continue
+        sensor_id = device_cfg.get("sensor_id")
+        data_type = device_cfg.get("data_type")
+        if sensor_id is None or data_type is None:
+            continue
+        if data_type not in _SENSOR_META:
+            continue
+        known.add(device_uid)
+        suffix, _, _ = _SENSOR_META[data_type]
+        stored_entities.append(
+            TellStickSensor(
+                entry_id=entry.entry_id,
+                device_uid=device_uid,
+                name=device_cfg.get(CONF_DEVICE_NAME, f"TellStick sensor {sensor_id} {suffix}"),
+                protocol=device_cfg.get(CONF_DEVICE_PROTOCOL, ""),
+                model=device_cfg.get(CONF_DEVICE_MODEL, ""),
+                sensor_id=sensor_id,
+                data_type=data_type,
+            )
+        )
+    if stored_entities:
+        async_add_entities(stored_entities)
 
     @callback
     def _async_new_device(event: Any) -> None:
@@ -68,10 +99,12 @@ async def async_setup_entry(
         )
         async_add_entities([entity])
 
-    if entry.options.get(CONF_AUTOMATIC_ADD, False):
-        entry.async_on_unload(
-            async_dispatcher_connect(hass, new_device_signal, _async_new_device)
-        )
+    # Always listen for new sensor signals — __init__.py gates new discovery
+    # behind automatic_add, but always fires for known (stored) sensors so
+    # they can be revived after a restart.
+    entry.async_on_unload(
+        async_dispatcher_connect(hass, new_device_signal, _async_new_device)
+    )
 
 
 class TellStickSensor(TellStickEntity, SensorEntity):

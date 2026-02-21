@@ -1,0 +1,60 @@
+#!/command/with-contenv bashio
+# ==============================================================================
+# Sends learn commands for devices that have learn: true in their configuration.
+# This is a one-shot service that runs once at startup.
+# After learning, set learn back to false in the add-on configuration.
+# ==============================================================================
+
+# Check if any device has learn enabled
+has_learn=false
+for device in $(bashio::config 'devices|keys'); do
+    if bashio::config.true "devices[${device}].learn"; then
+        has_learn=true
+        break
+    fi
+done
+
+if ! "${has_learn}"; then
+    bashio::log.info "No devices have learn enabled, skipping learn service."
+    exec sleep infinity
+fi
+
+bashio::log.info "Waiting for TellStick sockets before sending learn commands..."
+
+# Wait for telldusd sockets to be ready (up to 60 seconds)
+timeout=60
+while [[ ! -S /tmp/TelldusClient ]] || [[ ! -S /tmp/TelldusEvents ]]; do
+    if [[ "${timeout}" -le 0 ]]; then
+        bashio::log.error "Timeout waiting for TellStick sockets. Cannot send learn commands."
+        exec sleep infinity
+    fi
+    sleep 1
+    ((timeout--))
+done
+
+bashio::log.info "TellStick sockets ready. Sending learn commands..."
+
+# Wait for telldusd internal initialization after sockets become available
+sleep 2
+
+for device in $(bashio::config 'devices|keys'); do
+    if bashio::config.true "devices[${device}].learn"; then
+        DEV_ID=$(bashio::config "devices[${device}].id")
+        DEV_NAME=$(bashio::config "devices[${device}].name")
+        bashio::log.info "Sending learn signal for device ${DEV_ID} (${DEV_NAME})..."
+        bashio::log.info ">>> Put the receiver into learning mode NOW! <<<"
+
+        if msg="$(tdtool --learn "${DEV_ID}" 2>&1)"; then
+            bashio::log.info "Learn signal sent for device ${DEV_ID}: ${msg}"
+        else
+            bashio::log.error "Learn failed for device ${DEV_ID}: ${msg}"
+        fi
+
+        # Brief pause between learn commands for multiple devices
+        sleep 2
+    fi
+done
+
+bashio::log.info "Learn commands complete. Set learn back to false in the add-on configuration."
+
+exec sleep infinity

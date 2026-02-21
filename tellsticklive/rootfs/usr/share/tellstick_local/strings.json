@@ -1,5 +1,6 @@
 {
   "config": {
+    "flow_title": "TellStick: {name}",
     "step": {
       "hassio_confirm": {
         "title": "TellStick Local detected",
@@ -13,6 +14,13 @@
           "command_port": "Command port",
           "event_port": "Event port"
         }
+      },
+      "confirm_rf_device": {
+        "title": "New 433 MHz device detected",
+        "description": "A 433 MHz device was detected via RF signal:\n\n- **Protocol:** {protocol}\n- **Model:** {model}\n- **House:** {house}\n- **Unit:** {unit}\n- **UID:** {device_uid}\n\nGive it a name and click **Submit** to add it.",
+        "data": {
+          "name": "Device name"
+        }
       }
     },
     "error": {
@@ -20,44 +28,85 @@
       "unknown": "Unexpected error. See logs for details."
     },
     "abort": {
-      "already_configured": "This TellStick daemon is already configured."
+      "already_configured": "This TellStick daemon is already configured.",
+      "already_added": "This device is already added.",
+      "device_added": "Device added successfully! It will appear in your device list.",
+      "entry_not_found": "TellStick Local integration not found. Please set it up first."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "TellStick Local options",
-        "data": {
-          "automatic_add": "Automatically add new devices when they send a signal",
-          "add_device": "Teach a new self-learning device",
-          "remove_device": "Remove a device"
+        "menu_options": {
+          "settings": "Settings",
+          "edit_device": "View / edit a device"
         }
       },
-      "add_device": {
-        "title": "Add a self-learning device",
-        "description": "Pick your device type, give it a name, and click Submit. A random house code is generated — keep it unless you need a specific one.",
+      "settings": {
+        "title": "TellStick Local settings",
+        "data": {
+          "automatic_add": "Automatically add new devices (when off, new devices appear as 'Discovered' for manual confirmation)"
+        }
+      },
+      "edit_device": {
+        "title": "Select a device",
+        "description": "Pick a device to view or edit its house/unit codes.",
+        "data": {
+          "device": "Device"
+        }
+      },
+      "device_detail": {
+        "title": "Edit device: {device_uid}",
+        "description": "Protocol: **{protocol}** / Model: **{model}**\n\nChange the name or house/unit codes below.",
         "data": {
           "name": "Device name",
-          "device_type": "Device type",
           "house": "House code",
-          "unit": "Unit number"
-        }
-      },
-      "add_device_confirm": {
-        "title": "Send pairing signal",
-        "description": "**{name}** ({protocol}/{model}) will learn house code **{house}**, unit **{unit}**.\n\nPut your 433 MHz receiver in **learn mode** now, then click **Submit** — the pairing signal is sent immediately."
-      },
-      "remove_device": {
-        "title": "Remove a device",
-        "data": {
-          "device": "Device to remove"
+          "unit": "Unit code"
         }
       }
     },
-    "error": {
-      "invalid_code": "House and unit code must not be empty.",
-      "teach_failed": "Failed to send pairing signal. Check that the TellStick app is running.",
-      "invalid_selection": "Please select a device to remove."
+    "abort": {
+      "no_devices": "No devices to edit."
+    }
+  },
+  "config_subentries": {
+    "device": {
+      "initiate_flow": {
+        "user": "Add 433 MHz device"
+      },
+      "step": {
+        "user": {
+          "title": "Add a device",
+          "description": "Pick your device type and give it a name.",
+          "data": {
+            "name": "Device name",
+            "device_type": "Device type"
+          }
+        },
+        "params": {
+          "title": "Device parameters",
+          "description": "Enter the parameters for **{device_type}**. Ranges and defaults match the hardware.",
+          "data": {
+            "house": "House code",
+            "unit": "Unit code",
+            "code": "Code (10 digits, 0 or 1)",
+            "system": "System",
+            "units": "Units (comma-separated, 1–10)",
+            "fade": "Fade (smooth)"
+          }
+        },
+        "confirm": {
+          "title": "Send pairing signal",
+          "description": "**{name}** ({protocol}/{model}) will learn house code **{house}**, unit **{unit}**.\n\nPut your 433 MHz receiver in **learn mode** now, then click **Submit** — the pairing signal is sent immediately."
+        }
+      },
+      "error": {
+        "invalid_code": "Parameter values must not be empty.",
+        "teach_failed": "Failed to send pairing signal. Check that the TellStick app is running."
+      },
+      "abort": {
+        "device_added": "Device paired successfully! It will appear in your device list shortly."
+      }
     }
   },
   "device_automation": {

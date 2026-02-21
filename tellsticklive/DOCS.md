@@ -87,11 +87,103 @@ devices:
 | `unit`     | No       | Unit code                                                  |
 | `code`     | No       | Code (for code-based protocols)                            |
 | `fade`     | No       | Enable fade for dimmers (`true`/`false`)                   |
+| `learn`    | No       | Send learn signal on next restart (`true`/`false`)         |
 
 Restart the app after changing the device list.
 
 **Supported protocols:** arctech, brateck, comen, everflourish, fineoffset, fuhaote,
 hasta, ikea, mandolyn, oregon, risingsun, sartano, silvanchip, upm, waveman, x10, yidong
+
+---
+
+## Pairing self-learning devices
+
+Self-learning devices (Nexa, Proove, Luxorparts, and other arctech-compatible
+switches) must be paired using a **learn** signal. Sending a normal `on` command
+is **not** sufficient — the receiver needs a special learning sequence to register
+the house/unit code.
+
+### Step-by-step pairing
+
+1. **Configure the device** in the app configuration:
+
+   ```yaml
+   devices:
+     - id: 1
+       name: "My Switch"
+       protocol: arctech
+       model: selflearning-switch
+       house: "12345678"
+       unit: "1"
+   ```
+
+   For self-learning devices, the `house` code can be any number between 1 and 67108863. The receiver learns whatever code you send it.
+
+2. **Restart the app** to apply the configuration.
+
+3. **Put the receiver into learning mode** by pressing and holding its learning
+   button until the indicator LED lights up or blinks.
+
+4. **Send a learn command** using one of these methods:
+
+   **Option A — GUI toggle:** Set `learn: true` on the device, then restart the
+   app. The learn signal is sent automatically on startup.
+
+   ```yaml
+   devices:
+     - id: 1
+       name: "My Switch"
+       protocol: arctech
+       model: selflearning-switch
+       house: "12345678"
+       unit: "1"
+       learn: true
+   ```
+
+   Set `learn` back to `false` after pairing is complete.
+
+   **Option B — Service call:**
+
+   ```yaml
+   service: hassio.addon_stdin
+   data:
+     addon: YOUR_ADDON_SLUG
+     input:
+       function: "learn"
+       device: 1
+   ```
+
+5. The receiver should click or blink to confirm it has learned the code.
+
+6. **Repeat** for each additional receiver, using a different `unit` value.
+
+Once paired, you can control the device with normal on/off commands through the
+**TellStick Local** integration.
+
+### Luxorparts / Cleverio 50969 and similar switches
+
+Luxorparts / Cleverio 433 MHz switches (50969, 50970, etc.) use the standard
+**arctech / selflearning** protocol. They are compatible with TellStick Duo and
+work the same way as Nexa, Proove, and other arctech self-learning devices.
+
+> **Note:** The Luxorparts remote sends a **multi-part signal** that telldusd
+> decodes as three separate protocols (arctech, everflourish, waveman). The
+> correct interpretation is **arctech / selflearning**. Ignore the everflourish
+> and waveman detections — they are false positives from similar bit patterns.
+
+**Pairing a Luxorparts receiver:**
+
+1. Add the device via **Settings → Devices & Services → TellStick Local →
+   Add device** and select **Luxorparts / Cleverio — Self-learning on/off**
+2. A random house code and unit will be generated automatically
+3. Put the Luxorparts receiver into learn mode (hold the button until the LED
+   blinks)
+4. Click **Submit** — the pairing signal is sent immediately
+5. The receiver should stop blinking, confirming it learned the code
+
+If pairing fails on the first attempt, try again — some receivers need multiple
+learn signals. The TellStick Duo firmware repeat patch improves reliability for
+picky receivers.
 
 ---
 

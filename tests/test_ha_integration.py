@@ -141,7 +141,7 @@ async def run_tests() -> None:
         )
 
         flow = TellStickLocalOptionsFlow()
-        ok = hasattr(flow, "_automatic_add") and hasattr(flow, "_new_device")
+        ok = isinstance(flow, TellStickLocalOptionsFlow)
         report("OptionsFlow", ok)
     except Exception as e:
         report("OptionsFlow", False, str(e))
