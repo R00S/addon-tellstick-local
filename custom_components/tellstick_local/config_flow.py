@@ -403,7 +403,8 @@ class TellStickLocalAddDeviceFlow(ConfigSubentryFlow):
                     self._new_device.get(CONF_DEVICE_HOUSE, ""),
                     self._new_device.get(CONF_DEVICE_UNIT, ""),
                 )
-                # Store in options for backward compat with existing code
+                # Also store in entry.options[CONF_DEVICES] so __init__.py
+                # can re-register existing devices with telldusd on startup
                 existing_devices = dict(entry.options.get(CONF_DEVICES, {}))
                 existing_devices[device_uid] = {
                     CONF_DEVICE_NAME: self._new_device[CONF_DEVICE_NAME],
