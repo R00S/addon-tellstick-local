@@ -1,9 +1,9 @@
 # Home Assistant: TellStick Local
 
 > [!NOTE]
-> **🧪 Looking for testers!** If you have a TellStick Duo USB stick and run
-> Home Assistant OS, we'd love your feedback. Install the app, try pairing your
-> 433 MHz devices, and [open an issue][issue] if anything doesn't work.
+> **🧪 Beta – looking for testers!** This version has a reworked device
+> management UI. If you have a TellStick Duo USB stick and run Home Assistant OS,
+> please install, test, and [open an issue][issue] if anything doesn't work.
 
 ![Project Stage][project-stage-shield]
 
@@ -38,7 +38,8 @@ YAML file editing.
 | ----------------------- | ------------------------------------------------------------------------------ |
 | **Auto install prompt** | Install the app → HA automatically offers "Set up TellStick Local?"            |
 | **Press-to-discover**   | Enable automatic add → press any remote → device appears in HA                 |
-| **Self-learning teach** | Options → Add device → pick protocol → send pairing signal → receiver learns   |
+| **Add device button**   | Click "Add device" on the integration card → pick protocol → send pairing signal |
+| **Per-device deletion** | Delete any device (including auto-detected) from its device page ⋮ menu        |
 | **GUI-only management** | Add, rename and remove devices via HA UI — no YAML, no restart                 |
 | **Local push**          | RF events arrive in real time; no polling, no cloud                            |
 | **Automations**         | Device triggers on any 433 MHz button press, usable directly in HA automations |
@@ -50,7 +51,10 @@ YAML file editing.
 ## Prerequisites
 
 - **Hardware:** TellStick Duo USB stick connected to the HAOS machine
-- **Software:** Home Assistant OS **2026.2 or later** (HAOS, not Container/Core)
+- **Software:** Home Assistant OS with **HA Core 2025.2 or later**
+
+> **Why 2025.2?** The "Add device" button on the integration card uses the
+> ConfigSubentryFlow API introduced in HA 2025.2.
 
 No HACS required — the integration is bundled inside the app and installs itself
 automatically.
@@ -119,13 +123,13 @@ wall switches, sensors).
 4. Press the button or remote you want to pair
 5. The device appears in HA — click its name to rename it
 
-### Method B – Self-learning teach
+### Method B – Self-learning teach (Add device button)
 
 Use this for self-learning receivers (Nexa, KAKU, Proove, Intertechno, etc.)
 that need to be taught a code before they respond.
 
-1. Go to **Settings → Devices & Services → TellStick Local → Configure**
-2. Click **Add device**
+1. Go to **Settings → Devices & Services → TellStick Local**
+2. Click **Add device** (the button on the integration card)
 3. Pick your **device type** from the dropdown (e.g. "Nexa — Self-learning on/off")
 4. A house code and unit code are generated automatically — click **Submit**
 5. Put the receiver in **learn mode** (hold its button until it blinks)
@@ -134,9 +138,9 @@ that need to be taught a code before they respond.
 
 ### Removing a device
 
-1. Go to **Settings → Devices & Services → TellStick Local → Configure**
-2. Click **Remove device**
-3. Select the device and click **Submit**
+Go to the **device page** of the device you want to remove, click the **⋮ menu**
+(three dots), and select **Delete**. This works for both manually added and
+auto-detected devices.
 
 ---
 
@@ -249,4 +253,4 @@ See [LICENSE.md](LICENSE.md) and [NOTICE](NOTICE) for full details.
 [github-actions]: https://github.com/R00S/addon-tellsticklive-roosfork/actions
 [issue]: https://github.com/R00S/addon-tellsticklive-roosfork/issues
 [maintenance-shield]: https://img.shields.io/maintenance/yes/2026.svg
-[project-stage-shield]: https://img.shields.io/badge/project%20stage-testing-blue.svg
+[project-stage-shield]: https://img.shields.io/badge/project%20stage-beta-orange.svg
