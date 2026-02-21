@@ -12,8 +12,8 @@
 █   Y = minor feature release                                                 █
 █   X = major release                                                          █
 █                                                                              █
-█   CURRENT VERSION: 2.1.0.9                                                   █
-█   (bump W → 2.1.0.10, 2.1.0.11, etc. for next prompt in this session)      █
+█   CURRENT VERSION: 2.1.0.11                                                  █
+█   (bump W → 2.1.0.12, 2.1.0.13, etc. for next prompt in this session)      █
 █   (new agent → 2.1.1.0)                                                     █
 █                                                                              █
 █   config.yaml version MUST ALWAYS be 'dev' on branches (linter-enforced)    █
@@ -472,6 +472,46 @@ configures Luxorparts as arctech/selflearning-switch and it works. This confirms
 - The protocol IS arctech/selflearning (not proprietary Luxorparts encryption)
 - The same `tdTurnOn`/`tdTurnOff` commands we send work on ZNet
 - The Duo should work identically once the UID mismatch is fixed
+
+### Future feature: Raw Record & Replay (bypasses protocol decoding)
+
+**The user explicitly requested this feature for future implementation.**
+
+`telldusd` always decodes received signals into protocol parameters (arctech,
+everflourish, waveman, etc.) before exposing them. One button press can trigger
+**multiple** protocol decoders simultaneously, creating multiple "phantom" devices.
+Example: Luxorparts 50969 A-on → 3 devices (arctech, everflourish, waveman).
+
+A **raw record/replay** approach would bypass protocol decoding entirely:
+
+**How it works (verified from telldus-core source):**
+
+1. **Receive raw:** TellStick Duo firmware sends raw pulse data via `+R` prefix.
+   `processData()` in `TellStick_libftdi.cpp:129` calls `publishData()` which
+   emits the raw pulse string **before** any protocol decoding.
+   (Compare: `+W` prefix → `decodePublishData()` → `Protocol::decodeData()` →
+   protocol-decoded events. This is the decoded path we currently use.)
+
+2. **Send raw:** `tdSendRawCommand(const char *command, int reserved)` sends a
+   raw firmware command string directly to the TellStick hardware via
+   `controller->send()`. The string format is TellStick firmware pulse encoding,
+   e.g. `S$k$k$k$k$k$k$k$k$k$k$k$k$k$k$k$k$k$k$kk$$kk$$kk$$}+`
+   (from `tdtool --raw` documentation).
+
+3. **No protocol encoding/decoding** — the exact received waveform is replayed.
+
+**Why this matters:**
+- Works for **any** 433 MHz device, even unrecognized protocols
+- No multi-protocol phantom devices (one button = one recorded signal)
+- Could solve Luxorparts if the arctech/selflearning approach fails
+
+**Implementation requirements:**
+- Expose `+R` raw data through the event socket (or a new raw socket)
+- Add `tdSendRawCommand` to `client.py`
+- New UI flow: "Record" → press remote button → capture `+R` data → "Replay"
+- Store raw ON/OFF pulse strings per device
+
+**NOT YET IMPLEMENTED — queued for future development.**
 
 ---
 
