@@ -36,29 +36,7 @@ RUN apk add --no-cache \
     && sed -i \
         "/\<sys\/socket.h\>/a \#include \<sys\/select.h\>" \
         common/Socket_unix.cpp \
-    && python3 -c " \
-# Patch ProtocolNexa.cpp: repeat learn signal for TellStick Duo (PID 0x0c31) \
-# Same approach as existing workaround for old TellStick (PID 0x0c30, FW<=2) \
-# Some receivers (e.g. Luxorparts 50969) need multiple transmissions to learn \
-with open('service/ProtocolNexa.cpp', 'r') as f: \
-    content = f.read() \
-old = '\t\t}\n\t\treturn str;\n\t}\n\treturn getStringSelflearning(method, data);' \
-new = ('\t\t} else if (ts->pid() == 0x0c31) {\n' \
-       '\t\t\t// TellStick Duo: repeat learn signal for receivers that need\n' \
-       '\t\t\t// multiple transmissions for reliable learning\n' \
-       '\t\t\tfor (int i = 0; i < 5; ++i) {\n' \
-       '\t\t\t\tcontroller->send(str);\n' \
-       '\t\t\t}\n' \
-       '\t\t}\n' \
-       '\t\treturn str;\n' \
-       '\t}\n' \
-       '\treturn getStringSelflearning(method, data);') \
-assert old in content, 'Patch target not found in ProtocolNexa.cpp - telldus-core source may have changed' \
-content = content.replace(old, new, 1) \
-with open('service/ProtocolNexa.cpp', 'w') as f: \
-    f.write(content) \
-print('ProtocolNexa.cpp patched: TellStick Duo learn signal repetition added') \
-" \
+    && python3 -c "f=open('service/ProtocolNexa.cpp'); c=f.read(); f.close(); old='\t\t}\n\t\treturn str;\n\t}\n\treturn getStringSelflearning(method, data);'; new='\t\t} else if (ts->pid() == 0x0c31) {\n\t\t\t// TellStick Duo: repeat learn signal for receivers that need\n\t\t\t// multiple transmissions for reliable learning\n\t\t\tfor (int i = 0; i < 5; ++i) {\n\t\t\t\tcontroller->send(str);\n\t\t\t}\n\t\t}\n\t\treturn str;\n\t}\n\treturn getStringSelflearning(method, data);'; assert old in c, 'Patch target not found in ProtocolNexa.cpp'; c=c.replace(old,new,1); f=open('service/ProtocolNexa.cpp','w'); f.write(c); f.close(); print('ProtocolNexa.cpp patched: TellStick Duo learn signal repetition added')" \
     && grep -q 'pid() == 0x0c31' service/ProtocolNexa.cpp \
     && cmake . \
         -DBUILD_LIBTELLDUS-CORE=ON \
