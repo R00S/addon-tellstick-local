@@ -40,3 +40,4 @@ schema:
       code: str?
       unit: str?
       fade: str?
+      learn: bool?

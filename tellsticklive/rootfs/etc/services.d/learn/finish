@@ -1,0 +1,5 @@
+#!/command/with-contenv bashio
+# ==============================================================================
+# Learn service finish script - do not restart this one-shot service
+# ==============================================================================
+exec true

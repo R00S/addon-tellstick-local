@@ -167,6 +167,8 @@ DEVICE_CATALOG: list[tuple[str, str, str]] = [
     ("IKEA — Koppla dimmer", "ikea", "selflearning:ikea"),
     # --- Kjell & Company ---
     ("Kjell & Company — Code switch", "risingsun", "codeswitch:kjelloco"),
+    # --- Luxorparts ---
+    ("Luxorparts — Self-learning on/off", "arctech", "selflearning-switch:luxorparts"),
     # --- Otio ---
     ("Otio — Self-learning", "risingsun", "selflearning:otio"),
     # --- Rusta ---
