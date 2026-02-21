@@ -117,8 +117,7 @@ the house/unit code.
        unit: "1"
    ```
 
-   For self-learning devices, the `house` code can be any number between 1 and
-   67108863. The receiver learns whatever code you send it.
+   For self-learning devices, the `house` code can be any number between 1 and 67108863. The receiver learns whatever code you send it.
 
 2. **Restart the app** to apply the configuration.
 
