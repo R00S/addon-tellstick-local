@@ -41,7 +41,8 @@ _DIMMER_MODELS = {
 
 
 def _is_dimmer(protocol: str, model: str) -> bool:
-    return model.lower() in _DIMMER_MODELS
+    base = model.split(":")[0].lower() if ":" in model else model.lower()
+    return base in _DIMMER_MODELS
 
 
 async def async_setup_entry(

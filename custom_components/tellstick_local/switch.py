@@ -41,7 +41,8 @@ _SWITCH_MODELS = {
 
 
 def _is_switch(protocol: str, model: str) -> bool:
-    return model.lower() in _SWITCH_MODELS
+    base = model.split(":")[0].lower() if ":" in model else model.lower()
+    return base in _SWITCH_MODELS
 
 
 async def async_setup_entry(
