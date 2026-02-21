@@ -1,0 +1,204 @@
+---
+# Forked from create-test-release.yaml
+# Builds for ALL non-deprecated HAOS 2026.2 platforms (aarch64 + amd64)
+name: Create Release (all HAOS platforms)
+
+# yamllint disable-line rule:truthy
+on:
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: Release type
+        required: true
+        type: choice
+        options:
+          - test
+          - beta
+          - rc
+        default: test
+      version_suffix:
+        description: Version suffix (e.g., branch name or identifier)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.version.outputs.test }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Get current branch name
+        id: branch
+        run: |
+          BRANCH_NAME="${GITHUB_REF#refs/heads/}"
+          echo "name=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
+          # Sanitize branch name for use in version (replace / with -)
+          SAFE_BRANCH=$(echo "$BRANCH_NAME" | sed 's/\//-/g')
+          echo "safe_name=$SAFE_BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Extract version from manifest
+        id: version
+        env:
+          INPUT_VERSION_SUFFIX: ${{ github.event.inputs.version_suffix }}
+          INPUT_RELEASE_TYPE: ${{ github.event.inputs.release_type }}
+          SAFE_BRANCH: ${{ steps.branch.outputs.safe_name }}
+        run: |
+          VERSION=$(jq -r '.version' custom_components/tellstick_local/manifest.json)
+          echo "base=$VERSION" >> "$GITHUB_OUTPUT"
+
+          SUFFIX="${INPUT_VERSION_SUFFIX}"
+          if [ -z "$SUFFIX" ]; then
+            SUFFIX="${SAFE_BRANCH}"
+          fi
+
+          # AwesomeVersion (used by HA Supervisor) classifies versions with
+          # hyphens as UNKNOWN and refuses to compare them, which causes
+          # "No update available" errors.  Use dots-only for the VERSION
+          # (which goes into config.yaml and Docker tags) and keep the
+          # human-readable git TAG separate.
+          TIMESTAMP=$(date +%Y%m%d%H%M%S)
+
+          # Version: dots-only so Supervisor can compare (SIMPLEVER strategy)
+          TEST_VERSION="${VERSION}.${TIMESTAMP}"
+
+          # Tag: human-readable, includes release type and branch
+          case "$INPUT_RELEASE_TYPE" in
+            beta)
+              TAG_SUFFIX="beta.${SUFFIX}"
+              ;;
+            rc)
+              TAG_SUFFIX="rc.${SUFFIX}"
+              ;;
+            *)
+              TAG_SUFFIX="test.${SUFFIX}"
+              ;;
+          esac
+
+          echo "test=$TEST_VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v${TEST_VERSION}-${TAG_SUFFIX}" >> "$GITHUB_OUTPUT"
+
+      - name: Update manifest.json with release version
+        env:
+          TEST_VERSION: ${{ steps.version.outputs.test }}
+        run: |
+          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"${TEST_VERSION}\"/" \
+            custom_components/tellstick_local/manifest.json
+          cat custom_components/tellstick_local/manifest.json
+
+      - name: Create release archive
+        env:
+          TEST_VERSION: ${{ steps.version.outputs.test }}
+        run: |
+          cd custom_components
+          zip -r "../tellstick-local-${TEST_VERSION}.zip" tellstick_local/
+          cd ..
+
+      - name: Generate release notes
+        id: release_notes
+        env:
+          TEST_VERSION: ${{ steps.version.outputs.test }}
+          BASE_VERSION: ${{ steps.version.outputs.base }}
+          BRANCH_NAME: ${{ steps.branch.outputs.name }}
+          RELEASE_TYPE: ${{ github.event.inputs.release_type }}
+          REPO: ${{ github.repository }}
+          GIT_SHA: ${{ github.sha }}
+        run: |
+          cat > release_notes.md << EOF
+          # 🚀 Release: ${TEST_VERSION}
+
+          **Branch:** \`${BRANCH_NAME}\` — **All HAOS 2026.2 platforms** (aarch64 + amd64)
+
+          ## Installation
+
+          1. In HAOS go to **Settings → Apps → ⋮ → Repositories**
+          2. Add: \`https://github.com/${REPO}\`, category **App**
+          3. Find **TellStick Local** and install it
+          4. Start the app — it will automatically copy the integration into your HA config
+          5. Accept the **"New device found: TellStick Local — Set up?"** notification
+          6. No HACS install needed — the integration is bundled in the app
+
+          ## What's Included
+
+          This release includes all changes from the \`${BRANCH_NAME}\` branch:
+
+          - Latest commit: \`${GIT_SHA}\`
+          - Base version: \`${BASE_VERSION}\`
+          - Release type: \`${RELEASE_TYPE}\`
+          - Architectures: **aarch64, amd64** (all non-deprecated HAOS 2026.2 platforms)
+
+          ## Testing Instructions
+
+          1. Install and start the **TellStick Local** app
+          2. Accept the integration setup prompt (or go to Settings → Devices & Services → Add Integration → TellStick Local)
+          3. Enable **Automatically add new devices** in the integration options
+          4. Press a 433 MHz remote/button — the device should appear in HA
+          5. Test the self-learning teach flow: Configure → Add device → pick protocol → put receiver in learn mode → Submit
+          6. Report any issues on the PR or as GitHub issues
+
+          ## Recent Commits
+
+          $(git log --oneline -10)
+
+          ---
+
+          **Note:** Once testing is complete and issues are resolved, these changes will be
+          merged to main and a production release will be created.
+          EOF
+
+          cat release_notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "Release ${{ steps.version.outputs.test }}"
+          body_path: release_notes.md
+          files: tellstick-local-${{ steps.version.outputs.test }}.zip
+          draft: false
+          prerelease: true
+          target_commitish: ${{ github.sha }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        env:
+          TEST_VERSION: ${{ steps.version.outputs.test }}
+          TEST_TAG: ${{ steps.version.outputs.tag }}
+          BRANCH_NAME: ${{ steps.branch.outputs.name }}
+          RELEASE_TYPE: ${{ github.event.inputs.release_type }}
+          REPO: ${{ github.repository }}
+        run: |
+          echo "## 🎉 Release Created!" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Version:** \`${TEST_VERSION}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Tag:** \`${TEST_TAG}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Branch:** \`${BRANCH_NAME}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Release Type:** \`${RELEASE_TYPE}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Architectures:** aarch64, amd64" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Installation" >> "$GITHUB_STEP_SUMMARY"
+          echo "Install the **TellStick Local** app — the integration is bundled and installs automatically." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Release URL" >> "$GITHUB_STEP_SUMMARY"
+          echo "https://github.com/${REPO}/releases/tag/${TEST_TAG}" >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    needs: create-release
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/deploy.yaml
+    with:
+      version: ${{ needs.create-release.outputs.version }}
