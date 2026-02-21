@@ -83,6 +83,20 @@ similar projects.
 
 `tellsticklive/config.yaml` stays `version: dev` forever on branches.
 
+### Version ticking scheme (`X.Y.Z.W`)
+
+The version in `manifest.json` follows `X.Y.Z.W`:
+
+| Digit | When to bump                                                |
+| ----- | ----------------------------------------------------------- |
+| **W** | Between prompts **within the same agent session** (same PR) |
+| **Z** | When a **new agent** starts working (new session/PR)        |
+| **Y** | Minor feature release                                       |
+| **X** | Major release                                               |
+
+Example: Agent starts at `2.1.0.0`. After each user prompt it bumps to
+`2.1.0.1`, `2.1.0.2`, etc. A new agent on the next PR starts at `2.1.1.0`.
+
 ## What File to Edit for Each Change
 
 | I want to change...                      | File to edit                                             |
@@ -341,6 +355,31 @@ possibly can within telldus-core's constraints.
 
 Common model strings: `codeswitch`, `selflearning-switch`, `selflearning-dimmer`,
 `bell`, `kp100`, `ecosavers`, `temperature`, `temperaturehumidity`
+
+### ⚠️ Multi-protocol detection (one button = multiple events)
+
+`telldusd` runs **all** protocol decoders on every RF signal. A single button press
+from one remote can produce **multiple** raw device events with different protocol
+interpretations. This is normal behaviour, not a bug.
+
+**Verified example — Luxorparts 50969 remote (A-on button):**
+
+| # | device_uid                               | protocol      | model        | house     | unit |
+|---|------------------------------------------|---------------|--------------|-----------|------|
+| 1 | `arctech_selflearning_2673666_1`         | arctech       | selflearning | 2673666   | 1    |
+| 2 | `everflourish_selflearning_3264_1`       | everflourish  | selflearning | 3264      | 1    |
+| 3 | `waveman_codeswitch_a_10`                | waveman       | codeswitch   | A         | 10   |
+
+The **correct** interpretation for this remote is **arctech / selflearning-switch**.
+The everflourish and waveman detections are false positives caused by similar bit
+patterns. The discovery flow will show all three as separate "Discovered" devices —
+the user should only add the arctech one.
+
+**Impact on integration code:**
+- Discovery must deduplicate per `device_uid` (each UID is unique per protocol
+  interpretation, so three distinct discoveries fire — this is correct).
+- The `_discovered_uids` set in `__init__.py` prevents the same UID from
+  triggering duplicate discovery flows within a single session.
 
 ---
 
