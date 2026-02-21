@@ -282,6 +282,16 @@ def build_device_uid(protocol: str, model: str, house: str, unit: str) -> str:
     2. Normalize: ``selflearning-switch`` → ``selflearning`` (to match RF events)
     """
     # Strip vendor suffix (e.g. "selflearning-switch:nexa" → "selflearning-switch")
-    base_model = model.split(":")[0] if ":" in model else model
-    uid_model = _UID_MODEL_NORMALIZE.get(base_model, base_model)
-    return "_".join(filter(None, [protocol, uid_model, house, unit]))
+    base_model = normalize_rf_model(model)
+    return "_".join(filter(None, [protocol, base_model, house, unit]))
+
+
+def normalize_rf_model(model: str) -> str:
+    """Normalize a catalog model name to match what telldusd RF events report.
+
+    Strips vendor suffix (``selflearning-switch:luxorparts`` →
+    ``selflearning-switch``) then normalizes (``selflearning-switch`` →
+    ``selflearning``) so UIDs match raw RF events.
+    """
+    base = model.split(":")[0] if ":" in model else model
+    return _UID_MODEL_NORMALIZE.get(base, base)

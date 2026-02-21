@@ -12,8 +12,8 @@
 █   Y = minor feature release                                                 █
 █   X = major release                                                          █
 █                                                                              █
-█   CURRENT VERSION: 2.1.0.8                                                   █
-█   (bump W → 2.1.0.9, 2.1.0.10, etc. for next prompt in this session)       █
+█   CURRENT VERSION: 2.1.0.9                                                   █
+█   (bump W → 2.1.0.10, 2.1.0.11, etc. for next prompt in this session)      █
 █   (new agent → 2.1.1.0)                                                     █
 █                                                                              █
 █   config.yaml version MUST ALWAYS be 'dev' on branches (linter-enforced)    █
@@ -434,6 +434,26 @@ only recognizes `selflearning-switch` (without suffix). If the full
 **Fix**: `client.py::add_device()` strips vendor suffix via `model.split(":")[0]`
 before calling `tdSetModel`.
 
+### Critical bug found: UID mismatch in synthetic events
+
+When the "Add device" flow dispatches a synthetic `RawDeviceEvent` to create the
+entity, the model in the raw string MUST be the RF-normalized name (e.g.
+`selflearning`), NOT the catalog name (e.g. `selflearning-switch:luxorparts`).
+
+`build_device_uid()` normalizes: `selflearning-switch:luxorparts` → `selflearning`
+`RawDeviceEvent.device_id` does NOT normalize — it uses whatever model is in the raw string.
+
+If the synthetic event uses the catalog model, the entity gets a different UID than
+what's stored in `device_id_map`. Result: `device_id_map.get(uid)` returns `None`,
+and `async_turn_on()` silently skips the command (Duo doesn't blink).
+
+**Fix**: `config_flow.py::async_step_confirm()` uses `normalize_rf_model()` to
+convert the catalog model to the RF-compatible name before building the synthetic event.
+
+**Symptom**: Learn/teach works (Duo blinks) but on/off does nothing (Duo silent).
+This is because `learn()` uses `telldusd_id` directly, but `turn_on()`/`turn_off()`
+look up the device via the mismatched UID.
+
 If learning still fails on TellStick Duo, the most likely cause is insufficient signal
 repetitions. The R-prefix Dockerfile patch (adding firmware-level repeats for
 pid 0x0c31) addresses this.
@@ -443,6 +463,15 @@ pid 0x0c31) addresses this.
   interpretation, so three distinct discoveries fire — this is correct).
 - The `_discovered_uids` set in `__init__.py` prevents the same UID from
   triggering duplicate discovery flows within a single session.
+
+### TellStick ZNet MQTT plugin confirms arctech/selflearning
+
+The ZNet MQTT plugin (`quazzie/tellstick-plugin-mqtt-hass`) uses telldus-core's
+Python SDK internally: `device.command(Device.TURNON)` → `tdTurnOn()`. The ZNet
+configures Luxorparts as arctech/selflearning-switch and it works. This confirms:
+- The protocol IS arctech/selflearning (not proprietary Luxorparts encryption)
+- The same `tdTurnOn`/`tdTurnOff` commands we send work on ZNet
+- The Duo should work identically once the UID mismatch is fixed
 
 ---
 

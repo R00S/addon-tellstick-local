@@ -48,6 +48,7 @@ from .const import (
     SIGNAL_NEW_DEVICE,
     WIDGET_PARAMS,
     build_device_uid,
+    normalize_rf_model,
 )
 
 SUBENTRY_TYPE_DEVICE = "device"
@@ -688,14 +689,18 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                     entry, options=new_options
                 )
 
-                # Dispatch a synthetic event so platforms create the entity
+                # Dispatch a synthetic event so platforms create the entity.
+                # Use the RF-normalized model name so that the UID computed
+                # from the event matches the one stored in device_id_map.
                 protocol = self._new_device[CONF_DEVICE_PROTOCOL]
-                model_str = self._new_device.get(CONF_DEVICE_MODEL, "")
+                rf_model = normalize_rf_model(
+                    self._new_device.get(CONF_DEVICE_MODEL, "")
+                )
                 house_str = self._new_device.get(CONF_DEVICE_HOUSE, "")
                 unit_str = self._new_device.get(CONF_DEVICE_UNIT, "")
                 synthetic = RawDeviceEvent(
                     raw=(
-                        f"class:command;protocol:{protocol};model:{model_str};"
+                        f"class:command;protocol:{protocol};model:{rf_model};"
                         f"house:{house_str};unit:{unit_str};method:turnon;"
                     ),
                     controller_id=0,
