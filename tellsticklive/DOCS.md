@@ -45,14 +45,17 @@ Add Integration**, search for **TellStick Local**, and run the manual setup.
 After the app starts, the **TellStick Local** integration is automatically installed
 into `/config/custom_components/`. No HACS or manual download is needed.
 
-All device management (pairing, naming, automations) happens in the integration:
+All device management happens in the integration under **Settings → Devices & Services
+→ TellStick Local**:
 
-- Go to **Settings → Devices & Services → TellStick Local → Configure**
-- **Automatic add** — enable it, then press any 433 MHz remote to discover devices
-- **Self-learning teach** — pick a device type from the dropdown, send a pairing signal
+- **Automatic add** — click **Configure** (⚙), enable it, then press any 433 MHz
+  remote to discover devices
+- **Add device button** — click **Add device** on the integration card to manually
+  pair a self-learning receiver (pick type, send pairing signal)
+- **Remove a device** — go to the device page and select **Delete** from the ⋮ menu
 
 See the [project README](https://github.com/R00S/addon-tellsticklive-roosfork) for
-full pairing and device management instructions.
+full pairing instructions and supported devices.
 
 ---
 

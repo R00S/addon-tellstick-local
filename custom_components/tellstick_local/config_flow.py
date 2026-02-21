@@ -9,6 +9,12 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigSubentryFlow,
+    SubentryFlowResult,
+)
+from homeassistant.core import callback
 from homeassistant.helpers.service_info.hassio import HassioServiceInfo
 from homeassistant.const import CONF_HOST
 from homeassistant.data_entry_flow import FlowResult
@@ -31,11 +37,12 @@ from .const import (
     DEVICE_CATALOG_LABELS,
     DEVICE_CATALOG_MAP,
     DOMAIN,
-    ENTRY_DEVICE_ID_MAP,
     ENTRY_TELLSTICK_CONTROLLER,
     WIDGET_PARAMS,
     build_device_uid,
 )
+
+SUBENTRY_TYPE_DEVICE = "device"
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -223,42 +230,27 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Return the options flow."""
         return TellStickLocalOptionsFlow()
 
+    @classmethod
+    @callback
+    def async_get_supported_subentry_types(
+        cls, config_entry: ConfigEntry
+    ) -> dict[str, type[ConfigSubentryFlow]]:
+        """Return subentries supported by this handler."""
+        return {SUBENTRY_TYPE_DEVICE: TellStickLocalAddDeviceFlow}
+
 
 class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
-    """Handle TellStick Local options."""
-
-    def __init__(self) -> None:
-        """Init options flow."""
-        self._automatic_add: bool = DEFAULT_AUTOMATIC_ADD
-        self._device_type: str = ""
-        self._new_device: dict[str, str] = {}
+    """Handle TellStick Local options (sprocket → detection mode only)."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Show the main options menu."""
+        """Show detection mode settings."""
         existing_devices: dict[str, Any] = self.config_entry.options.get(
             CONF_DEVICES, {}
         )
-        self._automatic_add = self.config_entry.options.get(
+        current = self.config_entry.options.get(
             CONF_AUTOMATIC_ADD, DEFAULT_AUTOMATIC_ADD
-        )
-
-        menu_options = ["settings", "add_device"]
-        if existing_devices:
-            menu_options.append("remove_device")
-
-        return self.async_show_menu(
-            step_id="init",
-            menu_options=menu_options,
-        )
-
-    async def async_step_settings(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Manage automatic-add toggle."""
-        existing_devices: dict[str, Any] = self.config_entry.options.get(
-            CONF_DEVICES, {}
         )
 
         if user_input is not None:
@@ -271,20 +263,27 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
             )
 
         return self.async_show_form(
-            step_id="settings",
+            step_id="init",
             data_schema=vol.Schema(
                 {
                     vol.Required(
                         CONF_AUTOMATIC_ADD,
-                        default=self._automatic_add,
+                        default=current,
                     ): bool,
                 }
             ),
         )
 
-    async def async_step_add_device(
+
+class TellStickLocalAddDeviceFlow(ConfigSubentryFlow):
+    """Handle adding a 433 MHz device via the 'Add device' button."""
+
+    _device_type: str = ""
+    _new_device: dict[str, Any] = {}
+
+    async def async_step_user(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> SubentryFlowResult:
         """Step 1: Pick device type and name."""
         if user_input is not None:
             self._device_type = user_input["device_type"]
@@ -294,10 +293,10 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                 CONF_DEVICE_PROTOCOL: protocol,
                 CONF_DEVICE_MODEL: model,
             }
-            return await self.async_step_add_device_params()
+            return await self.async_step_params()
 
         return self.async_show_form(
-            step_id="add_device",
+            step_id="user",
             data_schema=vol.Schema(
                 {
                     vol.Required("name"): str,
@@ -309,9 +308,9 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
             ),
         )
 
-    async def async_step_add_device_params(
+    async def async_step_params(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> SubentryFlowResult:
         """Step 2: Enter device-specific parameters with correct ranges."""
         errors: dict[str, str] = {}
         _protocol, _model, widget = DEVICE_CATALOG_MAP[self._device_type]
@@ -341,12 +340,11 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                     "unit", params.get("units", "")
                 )
                 self._new_device["params"] = params
-                return await self.async_step_add_device_confirm()
+                return await self.async_step_confirm()
 
         # Collect house codes already used by stored devices
-        existing_devices: dict[str, Any] = self.config_entry.options.get(
-            CONF_DEVICES, {}
-        )
+        entry = self._get_entry()
+        existing_devices: dict[str, Any] = entry.options.get(CONF_DEVICES, {})
         used_house_codes = {
             dev.get(CONF_DEVICE_HOUSE, "")
             for dev in existing_devices.values()
@@ -355,7 +353,7 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
 
         schema = _build_params_schema(widget, used_house_codes)
         return self.async_show_form(
-            step_id="add_device_params",
+            step_id="params",
             data_schema=schema,
             description_placeholders={
                 "device_type": self._device_type,
@@ -363,17 +361,16 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
             errors=errors,
         )
 
-    async def async_step_add_device_confirm(
+    async def async_step_confirm(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> SubentryFlowResult:
         """Send the RF teach/pairing signal after user puts device in learn mode."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
+            entry = self._get_entry()
             try:
-                entry_data = self.hass.data[DOMAIN].get(
-                    self.config_entry.entry_id, {}
-                )
+                entry_data = self.hass.data[DOMAIN].get(entry.entry_id, {})
                 controller: TellStickController | None = entry_data.get(
                     ENTRY_TELLSTICK_CONTROLLER
                 )
@@ -383,7 +380,6 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                 # Use actual telldusd parameter names from the widget
                 params = dict(self._new_device.get("params", {}))
                 if not params:
-                    # Backward compat: fall back to house/unit
                     if house := self._new_device.get(CONF_DEVICE_HOUSE):
                         params["house"] = house
                     if unit := self._new_device.get(CONF_DEVICE_UNIT):
@@ -407,9 +403,9 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                     self._new_device.get(CONF_DEVICE_HOUSE, ""),
                     self._new_device.get(CONF_DEVICE_UNIT, ""),
                 )
-                existing_devices = dict(
-                    self.config_entry.options.get(CONF_DEVICES, {})
-                )
+                # Also store in entry.options[CONF_DEVICES] so __init__.py
+                # can re-register existing devices with telldusd on startup
+                existing_devices = dict(entry.options.get(CONF_DEVICES, {}))
                 existing_devices[device_uid] = {
                     CONF_DEVICE_NAME: self._new_device[CONF_DEVICE_NAME],
                     CONF_DEVICE_PROTOCOL: self._new_device[CONF_DEVICE_PROTOCOL],
@@ -418,16 +414,23 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                     CONF_DEVICE_UNIT: self._new_device.get(CONF_DEVICE_UNIT, ""),
                     "params": self._new_device.get("params", {}),
                 }
-                return self.async_create_entry(
-                    title="",
-                    data={
-                        CONF_AUTOMATIC_ADD: self._automatic_add,
-                        CONF_DEVICES: existing_devices,
-                    },
+                new_options = dict(entry.options)
+                new_options[CONF_DEVICES] = existing_devices
+                self.hass.config_entries.async_update_entry(
+                    entry, options=new_options
                 )
 
+                # The integration will reload via _async_options_updated
+                # (triggered by async_update_entry above), which re-runs
+                # async_setup_entry and creates entities for stored devices.
+
+                # Don't create a subentry record — they cause the HA
+                # frontend to show a confusing "Devices that don't belong
+                # in a sub-entry" grouping for auto-detected devices.
+                return self.async_abort(reason="device_added")
+
         return self.async_show_form(
-            step_id="add_device_confirm",
+            step_id="confirm",
             description_placeholders={
                 "name": self._new_device.get(CONF_DEVICE_NAME, ""),
                 "protocol": self._new_device.get(CONF_DEVICE_PROTOCOL, ""),
@@ -438,61 +441,4 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
             errors=errors,
         )
 
-    async def async_step_remove_device(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Remove a manually-added device."""
-        existing_devices: dict[str, Any] = self.config_entry.options.get(
-            CONF_DEVICES, {}
-        )
-        errors: dict[str, str] = {}
 
-        if user_input is not None:
-            uid_to_remove = user_input.get("device")
-            if uid_to_remove and uid_to_remove in existing_devices:
-                # Best-effort removal from telldusd (non-fatal if it fails)
-                try:
-                    entry_data = self.hass.data[DOMAIN].get(
-                        self.config_entry.entry_id, {}
-                    )
-                    controller: TellStickController | None = entry_data.get(
-                        ENTRY_TELLSTICK_CONTROLLER
-                    )
-                    device_id_map: dict[str, int] = entry_data.get(
-                        ENTRY_DEVICE_ID_MAP, {}
-                    )
-                    if controller and uid_to_remove in device_id_map:
-                        await controller.remove_device(device_id_map[uid_to_remove])
-                except Exception:  # noqa: BLE001
-                    _LOGGER.warning(
-                        "Could not remove device %s from telldusd", uid_to_remove
-                    )
-
-                new_devices = {
-                    k: v
-                    for k, v in existing_devices.items()
-                    if k != uid_to_remove
-                }
-                return self.async_create_entry(
-                    title="",
-                    data={
-                        CONF_AUTOMATIC_ADD: self._automatic_add,
-                        CONF_DEVICES: new_devices,
-                    },
-                )
-            errors["base"] = "invalid_selection"
-
-        device_options = {
-            uid: data.get(CONF_DEVICE_NAME, uid)
-            for uid, data in existing_devices.items()
-        }
-
-        return self.async_show_form(
-            step_id="remove_device",
-            data_schema=vol.Schema(
-                {
-                    vol.Required("device"): vol.In(device_options),
-                }
-            ),
-            errors=errors,
-        )

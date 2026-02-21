@@ -8,6 +8,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .client import (
@@ -83,9 +84,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "Could not register device %s with telldusd: %s", device_uid, err
             )
 
+    # Clean up orphan subentry records left by older versions of the
+    # integration.  We no longer create subentries because they cause the
+    # HA frontend to show a confusing "Devices that don't belong in a
+    # sub-entry" grouping for auto-detected devices.
+    if hasattr(entry, "subentries") and entry.subentries:
+        for subentry_id in list(entry.subentries):
+            try:
+                hass.config_entries.async_remove_subentry(entry, subentry_id)
+            except (AttributeError, TypeError):
+                _LOGGER.debug("Could not remove orphan subentry %s", subentry_id)
+
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         ENTRY_TELLSTICK_CONTROLLER: controller,
         ENTRY_DEVICE_ID_MAP: device_id_map,
+        "_prev_automatic_add": entry.options.get(CONF_AUTOMATIC_ADD, False),
     }
 
     @callback
@@ -120,8 +133,51 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return ok
 
 
+async def async_remove_config_entry_device(
+    hass: HomeAssistant, entry: ConfigEntry, device_entry: dr.DeviceEntry
+) -> bool:
+    """Remove a device from the integration (called from device page delete)."""
+    # Extract device UID from the device registry identifiers
+    device_uid: str | None = None
+    for identifier in device_entry.identifiers:
+        if identifier[0] == DOMAIN:
+            # identifier is (DOMAIN, "{entry_id}_{device_uid}")
+            prefix = f"{entry.entry_id}_"
+            if identifier[1].startswith(prefix):
+                device_uid = identifier[1][len(prefix):]
+            break
+
+    if device_uid is None:
+        return True
+
+    # Best-effort removal from telldusd
+    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
+    controller: TellStickController | None = entry_data.get(
+        ENTRY_TELLSTICK_CONTROLLER
+    )
+    device_id_map: dict[str, int] = entry_data.get(ENTRY_DEVICE_ID_MAP, {})
+    if controller and device_uid in device_id_map:
+        try:
+            await controller.remove_device(device_id_map[device_uid])
+        except Exception:  # noqa: BLE001
+            _LOGGER.warning(
+                "Could not remove device %s from telldusd", device_uid
+            )
+        device_id_map.pop(device_uid, None)
+
+    # Remove from stored devices if present
+    stored_devices: dict[str, Any] = dict(entry.options.get(CONF_DEVICES, {}))
+    if device_uid in stored_devices:
+        del stored_devices[device_uid]
+        new_options = dict(entry.options)
+        new_options[CONF_DEVICES] = stored_devices
+        hass.config_entries.async_update_entry(entry, options=new_options)
+
+    return True
+
+
 async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Handle options update (e.g. toggling automatic_add)."""
+    """Handle options update — reload integration to apply changes."""
     await hass.config_entries.async_reload(entry.entry_id)
 
 
