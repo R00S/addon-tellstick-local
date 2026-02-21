@@ -160,27 +160,30 @@ the house/unit code.
 Once paired, you can control the device with normal on/off commands through the
 **TellStick Local** integration.
 
-### ⚠️ Luxorparts 50969/50970 — NOT compatible
+### Luxorparts / Cleverio 50969 and similar switches
 
-The Luxorparts / Cleverio 433 MHz switches (50969, 50970, 50988, 50989, 50990, etc.)
-use a **proprietary encrypted protocol** that is NOT arctech/selflearning.
+Luxorparts / Cleverio 433 MHz switches (50969, 50970, etc.) use the standard
+**arctech / selflearning** protocol. They are compatible with TellStick Duo and
+work the same way as Nexa, Proove, and other arctech self-learning devices.
 
-The TellStick Duo will **detect** button presses from a Luxorparts remote (they show up
-as arctech/selflearning, everflourish, and waveman events), but these are **false positive
-decodings** — the actual data uses nibble-based substitution encryption with XOR tables
-that no telldus-core protocol supports.
+> **Note:** The Luxorparts remote sends a **multi-part signal** that telldusd
+> decodes as three separate protocols (arctech, everflourish, waveman). The
+> correct interpretation is **arctech / selflearning**. Ignore the everflourish
+> and waveman detections — they are false positives from similar bit patterns.
 
-**The TellStick Duo cannot teach or control Luxorparts receivers.** Sending arctech
-learn signals will not work because the receiver expects encrypted Luxorparts-specific
-data. This is a hardware/firmware limitation — the TellStick's fixed protocol set does
-not include the Luxorparts protocol.
+**Pairing a Luxorparts receiver:**
 
-**Verified by analysis of the [Homey Luxorparts app](https://github.com/TheHomeyAppBackupRepositories/se.luxorparts-1):**
-the protocol uses a custom 24-bit encrypted payload (3 bytes: address + count + state + unit),
-encrypted using substitution tables before transmission.
+1. Add the device via **Settings → Devices & Services → TellStick Local →
+   Add device** and select **Luxorparts / Cleverio — Self-learning on/off**
+2. A random house code and unit will be generated automatically
+3. Put the Luxorparts receiver into learn mode (hold the button until the LED
+   blinks)
+4. Click **Submit** — the pairing signal is sent immediately
+5. The receiver should stop blinking, confirming it learned the code
 
-For Luxorparts devices, consider using a Homey hub or an RFXtrx433E (which has
-firmware-updateable protocol support).
+If pairing fails on the first attempt, try again — some receivers need multiple
+learn signals. The TellStick Duo firmware repeat patch improves reliability for
+picky receivers.
 
 ---
 

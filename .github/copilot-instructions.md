@@ -396,6 +396,15 @@ The everflourish and waveman detections are false positives caused by similar bi
 patterns. The discovery flow will show all three as separate "Discovered" devices —
 the user should only add the arctech one.
 
+**Luxorparts receivers accept arctech/selflearning** — confirmed by user testing with
+TellStick ZNet (which also uses telldus-core). The Homey app (se.luxorparts-1) uses
+its own proprietary encrypted protocol stack, but that is Homey-specific — the actual
+RF signal is standard arctech selflearning.
+
+If learning fails on TellStick Duo, the most likely cause is insufficient signal
+repetitions. The R-prefix Dockerfile patch (adding firmware-level repeats for
+pid 0x0c31) addresses this.
+
 **Impact on integration code:**
 - Discovery must deduplicate per `device_uid` (each UID is unique per protocol
   interpretation, so three distinct discoveries fire — this is correct).

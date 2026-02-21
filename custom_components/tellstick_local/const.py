@@ -234,6 +234,7 @@ DEVICE_CATALOG: list[tuple[str, str, str, int]] = [
     ("KlikAanKlikUit — Code switch", "arctech", "codeswitch:klikaanklikuit", 1),
     ("KlikAanKlikUit — Self-learning dimmer", "arctech", "selflearning-dimmer:klikaanklikuit", 8),
     ("KlikAanKlikUit — Self-learning on/off", "arctech", "selflearning-switch:klikaanklikuit", 8),
+    ("Luxorparts / Cleverio — Self-learning on/off", "arctech", "selflearning-switch:luxorparts", 8),
     ("Nexa — Bell", "arctech", "bell:nexa", 4),
     ("Nexa — Code switch", "arctech", "codeswitch:nexa", 1),
     ("Nexa — Self-learning dimmer", "arctech", "selflearning-dimmer:nexa", 8),
