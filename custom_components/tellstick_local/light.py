@@ -213,6 +213,11 @@ class TellStickLight(TellStickEntity, LightEntity):
                 self._attr_brightness = level
             else:
                 await self._controller.turn_on(self._telldusd_device_id)
+        else:
+            _LOGGER.warning(
+                "Cannot send on command for %s: no telldusd device ID (UID mismatch?)",
+                self._device_uid,
+            )
         self._attr_is_on = True
         self.async_write_ha_state()
 
@@ -220,5 +225,10 @@ class TellStickLight(TellStickEntity, LightEntity):
         """Turn the light off."""
         if self._telldusd_device_id is not None:
             await self._controller.turn_off(self._telldusd_device_id)
+        else:
+            _LOGGER.warning(
+                "Cannot send off command for %s: no telldusd device ID (UID mismatch?)",
+                self._device_uid,
+            )
         self._attr_is_on = False
         self.async_write_ha_state()
