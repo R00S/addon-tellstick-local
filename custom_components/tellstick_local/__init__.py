@@ -84,6 +84,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "Could not register device %s with telldusd: %s", device_uid, err
             )
 
+    # Clean up orphan subentry records left by older versions of the
+    # integration.  We no longer create subentries because they cause the
+    # HA frontend to show a confusing "Devices that don't belong in a
+    # sub-entry" grouping for auto-detected devices.
+    if hasattr(entry, "subentries") and entry.subentries:
+        for subentry_id in list(entry.subentries):
+            try:
+                hass.config_entries.async_remove_subentry(entry, subentry_id)
+            except (AttributeError, TypeError):
+                _LOGGER.debug("Could not remove orphan subentry %s", subentry_id)
+
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         ENTRY_TELLSTICK_CONTROLLER: controller,
         ENTRY_DEVICE_ID_MAP: device_id_map,

@@ -419,25 +419,11 @@ class TellStickLocalAddDeviceFlow(ConfigSubentryFlow):
                 self.hass.config_entries.async_update_entry(
                     entry, options=new_options
                 )
-                # Create the subentry
-                return self.async_create_entry(
-                    title=self._new_device[CONF_DEVICE_NAME],
-                    data={
-                        "device_uid": device_uid,
-                        CONF_DEVICE_NAME: self._new_device[CONF_DEVICE_NAME],
-                        CONF_DEVICE_PROTOCOL: self._new_device[CONF_DEVICE_PROTOCOL],
-                        CONF_DEVICE_MODEL: self._new_device.get(
-                            CONF_DEVICE_MODEL, ""
-                        ),
-                        CONF_DEVICE_HOUSE: self._new_device.get(
-                            CONF_DEVICE_HOUSE, ""
-                        ),
-                        CONF_DEVICE_UNIT: self._new_device.get(
-                            CONF_DEVICE_UNIT, ""
-                        ),
-                        "params": self._new_device.get("params", {}),
-                    },
-                )
+                # Device is stored in options — don't create a subentry
+                # record because orphan subentry records cause the HA
+                # frontend to show a confusing "Devices that don't belong
+                # in a sub-entry" grouping for auto-detected devices.
+                return self.async_abort(reason="device_added")
 
         return self.async_show_form(
             step_id="confirm",

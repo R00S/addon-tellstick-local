@@ -68,6 +68,9 @@
       "error": {
         "invalid_code": "Parameter values must not be empty.",
         "teach_failed": "Failed to send pairing signal. Check that the TellStick app is running."
+      },
+      "abort": {
+        "device_added": "Device paired successfully! It will appear in your device list shortly."
       }
     }
   },
