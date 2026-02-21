@@ -9,6 +9,12 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigSubentryFlow,
+    SubentryFlowResult,
+)
+from homeassistant.core import callback
 from homeassistant.helpers.service_info.hassio import HassioServiceInfo
 from homeassistant.const import CONF_HOST
 from homeassistant.data_entry_flow import FlowResult
@@ -35,6 +41,8 @@ from .const import (
     WIDGET_PARAMS,
     build_device_uid,
 )
+
+SUBENTRY_TYPE_DEVICE = "device"
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -221,6 +229,14 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> TellStickLocalOptionsFlow:
         """Return the options flow."""
         return TellStickLocalOptionsFlow()
+
+    @classmethod
+    @callback
+    def async_get_supported_subentry_types(
+        cls, config_entry: ConfigEntry
+    ) -> dict[str, type[ConfigSubentryFlow]]:
+        """Return subentries supported by this handler."""
+        return {SUBENTRY_TYPE_DEVICE: TellStickLocalAddDeviceFlow}
 
 
 class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
