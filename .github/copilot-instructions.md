@@ -385,11 +385,11 @@ interpretations. This is normal behaviour, not a bug.
 
 **Verified example — Luxorparts 50969 remote (A-on button):**
 
-| # | device_uid                               | protocol      | model        | house     | unit |
-|---|------------------------------------------|---------------|--------------|-----------|------|
-| 1 | `arctech_selflearning_2673666_1`         | arctech       | selflearning | 2673666   | 1    |
-| 2 | `everflourish_selflearning_3264_1`       | everflourish  | selflearning | 3264      | 1    |
-| 3 | `waveman_codeswitch_a_10`                | waveman       | codeswitch   | A         | 10   |
+| #   | device_uid                         | protocol     | model        | house   | unit |
+| --- | ---------------------------------- | ------------ | ------------ | ------- | ---- |
+| 1   | `arctech_selflearning_2673666_1`   | arctech      | selflearning | 2673666 | 1    |
+| 2   | `everflourish_selflearning_3264_1` | everflourish | selflearning | 3264    | 1    |
+| 3   | `waveman_codeswitch_a_10`          | waveman      | codeswitch   | A       | 10   |
 
 The **correct** interpretation for this remote is **arctech / selflearning-switch**.
 The everflourish and waveman detections are false positives caused by similar bit
@@ -404,12 +404,14 @@ RF signal is standard arctech selflearning.
 ### Luxorparts protocol deep-dive (verified from source code)
 
 The Homey `se.luxorparts-1` app defines a **separate proprietary protocol**:
+
 - **Signal**: SOF=[375µs, 2250µs], bit 0=[375µs, 1125µs], bit 1=[1125µs, 375µs]
 - **Payload**: 24 bits (3 bytes) — 16-bit address + 2-bit count + 1-bit state + 5-bit unit
 - **Encryption**: Nibble substitution cipher (two 16-element lookup tables) + XOR chain
   (see `lib/PayloadEncryption.js`)
 
 **This is NOT arctech selflearning.** Arctech selflearning is:
+
 - 26-bit house + 1-bit group + 1-bit on/off + 4-bit unit = 32+ data bits
 - T-packet timing: T0=127(~1270µs), T1=255(~2550µs), T2=24(~240µs), T3=1(~10µs)
 - Manchester-like encoding with ~240µs/~1270µs pulse durations
@@ -426,6 +428,7 @@ This suffix is for display/matching in the integration only. When registering de
 with telldusd, the suffix MUST be stripped because telldusd's `ProtocolNexa::methods()`
 only recognizes `selflearning-switch` (without suffix). If the full
 `selflearning-switch:luxorparts` is passed as the model:
+
 1. `methods()` returns 0 (no recognized model)
 2. `isMethodSupported(TELLSTICK_LEARN)` returns METHOD_NOT_SUPPORTED
 3. Learn signal silently fails → receiver never learns the code
@@ -459,6 +462,7 @@ repetitions. The R-prefix Dockerfile patch (adding firmware-level repeats for
 pid 0x0c31) addresses this.
 
 **Impact on integration code:**
+
 - Discovery must deduplicate per `device_uid` (each UID is unique per protocol
   interpretation, so three distinct discoveries fire — this is correct).
 - The `_discovered_uids` set in `__init__.py` prevents the same UID from
@@ -469,6 +473,7 @@ pid 0x0c31) addresses this.
 The ZNet MQTT plugin (`quazzie/tellstick-plugin-mqtt-hass`) uses telldus-core's
 Python SDK internally: `device.command(Device.TURNON)` → `tdTurnOn()`. The ZNet
 configures Luxorparts as arctech/selflearning-switch and it works. This confirms:
+
 - The protocol IS arctech/selflearning (not proprietary Luxorparts encryption)
 - The same `tdTurnOn`/`tdTurnOff` commands we send work on ZNet
 - The Duo should work identically once the UID mismatch is fixed
@@ -501,11 +506,13 @@ A **raw record/replay** approach would bypass protocol decoding entirely:
 3. **No protocol encoding/decoding** — the exact received waveform is replayed.
 
 **Why this matters:**
+
 - Works for **any** 433 MHz device, even unrecognized protocols
 - No multi-protocol phantom devices (one button = one recorded signal)
 - Could solve Luxorparts if the arctech/selflearning approach fails
 
 **Implementation requirements:**
+
 - Expose `+R` raw data through the event socket (or a new raw socket)
 - Add `tdSendRawCommand` to `client.py`
 - New UI flow: "Record" → press remote button → capture `+R` data → "Replay"

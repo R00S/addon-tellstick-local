@@ -34,19 +34,19 @@ YAML file editing.
 
 ### What you get
 
-| Capability                | Description                                                                       |
-| ------------------------- | --------------------------------------------------------------------------------- |
-| **Auto install prompt**   | Install the app → HA automatically offers "Set up TellStick Local?"               |
-| **Press-to-discover**     | Press any 433 MHz remote → device appears in HA (auto-add or discovery prompt)    |
-| **Add device button**     | Click "Add device" on the integration card → pick protocol → send pairing signal  |
-| **Edit existing devices** | View and change house/unit codes for any device via Configure → Edit device       |
-| **Per-device deletion**   | Delete any device (including auto-detected) from its device page ⋮ menu           |
-| **Device state info**     | Protocol, model, house code and unit code shown as entity state attributes         |
-| **GUI-only management**   | Add, rename, edit and remove devices via HA UI — no YAML, no restart              |
-| **Local push**            | RF events arrive in real time; no polling, no cloud                               |
-| **Automations**           | Device triggers on any 433 MHz button press, usable directly in HA automations    |
-| **Companion app**         | Identical UX in the HA Android/iOS app                                            |
-| **No Telldus Live**       | Zero cloud, zero account, zero internet dependency                                |
+| Capability                | Description                                                                      |
+| ------------------------- | -------------------------------------------------------------------------------- |
+| **Auto install prompt**   | Install the app → HA automatically offers "Set up TellStick Local?"              |
+| **Press-to-discover**     | Press any 433 MHz remote → device appears in HA (auto-add or discovery prompt)   |
+| **Add device button**     | Click "Add device" on the integration card → pick protocol → send pairing signal |
+| **Edit existing devices** | View and change house/unit codes for any device via Configure → Edit device      |
+| **Per-device deletion**   | Delete any device (including auto-detected) from its device page ⋮ menu          |
+| **Device state info**     | Protocol, model, house code and unit code shown as entity state attributes       |
+| **GUI-only management**   | Add, rename, edit and remove devices via HA UI — no YAML, no restart             |
+| **Local push**            | RF events arrive in real time; no polling, no cloud                              |
+| **Automations**           | Device triggers on any 433 MHz button press, usable directly in HA automations   |
+| **Companion app**         | Identical UX in the HA Android/iOS app                                           |
+| **No Telldus Live**       | Zero cloud, zero account, zero internet dependency                               |
 
 ---
 
@@ -169,17 +169,17 @@ each protocol supports.
 
 ### Auto-discoverable (press a button → device appears)
 
-| Protocol       | Entity type    | Brands                                                                                          |
-| -------------- | -------------- | ----------------------------------------------------------------------------------------------- |
+| Protocol       | Entity type    | Brands                                                                                                                |
+| -------------- | -------------- | --------------------------------------------------------------------------------------------------------------------- |
 | `arctech`      | Switch / Light | Nexa, Proove, KlikAanKlikUit, Intertechno, HomeEasy, Chacon, CoCo, Luxorparts, Cleverio, Kappa, Bye Bye Standby, Elro |
-| `everflourish` | Switch         | GAO, Everflourish, Rusta                                                                        |
-| `hasta`        | Cover          | Hasta, Rollertrol motorised blinds                                                              |
-| `mandolyn`     | Switch         | Mandolyn / Summerbird                                                                           |
-| `sartano`      | Switch         | Sartano, Brennenstuhl, Rusta, Elro                                                              |
-| `waveman`      | Switch         | Waveman                                                                                         |
-| `x10`          | Switch         | X10                                                                                             |
-| `fineoffset`   | Sensor         | Nexa LMST-606 / WDS-100 thermometers, Fine Offset weather stations                              |
-| `oregon`       | Sensor         | Oregon Scientific weather sensors (temp, humidity, rain, wind, UV)                              |
+| `everflourish` | Switch         | GAO, Everflourish, Rusta                                                                                              |
+| `hasta`        | Cover          | Hasta, Rollertrol motorised blinds                                                                                    |
+| `mandolyn`     | Switch         | Mandolyn / Summerbird                                                                                                 |
+| `sartano`      | Switch         | Sartano, Brennenstuhl, Rusta, Elro                                                                                    |
+| `waveman`      | Switch         | Waveman                                                                                                               |
+| `x10`          | Switch         | X10                                                                                                                   |
+| `fineoffset`   | Sensor         | Nexa LMST-606 / WDS-100 thermometers, Fine Offset weather stations                                                    |
+| `oregon`       | Sensor         | Oregon Scientific weather sensors (temp, humidity, rain, wind, UV)                                                    |
 
 > **Nexa note:** Nexa _switches, dimmers, remotes and buttons_ use the `arctech`
 > protocol. Nexa _thermometers and weather sensors_ (LMST-606, WDS-100 etc.) use
