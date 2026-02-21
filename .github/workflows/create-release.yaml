@@ -22,13 +22,13 @@ on:
         type: string
 
 permissions:
-  contents: write
-  packages: write
-  pull-requests: read
+  contents: read
 
 jobs:
   create-release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
       version: ${{ steps.version.outputs.test }}
 
@@ -196,7 +196,9 @@ jobs:
 
   deploy:
     needs: create-release
+    permissions:
+      contents: read
+      packages: write
     uses: ./.github/workflows/deploy.yaml
     with:
       version: ${{ needs.create-release.outputs.version }}
-    secrets: inherit
