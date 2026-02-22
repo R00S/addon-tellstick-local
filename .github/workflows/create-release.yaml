@@ -22,7 +22,9 @@ on:
         type: string
 
 permissions:
-  contents: read
+  contents: write
+  packages: write
+  pull-requests: read
 
 jobs:
   create-release:
@@ -196,9 +198,7 @@ jobs:
 
   deploy:
     needs: create-release
-    permissions:
-      contents: read
-      packages: write
     uses: ./.github/workflows/deploy.yaml
     with:
       version: ${{ needs.create-release.outputs.version }}
+    secrets: inherit
