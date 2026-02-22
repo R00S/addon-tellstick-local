@@ -8,11 +8,16 @@
       },
       "user": {
         "title": "Connect to TellStick daemon",
-        "description": "Enter the host and port of the TellStick Local app.",
+        "description": "Enter the host and ports of the TellStick Local app.\n\nFind the correct hostname in the **app log** — look for the line `use host: …`. For apps installed from a custom repository the hostname includes a prefix (e.g. `e9305338-tellsticklive`).",
         "data": {
           "host": "Host",
           "command_port": "Command port",
           "event_port": "Event port"
+        },
+        "data_description": {
+          "host": "Hostname of the TellStick Local app. Check the app log for the `use host:` line to find the correct value.",
+          "command_port": "TCP port for TellStick commands (default: 50800).",
+          "event_port": "TCP port for TellStick events (default: 50801)."
         }
       },
       "confirm_rf_device": {
