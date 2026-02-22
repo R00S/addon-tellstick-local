@@ -54,7 +54,7 @@ jobs:
           INPUT_RELEASE_TYPE: ${{ github.event.inputs.release_type }}
           SAFE_BRANCH: ${{ steps.branch.outputs.safe_name }}
         run: |
-          VERSION=$(grep -oP '"version":\s*"\K[^"]+' custom_components/tellstick_local/manifest.json)
+          VERSION=$(jq -r '.version' custom_components/tellstick_local/manifest.json)
           echo "base=$VERSION" >> "$GITHUB_OUTPUT"
 
           SUFFIX="${INPUT_VERSION_SUFFIX}"

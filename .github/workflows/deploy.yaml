@@ -147,7 +147,9 @@ jobs:
 
   post-build:
     name: Publish release version to repository
-    if: github.event_name == 'release'
+    if: >-
+      github.event_name == 'release'
+      || inputs.version != ''
     needs:
       - information
       - build
