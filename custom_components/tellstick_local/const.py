@@ -16,7 +16,7 @@ CONF_DEVICE_UNIT = "unit"
 CONF_DEVICE_NAME = "name"
 
 # Defaults
-DEFAULT_HOST = "tellsticklive"  # add-on slug = hostname on the Supervisor network
+DEFAULT_HOST = "tellsticklive"  # fallback for manual setup; actual hostname shown in app log
 DEFAULT_COMMAND_PORT = 50800
 DEFAULT_EVENT_PORT = 50801
 DEFAULT_AUTOMATIC_ADD = True

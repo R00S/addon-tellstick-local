@@ -138,12 +138,11 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         await self.async_set_unique_id(discovery_info.uuid)
         self._abort_if_unique_id_configured()
 
-        self._host = discovery_info.config.get("host", DEFAULT_HOST)
-        self._command_port = discovery_info.config.get(
-            "port", DEFAULT_COMMAND_PORT
-        )
-        # Event port is always command port + 1
-        self._event_port = self._command_port + 1
+        # discovery_info.slug is the HAOS Supervisor internal hostname
+        # (e.g. "e9305338-tellsticklive" for custom-repo apps).
+        self._host = discovery_info.slug
+        self._command_port = DEFAULT_COMMAND_PORT
+        self._event_port = DEFAULT_EVENT_PORT
         self._hassio_discovery = True
 
         return await self.async_step_hassio_confirm()
