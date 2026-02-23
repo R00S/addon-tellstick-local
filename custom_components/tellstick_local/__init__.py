@@ -296,15 +296,15 @@ def _buffer_unknown_device(
     (MULTI_PROTOCOL_WINDOW seconds) and then process only the highest-priority
     protocol from the batch, discarding the rest as false positives.
     """
-    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
-    discovered: set[str] = entry_data.get("_discovered_uids", set())
+    entry_data = hass.data[DOMAIN][entry.entry_id]
+    discovered: set[str] = entry_data["_discovered_uids"]
 
     if device_uid in discovered:
         return  # Already processed this UID this session
 
-    batch: list[tuple[str, dict[str, str], RawDeviceEvent]] = entry_data.get(
-        "_pending_raw_batch", []
-    )
+    batch: list[tuple[str, dict[str, str], RawDeviceEvent]] = entry_data[
+        "_pending_raw_batch"
+    ]
     batch.append((device_uid, params, event))
 
     # If a timer is already running, the new event joins the existing batch.
@@ -338,8 +338,8 @@ def _process_pending_batch(
     if not batch:
         return
 
-    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
-    discovered: set[str] = entry_data.get("_discovered_uids", set())
+    entry_data = hass.data[DOMAIN][entry.entry_id]
+    discovered: set[str] = entry_data["_discovered_uids"]
 
     # Sort by protocol priority (lowest number = highest priority)
     batch.sort(
@@ -358,7 +358,7 @@ def _process_pending_batch(
 
     if len(batch) > 1:
         suppressed = [uid for uid, _, _ in batch[1:]]
-        _LOGGER.info(
+        _LOGGER.debug(
             "Multi-protocol dedup: kept %s (%s), suppressed %d duplicate(s): %s",
             best_uid,
             best_params.get("protocol", "?"),
