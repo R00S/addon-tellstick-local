@@ -247,9 +247,11 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._rf_discovery = discovery_info
         device_uid = discovery_info["device_uid"]
 
-        # Deduplicate: one discovery flow per device UID
+        # Deduplicate: async_set_unique_id aborts if another flow with the
+        # same unique_id is already in progress, and _abort_if_unique_id_configured
+        # aborts if a config entry (including "ignored" entries) already has it.
         await self.async_set_unique_id(f"rf_{device_uid}")
-        self._abort_if_unique_id_in_progress()
+        self._abort_if_unique_id_configured()
 
         # Abort if the device was already added while this flow was pending
         for existing_entry in self._async_current_entries():

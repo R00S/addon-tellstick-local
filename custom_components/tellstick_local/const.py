@@ -19,7 +19,7 @@ CONF_DEVICE_NAME = "name"
 DEFAULT_HOST = "tellsticklive"  # add-on slug = hostname on the Supervisor network
 DEFAULT_COMMAND_PORT = 50800
 DEFAULT_EVENT_PORT = 50801
-DEFAULT_AUTOMATIC_ADD = False
+DEFAULT_AUTOMATIC_ADD = True
 
 # telldusd event types
 TELLDUSD_DEVICE_EVENT = 1
