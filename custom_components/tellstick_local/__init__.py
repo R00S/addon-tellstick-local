@@ -351,9 +351,11 @@ def _process_pending_batch(
     # Pick the best candidate (first after sorting)
     best_uid, best_params, best_event = batch[0]
 
-    # Mark ALL UIDs in the batch as discovered to prevent the losers from
-    # being re-processed if the same button is pressed again.
-    for uid, _params, _event in batch:
+    # Mark only the SUPPRESSED UIDs as discovered so they are not re-processed
+    # if the same button is pressed again.  The best UID is NOT added here —
+    # _auto_add_device / _fire_device_discovery handle it (they have their own
+    # discovered-check and will add it to the set themselves).
+    for uid, _params, _event in batch[1:]:
         discovered.add(uid)
 
     if len(batch) > 1:
