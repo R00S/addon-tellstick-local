@@ -295,3 +295,37 @@ def normalize_rf_model(model: str) -> str:
     """
     base = model.split(":")[0] if ":" in model else model
     return _UID_MODEL_NORMALIZE.get(base, base)
+
+
+# ---------------------------------------------------------------------------
+# Protocol priority for multi-protocol deduplication
+#
+# telldusd runs ALL protocol decoders on every RF signal.  A single button
+# press can therefore trigger multiple TDRawDeviceEvent callbacks with
+# different protocol interpretations (e.g. arctech + everflourish + waveman).
+# When grouping concurrent events, we pick the protocol with the LOWEST
+# priority number (= highest priority).
+#
+# Ordering rationale (from telldus-core decoder sophistication & popularity):
+#   - arctech: most common Nordic protocol, most sophisticated decoder
+#   - everflourish / hasta / mandolyn: dedicated decoders, less common
+#   - waveman / sartano / x10: simple older protocols, frequent false positives
+# Sensor-only protocols (fineoffset, oregon) are not ranked here because
+# they don't produce class:command events.
+# ---------------------------------------------------------------------------
+PROTOCOL_PRIORITY: dict[str, int] = {
+    "arctech": 0,
+    "everflourish": 1,
+    "hasta": 2,
+    "mandolyn": 3,
+    "sartano": 4,
+    "x10": 5,
+    "waveman": 6,
+}
+# Protocols not listed get a high default (low priority)
+PROTOCOL_PRIORITY_DEFAULT = 99
+
+# Seconds to wait for concurrent protocol decodings of the same RF signal
+# before picking the best one.  telldusd fires all decoders within a few
+# milliseconds; 1 second gives ample margin while staying responsive.
+MULTI_PROTOCOL_WINDOW = 1.0
