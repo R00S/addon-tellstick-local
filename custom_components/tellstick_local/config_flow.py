@@ -373,6 +373,18 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return self.async_abort(reason="entry_not_found")
 
             device_uid = info["device_uid"]
+
+            # Handle "Ignore this device"
+            if user_input.get("ignore", False):
+                ignored = dict(entry.options.get(CONF_IGNORED_UIDS, {}))
+                ignored[device_uid] = f"{info.get('protocol', '')}/{info.get('model', '')} {device_uid}"
+                new_options = dict(entry.options)
+                new_options[CONF_IGNORED_UIDS] = ignored
+                self.hass.config_entries.async_update_entry(
+                    entry, options=new_options
+                )
+                return self.async_abort(reason="device_ignored")
+
             name = user_input.get("name", default_name)
             replace_uid = user_input.get("replace_device", "")
 
@@ -543,6 +555,9 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Optional("replace_device", default="")
                 ] = vol.In(replace_options)
 
+        # Ignore option — always shown at the bottom
+        schema_dict[vol.Optional("ignore", default=False)] = bool
+
         return self.async_show_form(
             step_id="confirm_rf_device",
             data_schema=vol.Schema(schema_dict),
@@ -653,9 +668,6 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
         name = cfg.get(CONF_DEVICE_NAME, uid)
 
         menu_options = ["device_detail"]
-        # Only show teach for non-sensor devices
-        if not uid.startswith("sensor_"):
-            menu_options.append("teach_device")
         menu_options.append("delete_device")
 
         return self.async_show_menu(

@@ -1,4 +1,11 @@
 {
+  "entity": {
+    "button": {
+      "learn": {
+        "name": "Send learn signal"
+      }
+    }
+  },
   "config": {
     "flow_title": "TellStick: {name}",
     "step": {
@@ -22,10 +29,11 @@
       },
       "confirm_rf_device": {
         "title": "New 433 MHz device detected",
-        "description": "A 433 MHz device was detected via RF signal:\n\n- **Protocol:** {protocol}\n- **Model:** {model}\n- **House:** {house}\n- **Unit:** {unit}\n- **UID:** {device_uid}\n\nGive it a name and click **Submit** to add it, or select an existing device to replace (e.g. after battery change).",
+        "description": "A 433 MHz device was detected via RF signal:\n\n- **Protocol:** {protocol}\n- **Model:** {model}\n- **House:** {house}\n- **Unit:** {unit}\n- **UID:** {device_uid}\n\nGive it a name and click **Submit** to add it, select an existing device to replace (e.g. after battery change), or check **Ignore** to hide it permanently.",
         "data": {
           "name": "Device name",
-          "replace_device": "Replace existing device"
+          "replace_device": "Replace existing device",
+          "ignore": "Ignore this device (hide from future detections)"
         }
       }
     },
@@ -38,6 +46,7 @@
       "already_added": "This device is already added.",
       "device_added": "Device added successfully! It will appear in your device list.",
       "device_replaced": "Device replaced successfully! The existing entity now uses the new device ID. History and entity ID are preserved.",
+      "device_ignored": "Device ignored. It will no longer appear as discovered. You can un-ignore it from the integration options.",
       "entry_not_found": "TellStick Local integration not found. Please set it up first."
     }
   },
@@ -46,7 +55,7 @@
       "init": {
         "menu_options": {
           "settings": "Settings",
-          "manage_device": "Manage a device",
+          "manage_device": "Edit a device",
           "remove_devices": "Remove multiple devices",
           "manage_ignored": "Manage ignored devices"
         }
@@ -59,7 +68,7 @@
       },
       "manage_device": {
         "title": "Select a device",
-        "description": "Pick a device to view, edit, teach, or delete.",
+        "description": "Pick a device to edit or delete.\n\nTo send a learn signal, go to the device page and press the **Send learn signal** button.",
         "data": {
           "device": "Device"
         }
@@ -141,7 +150,7 @@
             "unit": "Unit code",
             "code": "Code (10 digits, 0 or 1)",
             "system": "System",
-            "units": "Units (comma-separated, 1–10)",
+            "units": "Units (comma-separated, 1-10)",
             "fade": "Fade (smooth)"
           }
         },

@@ -37,7 +37,6 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up TellStick learn button entities."""
-    entry_data = hass.data[DOMAIN][entry.entry_id]
     new_device_signal = SIGNAL_NEW_DEVICE.format(entry.entry_id)
 
     known: set[str] = set()
