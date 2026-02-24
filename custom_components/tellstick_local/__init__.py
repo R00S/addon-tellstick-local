@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -11,7 +10,6 @@ from homeassistant.const import CONF_HOST, EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.dispatcher import async_dispatcher_send
-from homeassistant.helpers.event import async_call_later
 
 from .client import (
     DeviceEvent,
@@ -30,14 +28,10 @@ from .const import (
     CONF_DEVICES,
     CONF_EVENT_PORT,
     DEFAULT_AUTOMATIC_ADD,
-    DISCOVERY_COOLDOWN,
     DOMAIN,
     ENTRY_DEVICE_ID_MAP,
     ENTRY_TELLSTICK_CONTROLLER,
-    MULTI_PROTOCOL_WINDOW,
     PLATFORMS,
-    PROTOCOL_PRIORITY,
-    PROTOCOL_PRIORITY_DEFAULT,
     SIGNAL_EVENT,
     SIGNAL_NEW_DEVICE,
 )
@@ -114,21 +108,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Track UIDs for which discovery flows have been fired this session
         # to avoid flooding the UI with duplicate notifications.
         "_discovered_uids": set(),
-        # Pending raw events awaiting multi-protocol deduplication.
-        # Maps a batch key (monotonic timestamp) to a list of
-        # (device_uid, params, event) tuples.  After MULTI_PROTOCOL_WINDOW
-        # seconds the best candidate from the batch is processed.
-        "_pending_raw_batch": [],
-        "_pending_raw_timer": None,
-        # Monotonic timestamp until which new device discovery is suppressed.
-        # Set after each device creation to prevent flooding from sensors
-        # that decode with different house/unit values on each transmission.
-        "_discovery_cooldown_until": 0.0,
-        # Monotonic timestamp of the last known-device raw event.  Used to
-        # suppress false-positive unknown events from the same RF signal
-        # (telldusd fires all decoders, so a known arctech device also
-        # produces spurious everflourish/sartano/waveman events).
-        "_last_known_device_time": 0.0,
     }
 
     @callback
@@ -273,6 +252,7 @@ def _handle_raw_event(
         )
 
     stored_devices = entry.options.get(CONF_DEVICES, {})
+    automatic_add = entry.options.get(CONF_AUTOMATIC_ADD, DEFAULT_AUTOMATIC_ADD)
 
     if device_uid in stored_devices:
         # Known device — fire SIGNAL_NEW_DEVICE so platforms can revive
@@ -281,170 +261,14 @@ def _handle_raw_event(
         async_dispatcher_send(
             hass, SIGNAL_NEW_DEVICE.format(entry.entry_id), event
         )
-        # Record the time so that false-positive unknown events from the
-        # same RF signal (other protocol decoders) can be suppressed.
-        entry_data = hass.data[DOMAIN][entry.entry_id]
-        entry_data["_last_known_device_time"] = time.monotonic()
+    elif automatic_add:
+        # Auto-add mode: immediately add the device and fire signal
+        _auto_add_device(hass, entry, device_uid, params, event)
     else:
-        # Unknown device — buffer for multi-protocol deduplication.
-        # telldusd runs ALL protocol decoders on every RF signal, so a
-        # single button press can fire multiple TDRawDeviceEvent callbacks
-        # with different protocol interpretations (e.g. arctech +
-        # everflourish + waveman).  We collect events over a short window
-        # and then pick the highest-priority protocol.
-        _buffer_unknown_device(hass, entry, device_uid, params, event)
-
-
-def _buffer_unknown_device(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
-    device_uid: str,
-    params: dict[str, str],
-    event: RawDeviceEvent,
-) -> None:
-    """Buffer an unknown device event for multi-protocol deduplication.
-
-    telldusd runs all protocol decoders on every RF signal.  A single button
-    press can therefore produce multiple TDRawDeviceEvent callbacks with
-    different protocol/model/house/unit values — each appearing as a distinct
-    device UID.  We collect all events that arrive within a short window
-    (MULTI_PROTOCOL_WINDOW seconds) and then process only the highest-priority
-    protocol from the batch, discarding the rest as false positives.
-    """
-    entry_data = hass.data[DOMAIN][entry.entry_id]
-    discovered: set[str] = entry_data["_discovered_uids"]
-
-    if device_uid in discovered:
-        return  # Already processed this UID this session
-
-    # Cooldown: after discovering/auto-adding a device, suppress new device
-    # creation for DISCOVERY_COOLDOWN seconds.  Some sensors (e.g. door
-    # sensors) produce RF signals that telldusd decodes with different
-    # house/unit values on each transmission, causing each activation to
-    # look like a brand-new device.
-    if time.monotonic() < entry_data.get("_discovery_cooldown_until", 0.0):
-        _LOGGER.debug(
-            "Discovery cooldown active — ignoring unknown device %s", device_uid
-        )
-        discovered.add(device_uid)
-        return
-
-    # If a known device was just seen, this unknown event is almost certainly
-    # a false-positive from telldusd running all protocol decoders on the
-    # same RF signal.  For example, pressing a known Nexa (arctech) remote
-    # also produces spurious everflourish and sartano events.
-    now = time.monotonic()
-    last_known = entry_data.get("_last_known_device_time", 0.0)
-    if now - last_known < MULTI_PROTOCOL_WINDOW:
-        _LOGGER.debug(
-            "Suppressing unknown device %s — known device seen %.1fs ago",
-            device_uid,
-            now - last_known,
-        )
-        discovered.add(device_uid)
-        return
-
-    batch: list[tuple[str, dict[str, str], RawDeviceEvent]] = entry_data[
-        "_pending_raw_batch"
-    ]
-    batch.append((device_uid, params, event))
-
-    # If a timer is already running, the new event joins the existing batch.
-    # Otherwise start a new timer that will fire after MULTI_PROTOCOL_WINDOW.
-    if entry_data.get("_pending_raw_timer") is None:
-
-        @callback
-        def _flush_batch(_now: Any) -> None:
-            entry_data["_pending_raw_timer"] = None
-            pending = list(batch)
-            batch.clear()
-            _process_pending_batch(hass, entry, pending)
-
-        entry_data["_pending_raw_timer"] = async_call_later(
-            hass, MULTI_PROTOCOL_WINDOW, _flush_batch
-        )
-
-
-def _process_pending_batch(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
-    batch: list[tuple[str, dict[str, str], RawDeviceEvent]],
-) -> None:
-    """Pick the best candidate from a batch of concurrent raw events.
-
-    Within the batch, multiple UIDs may have arrived from different protocol
-    decoders interpreting the same RF signal.  We select the one with the
-    highest protocol priority (lowest PROTOCOL_PRIORITY number) and process
-    only that — the rest are discarded as multi-protocol false positives.
-    """
-    if not batch:
-        return
-
-    entry_data = hass.data[DOMAIN][entry.entry_id]
-    discovered: set[str] = entry_data["_discovered_uids"]
-
-    # If a known device was seen during the batch window, all events in
-    # the batch are almost certainly false positives from the same RF
-    # signal.  telldusd fires all protocol decoders simultaneously, but
-    # the event order is non-deterministic — a false positive can arrive
-    # BEFORE the known device event, so the buffer-time check in
-    # _buffer_unknown_device alone is not sufficient.
-    #
-    # At processing time (MULTI_PROTOCOL_WINDOW after the first event),
-    # now - last_known ≈ 1s for events from the same signal.  We use
-    # 2 × MULTI_PROTOCOL_WINDOW as the threshold to account for timing
-    # jitter while keeping the window tight enough to not block genuinely
-    # new devices discovered >2s after a known device fires.
-    last_known = entry_data.get("_last_known_device_time", 0.0)
-    now = time.monotonic()
-    if now - last_known < 2 * MULTI_PROTOCOL_WINDOW:
-        for uid, _params, _event in batch:
-            discovered.add(uid)
-        _LOGGER.debug(
-            "Dropping batch of %d unknown event(s) — known device seen %.1fs ago",
-            len(batch),
-            now - last_known,
-        )
-        return
-
-    # Sort by protocol priority (lowest number = highest priority)
-    batch.sort(
-        key=lambda item: PROTOCOL_PRIORITY.get(
-            item[1].get("protocol", ""), PROTOCOL_PRIORITY_DEFAULT
-        )
-    )
-
-    # Pick the best candidate (first after sorting)
-    best_uid, best_params, best_event = batch[0]
-
-    # Mark only the SUPPRESSED UIDs as discovered so they are not re-processed
-    # if the same button is pressed again.  The best UID is NOT added here —
-    # _auto_add_device / _fire_device_discovery handle it (they have their own
-    # discovered-check and will add it to the set themselves).
-    for uid, _params, _event in batch[1:]:
-        discovered.add(uid)
-
-    if len(batch) > 1:
-        suppressed = [uid for uid, _, _ in batch[1:]]
-        _LOGGER.debug(
-            "Multi-protocol dedup: kept %s (%s), suppressed %d duplicate(s): %s",
-            best_uid,
-            best_params.get("protocol", "?"),
-            len(suppressed),
-            suppressed,
-        )
-
-    automatic_add = entry.options.get(CONF_AUTOMATIC_ADD, DEFAULT_AUTOMATIC_ADD)
-    if automatic_add:
-        _auto_add_device(hass, entry, best_uid, best_params, best_event)
-    else:
-        _fire_device_discovery(hass, entry, best_uid, best_params)
-
-    # Start a cooldown to prevent flooding from sensors that decode with
-    # different house/unit values on consecutive transmissions.
-    entry_data["_discovery_cooldown_until"] = (
-        time.monotonic() + DISCOVERY_COOLDOWN
-    )
+        # Discovery mode: fire a discovery config flow.  The device will
+        # appear in the "Discovered" section of Settings → Devices & Services.
+        # The user clicks Configure → names it → it becomes a stored device.
+        _fire_device_discovery(hass, entry, device_uid, params)
 
 
 def _fire_device_discovery(
