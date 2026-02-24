@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -37,6 +38,12 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+# Seconds to suppress unknown-device events after a known-device event.
+# All protocol decodings from a single RF signal arrive within ~100 ms
+# (Protocol.cpp decodes sequentially: ProtocolNexa → ProtocolWaveman →
+# ProtocolSartano).  1 second gives ample margin.
+_KNOWN_DEVICE_SHADOW_SECS = 1.0
 
 # Sensor data-type → suffix (mirrors sensor.py _SENSOR_META keys)
 _SENSOR_SUFFIX: dict[int, str] = {1: "temperature", 2: "humidity"}
@@ -102,15 +109,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             except (AttributeError, TypeError):
                 _LOGGER.debug("Could not remove orphan subentry %s", subentry_id)
 
-    # Pre-seed protocol+model pairs from stored devices so that known
-    # devices' multi-protocol false positives are suppressed from the start.
-    known_proto_models: set[str] = set()
-    for device_cfg in stored_devices.values():
-        proto = device_cfg.get(CONF_DEVICE_PROTOCOL, "")
-        mdl = device_cfg.get(CONF_DEVICE_MODEL, "")
-        if proto:
-            known_proto_models.add(f"{proto}_{mdl}")
-
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         ENTRY_TELLSTICK_CONTROLLER: controller,
         ENTRY_DEVICE_ID_MAP: device_id_map,
@@ -122,9 +120,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # devices (e.g. door sensors) decode with different house/unit values
         # on each transmission.  TelldusCenter (filtereddeviceproxymodel.cpp)
         # solves this by deduplicating on protocol+model — we do the same.
-        # Pre-seeded with stored devices so their false positives are
-        # suppressed immediately.
-        "_discovered_protocol_models": known_proto_models,
+        # NOT pre-seeded from stored devices — that would block new devices
+        # that share a protocol+model with existing ones.
+        "_discovered_protocol_models": set(),
+        # Timestamp of the last known-device raw event.  Used to suppress
+        # false-positive unknown events from the same RF signal.
+        # Protocol.cpp decodes arctech first (ProtocolNexa → ProtocolWaveman
+        # → ProtocolSartano), so known-device events always arrive before
+        # their cross-protocol false positives.
+        "_last_known_event_time": 0.0,
     }
 
     @callback
@@ -272,9 +276,13 @@ def _handle_raw_event(
     automatic_add = entry.options.get(CONF_AUTOMATIC_ADD, DEFAULT_AUTOMATIC_ADD)
 
     if device_uid in stored_devices:
-        # Known device — fire SIGNAL_NEW_DEVICE so platforms can revive
-        # entities after a restart (the entity is pre-created from stored
-        # config, but the signal lets late-starting platforms pick it up).
+        # Known device — record timestamp so we can suppress false-positive
+        # unknown events from the same RF signal (they arrive within ms).
+        entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
+        entry_data["_last_known_event_time"] = time.monotonic()
+        # Fire SIGNAL_NEW_DEVICE so platforms can revive entities after a
+        # restart (the entity is pre-created from stored config, but the
+        # signal lets late-starting platforms pick it up).
         async_dispatcher_send(
             hass, SIGNAL_NEW_DEVICE.format(entry.entry_id), event
         )
@@ -300,6 +308,14 @@ def _fire_device_discovery(
 
     if device_uid in discovered:
         return  # Already fired a discovery for this device this session
+
+    # Suppress false positives from a known device's RF signal.
+    # Protocol.cpp decodes arctech first, so the known-device event
+    # (if any) has already been processed and set the timestamp.
+    last_known = entry_data.get("_last_known_event_time", 0.0)
+    if time.monotonic() - last_known < _KNOWN_DEVICE_SHADOW_SECS:
+        discovered.add(device_uid)
+        return
 
     # Deduplicate by protocol+model, matching TelldusCenter's approach
     # (filtereddeviceproxymodel.cpp:60-70).  telldusd fires ALL protocol
@@ -346,6 +362,11 @@ def _auto_add_device(
     if device_uid in discovered:
         return
     discovered.add(device_uid)
+
+    # Suppress false positives from a known device's RF signal.
+    last_known = entry_data.get("_last_known_event_time", 0.0)
+    if time.monotonic() - last_known < _KNOWN_DEVICE_SHADOW_SECS:
+        return
 
     protocol = params.get("protocol", "")
     model = params.get("model", "")
