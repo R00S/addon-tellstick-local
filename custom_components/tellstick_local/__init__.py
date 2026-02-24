@@ -2,10 +2,16 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import pathlib
 import time
 from typing import Any
 
+from homeassistant.components.persistent_notification import (
+    async_create as pn_async_create,
+    async_dismiss as pn_async_dismiss,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import HomeAssistant, callback
@@ -28,10 +34,12 @@ from .const import (
     CONF_DEVICE_UNIT,
     CONF_DEVICES,
     CONF_EVENT_PORT,
+    CONF_IGNORED_UIDS,
     DEFAULT_AUTOMATIC_ADD,
     DOMAIN,
     ENTRY_DEVICE_ID_MAP,
     ENTRY_TELLSTICK_CONTROLLER,
+    INTEGRATION_VERSION,
     PLATFORMS,
     SIGNAL_EVENT,
     SIGNAL_NEW_DEVICE,
@@ -106,9 +114,57 @@ _KNOWN_DEVICE_SHADOW_SECS = 1.0
 # Sensor data-type → suffix (mirrors sensor.py _SENSOR_META keys)
 _SENSOR_SUFFIX: dict[int, str] = {1: "temperature", 2: "humidity"}
 
+_NOTIF_UPDATE = "tellstick_local_update"
+
+
+def _check_version_mismatch(hass: HomeAssistant) -> None:
+    """Notify the user if on-disk integration files are newer than loaded code.
+
+    The TellStick Local app copies updated integration files to
+    ``/config/custom_components/tellstick_local/`` at startup.  If the
+    version in the on-disk ``manifest.json`` differs from the compiled-in
+    ``INTEGRATION_VERSION``, HA Core must be restarted to load the new code.
+    """
+    try:
+        disk_manifest = pathlib.Path(__file__).parent / "manifest.json"
+        disk_version = json.loads(disk_manifest.read_text()).get("version", "")
+    except (FileNotFoundError, json.JSONDecodeError, KeyError, OSError) as exc:
+        _LOGGER.debug("Could not read on-disk manifest for version check: %s", exc)
+        return
+
+    if not disk_version or disk_version == INTEGRATION_VERSION:
+        # Versions match (or unreadable) — clear any stale notification
+        pn_async_dismiss(hass, _NOTIF_UPDATE)
+        return
+
+    _LOGGER.warning(
+        "TellStick Local integration on disk is v%s but loaded code is v%s — "
+        "restart Home Assistant to apply the update",
+        disk_version,
+        INTEGRATION_VERSION,
+    )
+    pn_async_create(
+        hass,
+        f"The TellStick Local app installed integration **v{disk_version}** "
+        f"(currently loaded: v{INTEGRATION_VERSION}).\n\n"
+        "**Restart Home Assistant** to activate the new version.\n\n"
+        "Go to **Settings → System → Restart**.",
+        title="TellStick Local — restart required",
+        notification_id=_NOTIF_UPDATE,
+    )
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up TellStick Local from a config entry."""
+
+    # --- Version-mismatch detection ---
+    # INTEGRATION_VERSION is frozen at import time.  If the app copied a
+    # newer integration to disk while HA was running, the on-disk
+    # manifest.json will have a higher version than the loaded code.
+    # In that case we fire a persistent notification so the user knows
+    # a restart is needed.
+    _check_version_mismatch(hass)
+
     host = entry.data[CONF_HOST]
     cmd_port = entry.data[CONF_COMMAND_PORT]
     evt_port = entry.data[CONF_EVENT_PORT]
@@ -367,6 +423,12 @@ def _fire_device_discovery(
     if device_uid in discovered:
         return  # Already fired a discovery for this device this session
 
+    # Skip permanently ignored devices
+    ignored_uids = entry.options.get(CONF_IGNORED_UIDS, {})
+    if device_uid in ignored_uids:
+        discovered.add(device_uid)
+        return
+
     # Suppress false positives from a known device's RF signal.
     # Protocol.cpp decodes arctech first, so the known-device event
     # (if any) has already been processed and set the timestamp.
@@ -420,6 +482,11 @@ def _auto_add_device(
     if device_uid in discovered:
         return
     discovered.add(device_uid)
+
+    # Skip permanently ignored devices
+    ignored_uids = entry.options.get(CONF_IGNORED_UIDS, {})
+    if device_uid in ignored_uids:
+        return
 
     # Suppress false positives from a known device's RF signal.
     last_known = entry_data.get("_last_known_event_time", 0.0)
@@ -527,7 +594,8 @@ def _handle_sensor_event(
         sensor_uid = f"sensor_{event.sensor_id}_{suffix}"
         entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
         discovered: set[str] = entry_data.get("_discovered_uids", set())
-        if sensor_uid not in discovered:
+        ignored_uids = entry.options.get(CONF_IGNORED_UIDS, {})
+        if sensor_uid not in discovered and sensor_uid not in ignored_uids:
             discovered.add(sensor_uid)
             existing_devices = dict(stored_devices)
             existing_devices[sensor_uid] = {
@@ -548,7 +616,8 @@ def _handle_sensor_event(
         sensor_uid = f"sensor_{event.sensor_id}_{suffix}"
         entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
         discovered: set[str] = entry_data.get("_discovered_uids", set())
-        if sensor_uid not in discovered:
+        ignored_uids = entry.options.get(CONF_IGNORED_UIDS, {})
+        if sensor_uid not in discovered and sensor_uid not in ignored_uids:
             discovered.add(sensor_uid)
             hass.async_create_task(
                 hass.config_entries.flow.async_init(

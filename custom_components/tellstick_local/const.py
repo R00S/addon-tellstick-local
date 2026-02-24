@@ -3,6 +3,12 @@ from __future__ import annotations
 
 DOMAIN = "tellstick_local"
 
+# Must match manifest.json "version".  Frozen at import time so the
+# integration can detect when on-disk files were updated behind a
+# running HA instance (i.e. the app copied a newer version but HA
+# hasn't restarted yet).
+INTEGRATION_VERSION = "2.1.7.5"
+
 # Config keys (CONF_HOST from homeassistant.const is used for host)
 CONF_COMMAND_PORT = "command_port"
 CONF_EVENT_PORT = "event_port"
@@ -14,6 +20,7 @@ CONF_DEVICE_MODEL = "model"
 CONF_DEVICE_HOUSE = "house"
 CONF_DEVICE_UNIT = "unit"
 CONF_DEVICE_NAME = "name"
+CONF_IGNORED_UIDS = "ignored_uids"
 
 # Defaults
 DEFAULT_HOST = "tellsticklive"  # fallback for manual setup; actual hostname shown in app log
@@ -46,7 +53,7 @@ TELLSTICK_WINDAVERAGE = 32
 TELLSTICK_WINDGUST = 64
 
 # HA platforms
-PLATFORMS = ["switch", "light", "sensor"]
+PLATFORMS = ["button", "switch", "light", "sensor"]
 
 # Entry data keys
 ENTRY_TELLSTICK_CONTROLLER = "controller"

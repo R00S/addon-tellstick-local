@@ -12,6 +12,7 @@ startup: system
 init: false
 stdin: true
 usb: true
+homeassistant_api: true
 map:
   - homeassistant_config:rw
 discovery:

@@ -1,4 +1,11 @@
 {
+  "entity": {
+    "button": {
+      "learn": {
+        "name": "Send learn signal"
+      }
+    }
+  },
   "config": {
     "flow_title": "TellStick: {name}",
     "step": {
@@ -20,11 +27,16 @@
           "event_port": "TCP port for TellStick events (default: 50801)."
         }
       },
-      "confirm_rf_device": {
+      "add_rf_device": {
         "title": "New 433 MHz device detected",
-        "description": "A 433 MHz device was detected via RF signal:\n\n- **Protocol:** {protocol}\n- **Model:** {model}\n- **House:** {house}\n- **Unit:** {unit}\n- **UID:** {device_uid}\n\nGive it a name and click **Submit** to add it.",
+        "description": "A 433 MHz device was detected via RF signal:\n\n- **Protocol:** {protocol}\n- **Model:** {model}\n- **House:** {house}\n- **Unit:** {unit}\n- **UID:** {device_uid}\n\nGive the device a name and click **Submit** to add it. You can also select an existing device to replace (e.g. after battery change), or check **Ignore** to hide it.",
         "data": {
-          "name": "Device name"
+          "name": "Device name",
+          "replace_device": "Replace existing device",
+          "ignore": "Ignore this device"
+        },
+        "data_description": {
+          "ignore": "Check to permanently hide this device. You can un-ignore it later from integration options."
         }
       }
     },
@@ -36,6 +48,8 @@
       "already_configured": "This TellStick daemon is already configured.",
       "already_added": "This device is already added.",
       "device_added": "Device added successfully! It will appear in your device list.",
+      "device_replaced": "Device replaced successfully! The existing entity now uses the new device ID. History and entity ID are preserved.",
+      "device_ignored": "Device ignored. It will no longer appear as discovered. You can un-ignore it from the integration options.",
       "entry_not_found": "TellStick Local integration not found. Please set it up first."
     }
   },
@@ -44,7 +58,9 @@
       "init": {
         "menu_options": {
           "settings": "Settings",
-          "edit_device": "View / edit a device"
+          "manage_device": "Edit a device",
+          "remove_devices": "Remove multiple devices",
+          "manage_ignored": "Manage ignored devices"
         }
       },
       "settings": {
@@ -53,25 +69,66 @@
           "automatic_add": "Automatically add new devices (when off, new devices appear as 'Discovered' for manual confirmation)"
         }
       },
-      "edit_device": {
+      "manage_device": {
         "title": "Select a device",
-        "description": "Pick a device to view or edit its house/unit codes.",
+        "description": "Pick a device to edit or delete.\n\nTo send a learn signal, go to the device page and press the **Send learn signal** button.",
         "data": {
           "device": "Device"
         }
       },
+      "device_actions": {
+        "title": "Manage: {name}",
+        "description": "Choose an action for **{name}**.",
+        "menu_options": {
+          "device_detail": "Edit device",
+          "teach_device": "Send learn signal",
+          "delete_device": "Delete device"
+        }
+      },
       "device_detail": {
-        "title": "Edit device: {device_uid}",
-        "description": "Protocol: **{protocol}** / Model: **{model}**\n\nChange the name or house/unit codes below.",
+        "title": "Edit device",
+        "description": "**{device_uid}**\n\nProtocol: **{protocol}** / Model: **{model}**\n\nChange the name or parameters below. Changing house/unit codes or sensor ID will update the device identity — entity ID and history are preserved.",
         "data": {
           "name": "Device name",
           "house": "House code",
-          "unit": "Unit code"
+          "unit": "Unit code",
+          "sensor_id": "Sensor ID"
+        },
+        "data_description": {
+          "sensor_id": "The numeric ID from the RF signal. Change this when a sensor gets a new ID (e.g. after battery replacement) to keep entity history."
+        }
+      },
+      "teach_device": {
+        "title": "Send learn signal",
+        "description": "This will send a learn/pairing signal for **{name}** ({protocol}/{model}).\n\nPut your 433 MHz receiver in **learn mode** now, then click **Submit**."
+      },
+      "delete_device": {
+        "title": "Delete device",
+        "description": "Delete **{name}** from this integration?",
+        "data": {
+          "ignore": "Also ignore this device (prevents automatic re-detection)"
+        }
+      },
+      "remove_devices": {
+        "title": "Remove multiple devices",
+        "description": "Select devices to remove from this integration.",
+        "data": {
+          "devices": "Devices to remove",
+          "ignore": "Also ignore removed devices (prevents automatic re-detection)"
+        }
+      },
+      "manage_ignored": {
+        "title": "Manage ignored devices",
+        "description": "Select devices to un-ignore. Un-ignored devices can be detected again when they send an RF signal.",
+        "data": {
+          "devices": "Devices to un-ignore"
         }
       }
     },
     "abort": {
-      "no_devices": "No devices to edit."
+      "no_devices": "No devices to manage.",
+      "no_ignored": "No ignored devices.",
+      "teach_sent": "Learn signal sent successfully! If the receiver was in learn mode, it should now be paired."
     }
   },
   "config_subentries": {
@@ -96,7 +153,7 @@
             "unit": "Unit code",
             "code": "Code (10 digits, 0 or 1)",
             "system": "System",
-            "units": "Units (comma-separated, 1–10)",
+            "units": "Units (comma-separated, 1-10)",
             "fade": "Fade (smooth)"
           }
         },

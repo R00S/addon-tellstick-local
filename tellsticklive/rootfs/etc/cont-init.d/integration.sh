@@ -2,8 +2,9 @@
 
 # Install or update the companion integration in HA custom_components.
 # - First install: copies files so Supervisor discovery can trigger the "Set up?" prompt.
-# - Update: copies new files and requests a HA Core restart (HA caches code in memory).
-# - No change: skips copy and restart to avoid unnecessary disruption.
+# - Update: copies new files and sends a persistent notification asking
+#   the user to restart HA Core (which caches Python modules in memory).
+# - No change: skips copy to avoid unnecessary disruption.
 
 SRC="/usr/share/tellstick_local"
 DEST="/homeassistant/custom_components/tellstick_local"
@@ -28,8 +29,22 @@ cp -rf "${SRC}/." "${DEST}/"
 bashio::log.info "TellStick Local integration v${BUNDLED_VERSION} installed."
 
 # If HA Core is already running (i.e. this is an update, not first boot),
-# request a restart so it picks up the new integration code.
+# notify the user that a restart is needed to load the new integration code.
+# We no longer auto-restart HA Core — that was disruptive and could interrupt
+# automations.  The integration itself also detects the version mismatch at
+# next setup and shows the same notification.
 if [[ "${INSTALLED_VERSION}" != "none" ]]; then
-    bashio::log.info "Requesting HA Core restart to load updated integration..."
-    bashio::core.restart || bashio::log.warning "Could not request HA Core restart — please restart manually"
+    bashio::log.info "Integration updated — notifying user to restart HA Core..."
+    # Use the Supervisor API proxy to create a persistent notification in HA.
+    # Requires homeassistant_api: true in config.yaml.
+    if curl -s -X POST \
+        -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d "{\"title\":\"TellStick Local — restart required\",\"message\":\"The TellStick Local app installed integration **v${BUNDLED_VERSION}** (previously v${INSTALLED_VERSION}).\\n\\n**Restart Home Assistant** to activate the new version.\\n\\nGo to **Settings → System → Restart**.\",\"notification_id\":\"tellstick_local_update\"}" \
+        "http://supervisor/core/api/services/persistent_notification/create" \
+        > /dev/null 2>&1; then
+        bashio::log.info "Persistent notification sent — user will be prompted to restart HA"
+    else
+        bashio::log.warning "Could not send notification — please restart Home Assistant manually to load TellStick Local v${BUNDLED_VERSION}"
+    fi
 fi
