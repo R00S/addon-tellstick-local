@@ -14,6 +14,7 @@ CONF_DEVICE_MODEL = "model"
 CONF_DEVICE_HOUSE = "house"
 CONF_DEVICE_UNIT = "unit"
 CONF_DEVICE_NAME = "name"
+CONF_IGNORED_UIDS = "ignored_uids"
 
 # Defaults
 DEFAULT_HOST = "tellsticklive"  # fallback for manual setup; actual hostname shown in app log

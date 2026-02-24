@@ -28,6 +28,7 @@ from .const import (
     CONF_DEVICE_UNIT,
     CONF_DEVICES,
     CONF_EVENT_PORT,
+    CONF_IGNORED_UIDS,
     DEFAULT_AUTOMATIC_ADD,
     DOMAIN,
     ENTRY_DEVICE_ID_MAP,
@@ -367,6 +368,12 @@ def _fire_device_discovery(
     if device_uid in discovered:
         return  # Already fired a discovery for this device this session
 
+    # Skip permanently ignored devices
+    ignored_uids = entry.options.get(CONF_IGNORED_UIDS, {})
+    if device_uid in ignored_uids:
+        discovered.add(device_uid)
+        return
+
     # Suppress false positives from a known device's RF signal.
     # Protocol.cpp decodes arctech first, so the known-device event
     # (if any) has already been processed and set the timestamp.
@@ -420,6 +427,11 @@ def _auto_add_device(
     if device_uid in discovered:
         return
     discovered.add(device_uid)
+
+    # Skip permanently ignored devices
+    ignored_uids = entry.options.get(CONF_IGNORED_UIDS, {})
+    if device_uid in ignored_uids:
+        return
 
     # Suppress false positives from a known device's RF signal.
     last_known = entry_data.get("_last_known_event_time", 0.0)
@@ -527,7 +539,8 @@ def _handle_sensor_event(
         sensor_uid = f"sensor_{event.sensor_id}_{suffix}"
         entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
         discovered: set[str] = entry_data.get("_discovered_uids", set())
-        if sensor_uid not in discovered:
+        ignored_uids = entry.options.get(CONF_IGNORED_UIDS, {})
+        if sensor_uid not in discovered and sensor_uid not in ignored_uids:
             discovered.add(sensor_uid)
             existing_devices = dict(stored_devices)
             existing_devices[sensor_uid] = {
@@ -548,7 +561,8 @@ def _handle_sensor_event(
         sensor_uid = f"sensor_{event.sensor_id}_{suffix}"
         entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
         discovered: set[str] = entry_data.get("_discovered_uids", set())
-        if sensor_uid not in discovered:
+        ignored_uids = entry.options.get(CONF_IGNORED_UIDS, {})
+        if sensor_uid not in discovered and sensor_uid not in ignored_uids:
             discovered.add(sensor_uid)
             hass.async_create_task(
                 hass.config_entries.flow.async_init(
