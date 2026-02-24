@@ -677,12 +677,20 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
 
             if uid.startswith("sensor_"):
                 # Sensor: check if sensor_id changed → UID migration
-                old_sensor_id = cfg.get("sensor_id", "")
+                old_sensor_id = cfg.get("sensor_id", 0)
                 new_sensor_id = user_input.get("sensor_id", old_sensor_id)
-                if str(new_sensor_id) != str(old_sensor_id):
-                    cfg["sensor_id"] = int(new_sensor_id)
+                try:
+                    old_id_int = int(old_sensor_id)
+                    new_id_int = int(new_sensor_id)
+                except (ValueError, TypeError):
+                    old_id_int = 0
+                    new_id_int = 0
+                if new_id_int != old_id_int:
+                    cfg["sensor_id"] = new_id_int
                     suffix = uid.rsplit("_", 1)[-1]  # "temperature"/"humidity"
-                    new_uid = f"sensor_{new_sensor_id}_{suffix}"
+                    if suffix not in ("temperature", "humidity"):
+                        suffix = "sensor"
+                    new_uid = f"sensor_{new_id_int}_{suffix}"
                     new_options = _migrate_device_uid(
                         self.hass, self.config_entry, uid, new_uid, cfg
                     )
