@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import pathlib
 import time
 from typing import Any
 
@@ -33,6 +35,7 @@ from .const import (
     DOMAIN,
     ENTRY_DEVICE_ID_MAP,
     ENTRY_TELLSTICK_CONTROLLER,
+    INTEGRATION_VERSION,
     PLATFORMS,
     SIGNAL_EVENT,
     SIGNAL_NEW_DEVICE,
@@ -107,9 +110,55 @@ _KNOWN_DEVICE_SHADOW_SECS = 1.0
 # Sensor data-type → suffix (mirrors sensor.py _SENSOR_META keys)
 _SENSOR_SUFFIX: dict[int, str] = {1: "temperature", 2: "humidity"}
 
+_NOTIF_UPDATE = "tellstick_local_update"
+
+
+def _check_version_mismatch(hass: HomeAssistant) -> None:
+    """Notify the user if on-disk integration files are newer than loaded code.
+
+    The TellStick Local app copies updated integration files to
+    ``/config/custom_components/tellstick_local/`` at startup.  If the
+    version in the on-disk ``manifest.json`` differs from the compiled-in
+    ``INTEGRATION_VERSION``, HA Core must be restarted to load the new code.
+    """
+    try:
+        disk_manifest = pathlib.Path(__file__).parent / "manifest.json"
+        disk_version = json.loads(disk_manifest.read_text()).get("version", "")
+    except Exception:  # noqa: BLE001
+        return
+
+    if not disk_version or disk_version == INTEGRATION_VERSION:
+        # Versions match (or unreadable) — clear any stale notification
+        hass.components.persistent_notification.async_dismiss(_NOTIF_UPDATE)
+        return
+
+    _LOGGER.warning(
+        "TellStick Local integration on disk is v%s but loaded code is v%s — "
+        "restart Home Assistant to apply the update",
+        disk_version,
+        INTEGRATION_VERSION,
+    )
+    hass.components.persistent_notification.async_create(
+        f"The TellStick Local app installed integration **v{disk_version}** "
+        f"(currently loaded: v{INTEGRATION_VERSION}).\n\n"
+        "**Restart Home Assistant** to activate the new version.\n\n"
+        "Go to **Settings → System → Restart**.",
+        title="TellStick Local — restart required",
+        notification_id=_NOTIF_UPDATE,
+    )
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up TellStick Local from a config entry."""
+
+    # --- Version-mismatch detection ---
+    # INTEGRATION_VERSION is frozen at import time.  If the app copied a
+    # newer integration to disk while HA was running, the on-disk
+    # manifest.json will have a higher version than the loaded code.
+    # In that case we fire a persistent notification so the user knows
+    # a restart is needed.
+    _check_version_mismatch(hass)
+
     host = entry.data[CONF_HOST]
     cmd_port = entry.data[CONF_COMMAND_PORT]
     evt_port = entry.data[CONF_EVENT_PORT]

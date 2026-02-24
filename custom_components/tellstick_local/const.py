@@ -3,6 +3,12 @@ from __future__ import annotations
 
 DOMAIN = "tellstick_local"
 
+# Must match manifest.json "version".  Frozen at import time so the
+# integration can detect when on-disk files were updated behind a
+# running HA instance (i.e. the app copied a newer version but HA
+# hasn't restarted yet).
+INTEGRATION_VERSION = "2.1.7.2"
+
 # Config keys (CONF_HOST from homeassistant.const is used for host)
 CONF_COMMAND_PORT = "command_port"
 CONF_EVENT_PORT = "event_port"
