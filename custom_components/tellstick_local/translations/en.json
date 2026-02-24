@@ -27,20 +27,16 @@
           "event_port": "TCP port for TellStick events (default: 50801)."
         }
       },
-      "confirm_rf_device": {
-        "title": "New 433 MHz device detected",
-        "description": "A 433 MHz device was detected via RF signal:\n\n- **Protocol:** {protocol}\n- **Model:** {model}\n- **House:** {house}\n- **Unit:** {unit}\n- **UID:** {device_uid}",
-        "menu_options": {
-          "add_rf_device": "Add this device",
-          "ignore_rf_device": "Ignore this device"
-        }
-      },
       "add_rf_device": {
-        "title": "Add 433 MHz device",
-        "description": "Give the device a name and click **Submit** to add it. You can also select an existing device to replace (e.g. after battery change).",
+        "title": "New 433 MHz device detected",
+        "description": "A 433 MHz device was detected via RF signal:\n\n- **Protocol:** {protocol}\n- **Model:** {model}\n- **House:** {house}\n- **Unit:** {unit}\n- **UID:** {device_uid}\n\nGive the device a name and click **Submit** to add it. You can also select an existing device to replace (e.g. after battery change), or check **Ignore** to hide it.",
         "data": {
           "name": "Device name",
-          "replace_device": "Replace existing device"
+          "replace_device": "Replace existing device",
+          "ignore": "Ignore this device"
+        },
+        "data_description": {
+          "ignore": "Check to permanently hide this device. You can un-ignore it later from integration options."
         }
       }
     },
