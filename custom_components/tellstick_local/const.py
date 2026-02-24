@@ -47,7 +47,7 @@ TELLSTICK_WINDAVERAGE = 32
 TELLSTICK_WINDGUST = 64
 
 # HA platforms
-PLATFORMS = ["switch", "light", "sensor"]
+PLATFORMS = ["button", "switch", "light", "sensor"]
 
 # Entry data keys
 ENTRY_TELLSTICK_CONTROLLER = "controller"
