@@ -8,6 +8,10 @@ import pathlib
 import time
 from typing import Any
 
+from homeassistant.components.persistent_notification import (
+    async_create as pn_async_create,
+    async_dismiss as pn_async_dismiss,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import HomeAssistant, callback
@@ -124,12 +128,13 @@ def _check_version_mismatch(hass: HomeAssistant) -> None:
     try:
         disk_manifest = pathlib.Path(__file__).parent / "manifest.json"
         disk_version = json.loads(disk_manifest.read_text()).get("version", "")
-    except Exception:  # noqa: BLE001
+    except (FileNotFoundError, json.JSONDecodeError, KeyError, OSError) as exc:
+        _LOGGER.debug("Could not read on-disk manifest for version check: %s", exc)
         return
 
     if not disk_version or disk_version == INTEGRATION_VERSION:
         # Versions match (or unreadable) — clear any stale notification
-        hass.components.persistent_notification.async_dismiss(_NOTIF_UPDATE)
+        pn_async_dismiss(hass, _NOTIF_UPDATE)
         return
 
     _LOGGER.warning(
@@ -138,7 +143,8 @@ def _check_version_mismatch(hass: HomeAssistant) -> None:
         disk_version,
         INTEGRATION_VERSION,
     )
-    hass.components.persistent_notification.async_create(
+    pn_async_create(
+        hass,
         f"The TellStick Local app installed integration **v{disk_version}** "
         f"(currently loaded: v{INTEGRATION_VERSION}).\n\n"
         "**Restart Home Assistant** to activate the new version.\n\n"

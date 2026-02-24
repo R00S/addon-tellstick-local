@@ -352,7 +352,44 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_confirm_rf_device(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Show confirmation form for a discovered 433 MHz device."""
+        """Show add-or-ignore menu for a discovered 433 MHz device."""
+        info = self._rf_discovery
+        return self.async_show_menu(
+            step_id="confirm_rf_device",
+            menu_options=["add_rf_device", "ignore_rf_device"],
+            description_placeholders={
+                "protocol": info.get("protocol", ""),
+                "model": info.get("model", ""),
+                "house": info.get("house", ""),
+                "unit": info.get("unit", ""),
+                "device_uid": info["device_uid"],
+            },
+        )
+
+    async def async_step_ignore_rf_device(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Ignore a discovered 433 MHz device persistently."""
+        info = self._rf_discovery
+        entry_id = info["entry_id"]
+        entry = self.hass.config_entries.async_get_entry(entry_id)
+        if entry is None:
+            return self.async_abort(reason="entry_not_found")
+
+        device_uid = info["device_uid"]
+        ignored = dict(entry.options.get(CONF_IGNORED_UIDS, {}))
+        ignored[device_uid] = (
+            f"{info.get('protocol', '')}/{info.get('model', '')} {device_uid}"
+        )
+        new_options = dict(entry.options)
+        new_options[CONF_IGNORED_UIDS] = ignored
+        self.hass.config_entries.async_update_entry(entry, options=new_options)
+        return self.async_abort(reason="device_ignored")
+
+    async def async_step_add_rf_device(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Show form to name and add a discovered 433 MHz device."""
         info = self._rf_discovery
         dev_type = info.get("type", "device")
 
@@ -373,18 +410,6 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return self.async_abort(reason="entry_not_found")
 
             device_uid = info["device_uid"]
-
-            # Handle "Ignore this device"
-            if user_input.get("ignore", False):
-                ignored = dict(entry.options.get(CONF_IGNORED_UIDS, {}))
-                ignored[device_uid] = f"{info.get('protocol', '')}/{info.get('model', '')} {device_uid}"
-                new_options = dict(entry.options)
-                new_options[CONF_IGNORED_UIDS] = ignored
-                self.hass.config_entries.async_update_entry(
-                    entry, options=new_options
-                )
-                return self.async_abort(reason="device_ignored")
-
             name = user_input.get("name", default_name)
             replace_uid = user_input.get("replace_device", "")
 
@@ -555,11 +580,8 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Optional("replace_device", default="")
                 ] = vol.In(replace_options)
 
-        # Ignore option — always shown at the bottom
-        schema_dict[vol.Optional("ignore", default=False)] = bool
-
         return self.async_show_form(
-            step_id="confirm_rf_device",
+            step_id="add_rf_device",
             data_schema=vol.Schema(schema_dict),
             description_placeholders={
                 "protocol": info.get("protocol", ""),

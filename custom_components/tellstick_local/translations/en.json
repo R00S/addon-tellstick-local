@@ -29,11 +29,18 @@
       },
       "confirm_rf_device": {
         "title": "New 433 MHz device detected",
-        "description": "A 433 MHz device was detected via RF signal:\n\n- **Protocol:** {protocol}\n- **Model:** {model}\n- **House:** {house}\n- **Unit:** {unit}\n- **UID:** {device_uid}\n\nGive it a name and click **Submit** to add it, select an existing device to replace (e.g. after battery change), or check **Ignore** to hide it permanently.",
+        "description": "A 433 MHz device was detected via RF signal:\n\n- **Protocol:** {protocol}\n- **Model:** {model}\n- **House:** {house}\n- **Unit:** {unit}\n- **UID:** {device_uid}",
+        "menu_options": {
+          "add_rf_device": "Add this device",
+          "ignore_rf_device": "Ignore this device"
+        }
+      },
+      "add_rf_device": {
+        "title": "Add 433 MHz device",
+        "description": "Give the device a name and click **Submit** to add it. You can also select an existing device to replace (e.g. after battery change).",
         "data": {
           "name": "Device name",
-          "replace_device": "Replace existing device",
-          "ignore": "Ignore this device (hide from future detections)"
+          "replace_device": "Replace existing device"
         }
       }
     },
