@@ -102,12 +102,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             except (AttributeError, TypeError):
                 _LOGGER.debug("Could not remove orphan subentry %s", subentry_id)
 
+    # Pre-seed protocol+model pairs from stored devices so that known
+    # devices' multi-protocol false positives are suppressed from the start.
+    known_proto_models: set[str] = set()
+    for device_cfg in stored_devices.values():
+        proto = device_cfg.get(CONF_DEVICE_PROTOCOL, "")
+        mdl = device_cfg.get(CONF_DEVICE_MODEL, "")
+        if proto:
+            known_proto_models.add(f"{proto}_{mdl}")
+
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         ENTRY_TELLSTICK_CONTROLLER: controller,
         ENTRY_DEVICE_ID_MAP: device_id_map,
         # Track UIDs for which discovery flows have been fired this session
         # to avoid flooding the UI with duplicate notifications.
         "_discovered_uids": set(),
+        # Track protocol+model pairs already discovered this session.
+        # telldusd fires ALL protocol decoders on every RF signal, and some
+        # devices (e.g. door sensors) decode with different house/unit values
+        # on each transmission.  TelldusCenter (filtereddeviceproxymodel.cpp)
+        # solves this by deduplicating on protocol+model — we do the same.
+        # Pre-seeded with stored devices so their false positives are
+        # suppressed immediately.
+        "_discovered_protocol_models": known_proto_models,
     }
 
     @callback
@@ -284,6 +301,20 @@ def _fire_device_discovery(
     if device_uid in discovered:
         return  # Already fired a discovery for this device this session
 
+    # Deduplicate by protocol+model, matching TelldusCenter's approach
+    # (filtereddeviceproxymodel.cpp:60-70).  telldusd fires ALL protocol
+    # decoders on every RF signal, and some devices decode with different
+    # house/unit values on each transmission.  We only fire one discovery
+    # flow per unique protocol+model combination.
+    protocol = params.get("protocol", "")
+    model = params.get("model", "")
+    proto_model_key = f"{protocol}_{model}"
+    seen_proto_models: set[str] = entry_data["_discovered_protocol_models"]
+    if proto_model_key in seen_proto_models:
+        discovered.add(device_uid)
+        return
+    seen_proto_models.add(proto_model_key)
+
     discovered.add(device_uid)
     hass.async_create_task(
         hass.config_entries.flow.async_init(
@@ -291,8 +322,8 @@ def _fire_device_discovery(
             context={"source": "integration_discovery"},
             data={
                 "device_uid": device_uid,
-                "protocol": params.get("protocol", ""),
-                "model": params.get("model", ""),
+                "protocol": protocol,
+                "model": model,
                 "house": params.get("house", ""),
                 "unit": params.get("unit", params.get("code", "")),
                 "entry_id": entry.entry_id,
@@ -318,6 +349,16 @@ def _auto_add_device(
 
     protocol = params.get("protocol", "")
     model = params.get("model", "")
+
+    # Deduplicate by protocol+model, matching TelldusCenter's approach
+    # (filtereddeviceproxymodel.cpp:60-70).  Only auto-add the first
+    # event for each protocol+model combination per session.
+    proto_model_key = f"{protocol}_{model}"
+    seen_proto_models: set[str] = entry_data["_discovered_protocol_models"]
+    if proto_model_key in seen_proto_models:
+        return
+    seen_proto_models.add(proto_model_key)
+
     house = params.get("house", "")
     unit = params.get("unit", params.get("code", ""))
     name = f"TellStick {device_uid}"
