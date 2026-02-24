@@ -34,19 +34,24 @@ YAML file editing.
 
 ### What you get
 
-| Capability                | Description                                                                      |
-| ------------------------- | -------------------------------------------------------------------------------- |
-| **Auto install prompt**   | Install the app → HA automatically offers "Set up TellStick Local?"              |
-| **Press-to-discover**     | Press any 433 MHz remote → device appears in HA (auto-add or discovery prompt)   |
-| **Add device button**     | Click "Add device" on the integration card → pick protocol → send pairing signal |
-| **Edit existing devices** | View and change house/unit codes for any device via Configure → Edit device      |
-| **Per-device deletion**   | Delete any device (including auto-detected) from its device page ⋮ menu          |
-| **Device state info**     | Protocol, model, house code and unit code shown as entity state attributes       |
-| **GUI-only management**   | Add, rename, edit and remove devices via HA UI — no YAML, no restart             |
-| **Local push**            | RF events arrive in real time; no polling, no cloud                              |
-| **Automations**           | Device triggers on any 433 MHz button press, usable directly in HA automations   |
-| **Companion app**         | Identical UX in the HA Android/iOS app                                           |
-| **No Telldus Live**       | Zero cloud, zero account, zero internet dependency                               |
+| Capability                 | Description                                                                          |
+| -------------------------- | ------------------------------------------------------------------------------------ |
+| **Auto install prompt**    | Install the app → HA automatically offers "Set up TellStick Local?"                  |
+| **Press-to-discover**      | Press any 433 MHz remote → device appears in HA (auto-add or discovery prompt)       |
+| **Add device button**      | Click "Add device" on the integration card → pick protocol → send pairing signal     |
+| **Ignore unwanted devices**| Check "Ignore" on the discovery form to permanently hide false-positive detections   |
+| **Learn button per device**| Each switch/light device has a "Send learn signal" button on its device page         |
+| **Edit existing devices**  | Change name, house/unit codes, or sensor ID — with full entity history preserved     |
+| **Replace device (sensor)**| After battery replacement, reassign a new sensor ID to an existing device            |
+| **Multi-select removal**   | Select and delete multiple devices at once from the integration options               |
+| **Per-device deletion**    | Delete any device from its device page ⋮ menu                                        |
+| **Device state info**      | Protocol, model, house code and unit code shown as entity state attributes           |
+| **GUI-only management**    | Add, rename, edit and remove devices via HA UI — no YAML, no restart                 |
+| **Upgrade notifications**  | After an app update, HA shows a notification if a restart is needed                  |
+| **Local push**             | RF events arrive in real time; no polling, no cloud                                  |
+| **Automations**            | Device triggers on any 433 MHz button press, usable directly in HA automations       |
+| **Companion app**          | Identical UX in the HA Android/iOS app                                               |
+| **No Telldus Live**        | Zero cloud, zero account, zero internet dependency                                   |
 
 ---
 
@@ -128,7 +133,10 @@ wall switches, sensors).
 
 > **Tip:** With automatic add disabled, detected devices still show up in the
 > **Discovered** section of Devices & Services (like BLE devices). You can review
-> them and click **Configure** to accept only the ones you want.
+> them and click **Configure** to accept only the ones you want. Each discovery
+> form includes an **"Ignore this device"** checkbox — check it to permanently
+> hide false-positive detections. Ignored devices can be un-ignored later from
+> **Configure → Manage ignored devices**.
 
 ### Method B – Self-learning teach (Add device button)
 
@@ -143,21 +151,44 @@ that need to be taught a code before they respond.
 6. HA sends the pairing signal — the receiver learns the code
 7. The device appears in HA and can now be controlled
 
+> **Re-teaching a device:** Each switch/light device has a **"Send learn signal"**
+> button on its device page. Use it to re-pair a receiver without deleting and
+> re-adding the device — put the receiver in learn mode and press the button.
+
 ### Editing a device
 
-View and change house/unit codes for any existing device:
+View and change parameters for any existing device:
 
 1. Go to **Settings → Devices & Services → TellStick Local**
 2. Click **Configure** (⚙ icon)
-3. Select **Edit device** from the menu
+3. Select **Edit a device** from the menu
 4. Pick the device to edit — its current protocol, model, house and unit are shown
-5. Change the name, house code, or unit code as needed
+5. Change the name, house code, unit code, or sensor ID as needed
 
-### Removing a device
+> **Sensor ID change (battery replacement):** When a sensor gets a new ID after
+> battery replacement, edit the existing device and enter the new sensor ID. The
+> entity ID and all history are preserved — no need to delete and re-add.
+>
+> **Alternatively**, when the new sensor is discovered, the discovery form shows a
+> **"Replace existing device"** dropdown. Select the old device to migrate its
+> entity ID and history to the new sensor ID in one step.
 
-Go to the **device page** of the device you want to remove, click the **⋮ menu**
-(three dots), and select **Delete**. This works for both manually added and
-auto-detected devices.
+### Removing devices
+
+- **Single device:** Go to the device page, click the **⋮ menu** (three dots),
+  and select **Delete**.
+- **Multiple devices:** Go to **Configure** (⚙) → **Remove multiple devices** →
+  select the devices to remove and click **Submit**. You can also check
+  **"Also add to ignore list"** to prevent them from being re-discovered.
+
+### Managing ignored devices
+
+Devices that were ignored (from the discovery form or during deletion) can be
+un-ignored:
+
+1. Go to **Configure** (⚙) → **Manage ignored devices**
+2. Select the devices you want to un-ignore
+3. Click **Submit** — they will appear again when detected via RF
 
 ---
 
@@ -255,8 +286,9 @@ and run the manual setup flow.
 
 This is normal — `telldusd` runs all protocol decoders on every RF signal. A single
 button press can trigger 2-3 different protocol interpretations (e.g. arctech +
-everflourish + waveman). Add only the correct one for your device brand and ignore
-or delete the others.
+everflourish + waveman). Add only the correct one for your device brand. For the
+false-positive ones, check **"Ignore this device"** on the discovery form to hide
+them permanently.
 
 ---
 

@@ -52,10 +52,25 @@ All device management happens in the integration under **Settings → Devices & 
   remote to discover devices
 - **Add device button** — click **Add device** on the integration card to manually
   pair a self-learning receiver (pick type, send pairing signal)
-- **Remove a device** — go to the device page and select **Delete** from the ⋮ menu
+- **Ignore unwanted devices** — check "Ignore this device" on the discovery form to
+  permanently hide false-positive detections
+- **Learn button** — each switch/light device has a "Send learn signal" button on
+  its device page to re-pair without deleting the device
+- **Edit device** — change name, house/unit codes, or sensor ID via **Configure** (⚙)
+  → **Edit a device** (entity ID and history are preserved)
+- **Replace device** — when a sensor gets a new ID after battery replacement, the
+  discovery form has a "Replace existing device" dropdown to migrate in one step
+- **Remove devices** — delete from the device page ⋮ menu, or remove multiple from
+  **Configure** (⚙) → **Remove multiple devices**
+- **Manage ignored** — un-ignore devices from **Configure** (⚙) → **Manage ignored
+  devices**
 
 See the [project README](https://github.com/R00S/addon-tellsticklive-roosfork) for
 full pairing instructions and supported devices.
+
+> **Upgrade notifications:** When the app updates the integration code, HA shows a
+> persistent notification if a restart is needed. No more silent breakage after
+> updates.
 
 ---
 
@@ -103,7 +118,23 @@ switches) must be paired using a **learn** signal. Sending a normal `on` command
 is **not** sufficient — the receiver needs a special learning sequence to register
 the house/unit code.
 
-### Step-by-step pairing
+### Recommended: GUI pairing
+
+The easiest way to pair self-learning devices is through the HA GUI:
+
+1. **Add the device** via **Settings → Devices & Services → TellStick Local →
+   Add device** — pick your device type, submit
+2. **Put the receiver in learn mode** (hold its button until it blinks)
+3. On the new device's page, press the **"Send learn signal"** button
+4. The receiver stops blinking, confirming it learned the code
+
+To **re-pair** a device later (e.g. after moving it), just press the "Send learn
+signal" button on the device page again — no need to delete and re-add.
+
+### Alternative: App configuration
+
+You can also pre-configure devices in the app configuration. This is mainly useful
+for TX-only devices or headless setups.
 
 1. **Configure the device** in the app configuration:
 
