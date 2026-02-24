@@ -124,6 +124,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Set after each device creation to prevent flooding from sensors
         # that decode with different house/unit values on each transmission.
         "_discovery_cooldown_until": 0.0,
+        # Monotonic timestamp of the last known-device raw event.  Used to
+        # suppress false-positive unknown events from the same RF signal
+        # (telldusd fires all decoders, so a known arctech device also
+        # produces spurious everflourish/sartano/waveman events).
+        "_last_known_device_time": 0.0,
     }
 
     @callback
@@ -276,6 +281,10 @@ def _handle_raw_event(
         async_dispatcher_send(
             hass, SIGNAL_NEW_DEVICE.format(entry.entry_id), event
         )
+        # Record the time so that false-positive unknown events from the
+        # same RF signal (other protocol decoders) can be suppressed.
+        entry_data = hass.data[DOMAIN][entry.entry_id]
+        entry_data["_last_known_device_time"] = time.monotonic()
     else:
         # Unknown device — buffer for multi-protocol deduplication.
         # telldusd runs ALL protocol decoders on every RF signal, so a
@@ -316,6 +325,21 @@ def _buffer_unknown_device(
     if time.monotonic() < entry_data.get("_discovery_cooldown_until", 0.0):
         _LOGGER.debug(
             "Discovery cooldown active — ignoring unknown device %s", device_uid
+        )
+        discovered.add(device_uid)
+        return
+
+    # If a known device was just seen, this unknown event is almost certainly
+    # a false-positive from telldusd running all protocol decoders on the
+    # same RF signal.  For example, pressing a known Nexa (arctech) remote
+    # also produces spurious everflourish and sartano events.
+    now = time.monotonic()
+    last_known = entry_data.get("_last_known_device_time", 0.0)
+    if now - last_known < MULTI_PROTOCOL_WINDOW:
+        _LOGGER.debug(
+            "Suppressing unknown device %s — known device seen %.1fs ago",
+            device_uid,
+            now - last_known,
         )
         discovered.add(device_uid)
         return
