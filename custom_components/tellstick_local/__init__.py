@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -29,6 +30,7 @@ from .const import (
     CONF_DEVICES,
     CONF_EVENT_PORT,
     DEFAULT_AUTOMATIC_ADD,
+    DISCOVERY_COOLDOWN,
     DOMAIN,
     ENTRY_DEVICE_ID_MAP,
     ENTRY_TELLSTICK_CONTROLLER,
@@ -118,6 +120,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # seconds the best candidate from the batch is processed.
         "_pending_raw_batch": [],
         "_pending_raw_timer": None,
+        # Monotonic timestamp until which new device discovery is suppressed.
+        # Set after each device creation to prevent flooding from sensors
+        # that decode with different house/unit values on each transmission.
+        "_discovery_cooldown_until": 0.0,
     }
 
     @callback
@@ -302,6 +308,18 @@ def _buffer_unknown_device(
     if device_uid in discovered:
         return  # Already processed this UID this session
 
+    # Cooldown: after discovering/auto-adding a device, suppress new device
+    # creation for DISCOVERY_COOLDOWN seconds.  Some sensors (e.g. door
+    # sensors) produce RF signals that telldusd decodes with different
+    # house/unit values on each transmission, causing each activation to
+    # look like a brand-new device.
+    if time.monotonic() < entry_data.get("_discovery_cooldown_until", 0.0):
+        _LOGGER.debug(
+            "Discovery cooldown active — ignoring unknown device %s", device_uid
+        )
+        discovered.add(device_uid)
+        return
+
     batch: list[tuple[str, dict[str, str], RawDeviceEvent]] = entry_data[
         "_pending_raw_batch"
     ]
@@ -373,6 +391,12 @@ def _process_pending_batch(
         _auto_add_device(hass, entry, best_uid, best_params, best_event)
     else:
         _fire_device_discovery(hass, entry, best_uid, best_params)
+
+    # Start a cooldown to prevent flooding from sensors that decode with
+    # different house/unit values on consecutive transmissions.
+    entry_data["_discovery_cooldown_until"] = (
+        time.monotonic() + DISCOVERY_COOLDOWN
+    )
 
 
 def _fire_device_discovery(

@@ -329,3 +329,10 @@ PROTOCOL_PRIORITY_DEFAULT = 99
 # before picking the best one.  telldusd fires all decoders within a few
 # milliseconds; 1 second gives ample margin while staying responsive.
 MULTI_PROTOCOL_WINDOW = 1.0
+
+# Seconds to suppress new device discovery after the last device was
+# created/discovered.  Some sensors (e.g. door sensors) produce RF signals
+# that telldusd decodes with *different* house/unit values on each
+# transmission — each one looks like a new device UID.  Without a cooldown,
+# every activation of such a sensor floods HA with junk devices.
+DISCOVERY_COOLDOWN = 30.0
