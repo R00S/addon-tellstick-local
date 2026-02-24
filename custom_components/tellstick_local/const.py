@@ -295,3 +295,4 @@ def normalize_rf_model(model: str) -> str:
     """
     base = model.split(":")[0] if ":" in model else model
     return _UID_MODEL_NORMALIZE.get(base, base)
+

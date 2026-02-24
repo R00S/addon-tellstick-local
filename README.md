@@ -263,6 +263,7 @@ or delete the others.
 ## Support
 
 - [Open an issue on GitHub][issue]
+- [☕ Buy me a coffee](https://buymeacoffee.com/r00s)
 
 ---
 
