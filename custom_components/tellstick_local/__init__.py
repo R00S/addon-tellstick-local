@@ -383,6 +383,30 @@ def _process_pending_batch(
     entry_data = hass.data[DOMAIN][entry.entry_id]
     discovered: set[str] = entry_data["_discovered_uids"]
 
+    # If a known device was seen during the batch window, all events in
+    # the batch are almost certainly false positives from the same RF
+    # signal.  telldusd fires all protocol decoders simultaneously, but
+    # the event order is non-deterministic — a false positive can arrive
+    # BEFORE the known device event, so the buffer-time check in
+    # _buffer_unknown_device alone is not sufficient.
+    #
+    # At processing time (MULTI_PROTOCOL_WINDOW after the first event),
+    # now - last_known ≈ 1s for events from the same signal.  We use
+    # 2 × MULTI_PROTOCOL_WINDOW as the threshold to account for timing
+    # jitter while keeping the window tight enough to not block genuinely
+    # new devices discovered >2s after a known device fires.
+    last_known = entry_data.get("_last_known_device_time", 0.0)
+    now = time.monotonic()
+    if now - last_known < 2 * MULTI_PROTOCOL_WINDOW:
+        for uid, _params, _event in batch:
+            discovered.add(uid)
+        _LOGGER.debug(
+            "Dropping batch of %d unknown event(s) — known device seen %.1fs ago",
+            len(batch),
+            now - last_known,
+        )
+        return
+
     # Sort by protocol priority (lowest number = highest priority)
     batch.sort(
         key=lambda item: PROTOCOL_PRIORITY.get(
