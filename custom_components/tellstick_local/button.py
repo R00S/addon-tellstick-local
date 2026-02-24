@@ -130,5 +130,5 @@ class TellStickLearnButton(ButtonEntity):
             )
             return
 
-        _LOGGER.info("Sending learn signal for %s (telldusd id %s)", self._device_uid, telldusd_id)
+        _LOGGER.debug("Sending learn signal for %s (telldusd id %s)", self._device_uid, telldusd_id)
         await controller.learn(telldusd_id)
