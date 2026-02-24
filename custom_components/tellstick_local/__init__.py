@@ -45,6 +45,14 @@ _LOGGER = logging.getLogger(__name__)
 # ProtocolSartano).  1 second gives ample margin.
 _KNOWN_DEVICE_SHADOW_SECS = 1.0
 
+# Seconds to suppress duplicate protocol+model discoveries.
+# Door sensors decode with different house/unit each time → rapid noise.
+# Remotes like SYS2000 Proove have different buttons (same protocol+model,
+# different house/unit) that the user presses seconds apart.
+# 5 seconds is long enough to suppress door-sensor noise but short enough
+# to let a user discover multiple buttons on a remote.
+_PROTO_MODEL_COOLDOWN_SECS = 5.0
+
 # Sensor data-type → suffix (mirrors sensor.py _SENSOR_META keys)
 _SENSOR_SUFFIX: dict[int, str] = {1: "temperature", 2: "humidity"}
 
@@ -115,14 +123,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Track UIDs for which discovery flows have been fired this session
         # to avoid flooding the UI with duplicate notifications.
         "_discovered_uids": set(),
-        # Track protocol+model pairs already discovered this session.
+        # Track protocol+model pairs with timestamps for time-limited dedup.
         # telldusd fires ALL protocol decoders on every RF signal, and some
         # devices (e.g. door sensors) decode with different house/unit values
-        # on each transmission.  TelldusCenter (filtereddeviceproxymodel.cpp)
-        # solves this by deduplicating on protocol+model — we do the same.
+        # on each transmission.  We suppress same protocol+model for a short
+        # cooldown (_PROTO_MODEL_COOLDOWN_SECS).  After the cooldown expires,
+        # new discoveries are allowed — this lets users discover multiple
+        # buttons on remotes like SYS2000 Proove (same protocol+model,
+        # different house/unit per button).
         # NOT pre-seeded from stored devices — that would block new devices
         # that share a protocol+model with existing ones.
-        "_discovered_protocol_models": set(),
+        "_discovered_protocol_models": {},  # dict[str, float] → timestamp
         # Timestamp of the last known-device raw event.  Used to suppress
         # false-positive unknown events from the same RF signal.
         # Protocol.cpp decodes arctech first (ProtocolNexa → ProtocolWaveman
@@ -317,19 +328,21 @@ def _fire_device_discovery(
         discovered.add(device_uid)
         return
 
-    # Deduplicate by protocol+model, matching TelldusCenter's approach
-    # (filtereddeviceproxymodel.cpp:60-70).  telldusd fires ALL protocol
-    # decoders on every RF signal, and some devices decode with different
-    # house/unit values on each transmission.  We only fire one discovery
-    # flow per unique protocol+model combination.
+    # Deduplicate by protocol+model with a time-limited cooldown.
+    # telldusd fires ALL protocol decoders on every RF signal, and some
+    # devices decode with different house/unit on each transmission.
+    # Suppress same protocol+model within the cooldown window, but allow
+    # new discoveries after it expires (e.g. different buttons on a remote).
     protocol = params.get("protocol", "")
     model = params.get("model", "")
     proto_model_key = f"{protocol}_{model}"
-    seen_proto_models: set[str] = entry_data["_discovered_protocol_models"]
-    if proto_model_key in seen_proto_models:
+    seen_proto_models: dict[str, float] = entry_data["_discovered_protocol_models"]
+    now = time.monotonic()
+    last_seen = seen_proto_models.get(proto_model_key, 0.0)
+    if now - last_seen < _PROTO_MODEL_COOLDOWN_SECS:
         discovered.add(device_uid)
         return
-    seen_proto_models.add(proto_model_key)
+    seen_proto_models[proto_model_key] = now
 
     discovered.add(device_uid)
     hass.async_create_task(
@@ -371,14 +384,16 @@ def _auto_add_device(
     protocol = params.get("protocol", "")
     model = params.get("model", "")
 
-    # Deduplicate by protocol+model, matching TelldusCenter's approach
-    # (filtereddeviceproxymodel.cpp:60-70).  Only auto-add the first
-    # event for each protocol+model combination per session.
+    # Deduplicate by protocol+model with a time-limited cooldown.
+    # Only auto-add the first event for each protocol+model within the
+    # cooldown window.  After it expires, new buttons can be discovered.
     proto_model_key = f"{protocol}_{model}"
-    seen_proto_models: set[str] = entry_data["_discovered_protocol_models"]
-    if proto_model_key in seen_proto_models:
+    seen_proto_models: dict[str, float] = entry_data["_discovered_protocol_models"]
+    now = time.monotonic()
+    last_seen = seen_proto_models.get(proto_model_key, 0.0)
+    if now - last_seen < _PROTO_MODEL_COOLDOWN_SECS:
         return
-    seen_proto_models.add(proto_model_key)
+    seen_proto_models[proto_model_key] = now
 
     house = params.get("house", "")
     unit = params.get("unit", params.get("code", ""))
