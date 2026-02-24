@@ -339,7 +339,11 @@ def _fire_device_discovery(
 
     # --- Standard dedup checks ---
     if device_uid in discovered:
-        return  # Already fired a discovery for this device this session
+        # Already processed — but still set time shadow so cross-protocol
+        # events from this same RF signal are suppressed.
+        if len(uid_set) > 1:
+            entry_data["_last_known_event_time"] = time.monotonic()
+        return
 
     # Suppress cross-protocol false positives from a recent RF signal.
     last_known = entry_data.get("_last_known_event_time", 0.0)
@@ -351,17 +355,22 @@ def _fire_device_discovery(
     # NONE has been confirmed (no repeat), the device has unstable decoding
     # (e.g. door sensor).  Block further discoveries — only the first is
     # allowed.  If confirmed stable (like SYS2000), allow after cooldown.
+    # Set time shadow so cross-protocol events from this same RF signal
+    # (sartano/waveman arriving within ms) are also suppressed.
     confirmed = entry_data.get("_proto_model_confirmed", {})
     if len(uid_set) > 1 and not confirmed.get(proto_model_key):
         discovered.add(device_uid)
+        entry_data["_last_known_event_time"] = time.monotonic()
         return
 
     # Cooldown: suppress rapid same-protocol+model discoveries.
+    # Set time shadow to suppress cross-protocol events from same signal.
     seen_proto_models: dict[str, float] = entry_data["_discovered_protocol_models"]
     now = time.monotonic()
     last_seen = seen_proto_models.get(proto_model_key, 0.0)
     if now - last_seen < _PROTO_MODEL_COOLDOWN_SECS:
         discovered.add(device_uid)
+        entry_data["_last_known_event_time"] = time.monotonic()
         return
     seen_proto_models[proto_model_key] = now
 
@@ -414,6 +423,8 @@ def _auto_add_device(
     uid_set.add(device_uid)
 
     if device_uid in discovered:
+        if len(uid_set) > 1:
+            entry_data["_last_known_event_time"] = time.monotonic()
         return
     discovered.add(device_uid)
 
@@ -423,15 +434,19 @@ def _auto_add_device(
         return
 
     # Stability check: block unconfirmed protocol+models with >1 UID.
+    # Set time shadow so cross-protocol events from same signal are suppressed.
     confirmed = entry_data.get("_proto_model_confirmed", {})
     if len(uid_set) > 1 and not confirmed.get(proto_model_key):
+        entry_data["_last_known_event_time"] = time.monotonic()
         return
 
     # Cooldown: suppress rapid same-protocol+model auto-adds.
+    # Set time shadow to suppress cross-protocol events from same signal.
     seen_proto_models: dict[str, float] = entry_data["_discovered_protocol_models"]
     now = time.monotonic()
     last_seen = seen_proto_models.get(proto_model_key, 0.0)
     if now - last_seen < _PROTO_MODEL_COOLDOWN_SECS:
+        entry_data["_last_known_event_time"] = time.monotonic()
         return
     seen_proto_models[proto_model_key] = now
 
