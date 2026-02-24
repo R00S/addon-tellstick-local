@@ -13,6 +13,7 @@
 [![Github Actions][github-actions-shield]][github-actions]
 ![Project Maintenance][maintenance-shield]
 [![GitHub Activity][commits-shield]][commits]
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Support-yellow?style=flat&logo=buy-me-a-coffee)](https://buymeacoffee.com/R00S)
 
 Local-only TellStick Duo support for Home Assistant – no cloud, no YAML, full GUI.
 
@@ -260,7 +261,11 @@ or delete the others.
 
 ---
 
-## Support
+## ☕ Support
+
+If you find this project useful, consider buying me a coffee!
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Support-yellow?style=flat&logo=buy-me-a-coffee)](https://buymeacoffee.com/R00S)
 
 - [Open an issue on GitHub][issue]
 
