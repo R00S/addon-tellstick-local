@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -38,20 +37,6 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
-
-# Seconds to suppress unknown-device events after a known-device event.
-# All protocol decodings from a single RF signal arrive within ~100 ms
-# (Protocol.cpp decodes sequentially: ProtocolNexa → ProtocolWaveman →
-# ProtocolSartano).  1 second gives ample margin.
-_KNOWN_DEVICE_SHADOW_SECS = 1.0
-
-# Seconds to suppress duplicate protocol+model discoveries.
-# Door sensors decode with different house/unit each time → rapid noise.
-# Remotes like SYS2000 Proove have different buttons (same protocol+model,
-# different house/unit) that the user presses seconds apart.
-# 5 seconds is long enough to suppress door-sensor noise but short enough
-# to let a user discover multiple buttons on a remote.
-_PROTO_MODEL_COOLDOWN_SECS = 5.0
 
 # Sensor data-type → suffix (mirrors sensor.py _SENSOR_META keys)
 _SENSOR_SUFFIX: dict[int, str] = {1: "temperature", 2: "humidity"}
@@ -123,25 +108,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Track UIDs for which discovery flows have been fired this session
         # to avoid flooding the UI with duplicate notifications.
         "_discovered_uids": set(),
-        # Track protocol+model pairs with timestamps for time-limited dedup.
-        # Suppresses same protocol+model within _PROTO_MODEL_COOLDOWN_SECS.
-        "_discovered_protocol_models": {},  # dict[str, float] → timestamp
-        # Track all UIDs seen per protocol+model key.  Used to detect whether
-        # a protocol+model produces stable UIDs (same button = same UID, like
-        # SYS2000 Proove) or unstable UIDs (different house/unit every time,
-        # like some door sensors decoded through arctech).
-        "_proto_model_uids": {},  # dict[str, set[str]]
-        # True once a protocol+model has been "confirmed stable" — i.e. the
-        # same UID was seen twice.  Stable protocol+models are allowed to
-        # discover multiple UIDs (different buttons).  Unconfirmed ones are
-        # blocked after the first discovery to prevent device flooding.
-        "_proto_model_confirmed": {},  # dict[str, bool]
-        # Timestamp of the last event from a known OR just-discovered device.
-        # Used to suppress cross-protocol false positives from the same RF
-        # signal.  Protocol.cpp decodes arctech first (ProtocolNexa →
-        # ProtocolWaveman → ProtocolSartano), so the primary event always
-        # arrives before its false positives.
-        "_last_known_event_time": 0.0,
     }
 
     @callback
@@ -289,13 +255,9 @@ def _handle_raw_event(
     automatic_add = entry.options.get(CONF_AUTOMATIC_ADD, DEFAULT_AUTOMATIC_ADD)
 
     if device_uid in stored_devices:
-        # Known device — record timestamp so we can suppress false-positive
-        # unknown events from the same RF signal (they arrive within ms).
-        entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
-        entry_data["_last_known_event_time"] = time.monotonic()
-        # Fire SIGNAL_NEW_DEVICE so platforms can revive entities after a
-        # restart (the entity is pre-created from stored config, but the
-        # signal lets late-starting platforms pick it up).
+        # Known device — fire SIGNAL_NEW_DEVICE so platforms can revive
+        # entities after a restart (the entity is pre-created from stored
+        # config, but the signal lets late-starting platforms pick it up).
         async_dispatcher_send(
             hass, SIGNAL_NEW_DEVICE.format(entry.entry_id), event
         )
@@ -319,65 +281,8 @@ def _fire_device_discovery(
     entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
     discovered: set[str] = entry_data.get("_discovered_uids", set())
 
-    # --- Track UID per protocol+model (BEFORE any early returns) ---
-    # This lets us detect stability: stable devices (SYS2000) produce the
-    # same UID on repeat presses; unstable devices (door sensors) produce
-    # a different UID every time.
-    protocol = params.get("protocol", "")
-    model = params.get("model", "")
-    proto_model_key = f"{protocol}_{model}"
-    proto_uids: dict[str, set[str]] = entry_data.setdefault(
-        "_proto_model_uids", {}
-    )
-    uid_set = proto_uids.setdefault(proto_model_key, set())
-    if device_uid in uid_set:
-        # Same UID seen again → this protocol+model produces stable UIDs
-        entry_data.setdefault("_proto_model_confirmed", {})[
-            proto_model_key
-        ] = True
-    uid_set.add(device_uid)
-
-    # --- Standard dedup checks ---
     if device_uid in discovered:
-        # Already processed — but still set time shadow so cross-protocol
-        # events from this same RF signal are suppressed.
-        if len(uid_set) > 1:
-            entry_data["_last_known_event_time"] = time.monotonic()
-        return
-
-    # Suppress cross-protocol false positives from a recent RF signal.
-    last_known = entry_data.get("_last_known_event_time", 0.0)
-    if time.monotonic() - last_known < _KNOWN_DEVICE_SHADOW_SECS:
-        discovered.add(device_uid)
-        return
-
-    # Stability check: if we've seen >1 UID for this protocol+model and
-    # NONE has been confirmed (no repeat), the device has unstable decoding
-    # (e.g. door sensor).  Block further discoveries — only the first is
-    # allowed.  If confirmed stable (like SYS2000), allow after cooldown.
-    # Set time shadow so cross-protocol events from this same RF signal
-    # (sartano/waveman arriving within ms) are also suppressed.
-    confirmed = entry_data.get("_proto_model_confirmed", {})
-    if len(uid_set) > 1 and not confirmed.get(proto_model_key):
-        discovered.add(device_uid)
-        entry_data["_last_known_event_time"] = time.monotonic()
-        return
-
-    # Cooldown: suppress rapid same-protocol+model discoveries.
-    # Set time shadow to suppress cross-protocol events from same signal.
-    seen_proto_models: dict[str, float] = entry_data["_discovered_protocol_models"]
-    now = time.monotonic()
-    last_seen = seen_proto_models.get(proto_model_key, 0.0)
-    if now - last_seen < _PROTO_MODEL_COOLDOWN_SECS:
-        discovered.add(device_uid)
-        entry_data["_last_known_event_time"] = time.monotonic()
-        return
-    seen_proto_models[proto_model_key] = now
-
-    # --- Proceed with discovery ---
-    # Set time shadow so cross-protocol events from this same RF signal
-    # (waveman/sartano arriving within ms) are suppressed.
-    entry_data["_last_known_event_time"] = time.monotonic()
+        return  # Already fired a discovery for this device this session
 
     discovered.add(device_uid)
     hass.async_create_task(
@@ -386,8 +291,8 @@ def _fire_device_discovery(
             context={"source": "integration_discovery"},
             data={
                 "device_uid": device_uid,
-                "protocol": protocol,
-                "model": model,
+                "protocol": params.get("protocol", ""),
+                "model": params.get("model", ""),
                 "house": params.get("house", ""),
                 "unit": params.get("unit", params.get("code", "")),
                 "entry_id": entry.entry_id,
@@ -407,54 +312,12 @@ def _auto_add_device(
     """Auto-add a new device: persist in options, register with telldusd, fire signal."""
     entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
     discovered: set[str] = entry_data.get("_discovered_uids", set())
-
-    # --- Track UID per protocol+model (BEFORE any early returns) ---
-    protocol = params.get("protocol", "")
-    model = params.get("model", "")
-    proto_model_key = f"{protocol}_{model}"
-    proto_uids: dict[str, set[str]] = entry_data.setdefault(
-        "_proto_model_uids", {}
-    )
-    uid_set = proto_uids.setdefault(proto_model_key, set())
-    if device_uid in uid_set:
-        entry_data.setdefault("_proto_model_confirmed", {})[
-            proto_model_key
-        ] = True
-    uid_set.add(device_uid)
-
     if device_uid in discovered:
-        if len(uid_set) > 1:
-            entry_data["_last_known_event_time"] = time.monotonic()
         return
     discovered.add(device_uid)
 
-    # Suppress cross-protocol false positives from a recent RF signal.
-    last_known = entry_data.get("_last_known_event_time", 0.0)
-    if time.monotonic() - last_known < _KNOWN_DEVICE_SHADOW_SECS:
-        return
-
-    # Stability check: block unconfirmed protocol+models with >1 UID.
-    # Set time shadow so cross-protocol events from same signal are suppressed.
-    confirmed = entry_data.get("_proto_model_confirmed", {})
-    if len(uid_set) > 1 and not confirmed.get(proto_model_key):
-        entry_data["_last_known_event_time"] = time.monotonic()
-        return
-
-    # Cooldown: suppress rapid same-protocol+model auto-adds.
-    # Set time shadow to suppress cross-protocol events from same signal.
-    seen_proto_models: dict[str, float] = entry_data["_discovered_protocol_models"]
-    now = time.monotonic()
-    last_seen = seen_proto_models.get(proto_model_key, 0.0)
-    if now - last_seen < _PROTO_MODEL_COOLDOWN_SECS:
-        entry_data["_last_known_event_time"] = time.monotonic()
-        return
-    seen_proto_models[proto_model_key] = now
-
-    # --- Proceed with auto-add ---
-    # Set time shadow so cross-protocol events from this same RF signal
-    # are suppressed.
-    entry_data["_last_known_event_time"] = time.monotonic()
-
+    protocol = params.get("protocol", "")
+    model = params.get("model", "")
     house = params.get("house", "")
     unit = params.get("unit", params.get("code", ""))
     name = f"TellStick {device_uid}"
