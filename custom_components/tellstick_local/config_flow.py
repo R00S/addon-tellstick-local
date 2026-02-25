@@ -428,6 +428,10 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self.hass.config_entries.async_update_entry(
                     entry, options=new_options
                 )
+                # Reload so running entities are recreated with the new ID.
+                self.hass.async_create_task(
+                    self.hass.config_entries.async_reload(entry.entry_id)
+                )
 
                 # Register with telldusd if needed
                 entry_data = self.hass.data.get(DOMAIN, {}).get(entry_id, {})
@@ -708,6 +712,12 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                     new_options = _migrate_device_uid(
                         self.hass, self.config_entry, uid, new_uid, cfg
                     )
+                    # Reload so the running entity picks up the new sensor_id.
+                    self.hass.async_create_task(
+                        self.hass.config_entries.async_reload(
+                            self.config_entry.entry_id
+                        )
+                    )
                     return self.async_create_entry(title="", data=new_options)
             else:
                 # Device: check if house/unit changed → UID migration
@@ -732,6 +742,12 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                 if new_uid != uid:
                     new_options = _migrate_device_uid(
                         self.hass, self.config_entry, uid, new_uid, cfg
+                    )
+                    # Reload so the running entity picks up the new house/unit.
+                    self.hass.async_create_task(
+                        self.hass.config_entries.async_reload(
+                            self.config_entry.entry_id
+                        )
                     )
                     return self.async_create_entry(title="", data=new_options)
 
