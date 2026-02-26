@@ -396,9 +396,7 @@ The Dockerfile:
 1. Add health checks for service readiness signaling to Home Assistant
 2. Consider automatic UUID persistence (though this requires HA Supervisor API access)
 3. Add more detailed logging with configurable log levels
-4. Consider retry logic for Telldus Live connection failures
-5. Add MQTT support as an alternative to Telldus Live
-6. Cover position tracking — Hasta/Brateck do not report position; a future
+4. Cover position tracking — Hasta/Brateck do not report position; a future
    feature could use timed travel distance to estimate position.
 
 ## Migration Notes
