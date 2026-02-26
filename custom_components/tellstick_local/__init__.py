@@ -8,9 +8,10 @@ import pathlib
 import time
 from typing import Any
 
-from homeassistant.components.persistent_notification import (
-    async_create as pn_async_create,
-    async_dismiss as pn_async_dismiss,
+from homeassistant.helpers.issue_registry import (
+    IssueSeverity,
+    async_create_issue,
+    async_delete_issue,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, EVENT_HOMEASSISTANT_STOP
@@ -114,7 +115,7 @@ _KNOWN_DEVICE_SHADOW_SECS = 1.0
 # Sensor data-type → suffix (mirrors sensor.py _SENSOR_META keys)
 _SENSOR_SUFFIX: dict[int, str] = {1: "temperature", 2: "humidity"}
 
-_NOTIF_UPDATE = "tellstick_local_update"
+_ISSUE_RESTART = "restart_required"
 
 
 def _check_version_mismatch(hass: HomeAssistant) -> None:
@@ -133,8 +134,8 @@ def _check_version_mismatch(hass: HomeAssistant) -> None:
         return
 
     if not disk_version or disk_version == INTEGRATION_VERSION:
-        # Versions match (or unreadable) — clear any stale notification
-        pn_async_dismiss(hass, _NOTIF_UPDATE)
+        # Versions match (or unreadable) — clear any stale repair issue
+        async_delete_issue(hass, DOMAIN, _ISSUE_RESTART)
         return
 
     _LOGGER.warning(
@@ -143,14 +144,17 @@ def _check_version_mismatch(hass: HomeAssistant) -> None:
         disk_version,
         INTEGRATION_VERSION,
     )
-    pn_async_create(
+    async_create_issue(
         hass,
-        f"The TellStick Local app installed integration **v{disk_version}** "
-        f"(currently loaded: v{INTEGRATION_VERSION}).\n\n"
-        "**Restart Home Assistant** to activate the new version.\n\n"
-        "Go to **Settings → System → Restart**.",
-        title="TellStick Local — restart required",
-        notification_id=_NOTIF_UPDATE,
+        DOMAIN,
+        _ISSUE_RESTART,
+        is_fixable=False,
+        severity=IssueSeverity.WARNING,
+        translation_key=_ISSUE_RESTART,
+        translation_placeholders={
+            "new_version": disk_version,
+            "current_version": INTEGRATION_VERSION,
+        },
     )
 
 
