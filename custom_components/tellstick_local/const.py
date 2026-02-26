@@ -7,7 +7,7 @@ DOMAIN = "tellstick_local"
 # integration can detect when on-disk files were updated behind a
 # running HA instance (i.e. the app copied a newer version but HA
 # hasn't restarted yet).
-INTEGRATION_VERSION = "2.1.9.0"
+INTEGRATION_VERSION = "2.1.8.2"
 
 # Config keys (CONF_HOST from homeassistant.const is used for host)
 CONF_COMMAND_PORT = "command_port"
