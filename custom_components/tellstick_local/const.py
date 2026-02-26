@@ -8,17 +8,18 @@ DOMAIN = "tellstick_local"
 # running HA instance (i.e. the app copied a newer version but HA
 # hasn't restarted yet).
 #
-# VERSION BUMP RULES — read this file before bumping, every time:
+# VERSION BUMP RULES — ALWAYS run `git branch --show-current` first:
 #   X.Y.Z.W
-#   W → bump for each prompt within the SAME PR (same branch, same PR)
-#   Z → bump ONLY when a brand-new PR is opened (new branch)
+#   W → bump for each prompt on the SAME branch (same feature branch)
+#   Z → bump ONLY when working on a NEW branch (different branch name)
 #   Y → minor feature release
 #   X → major release
 #
-#   "New agent session" = new PR (new branch).  NOT a new context window.
-#   Every agent invocation is a new context window — that is NOT a Z bump.
-#   Check the current branch/PR before deciding W vs Z.
-INTEGRATION_VERSION = "2.1.8.3"
+#   Trigger for Z: the git branch name changes.  That's it.
+#   A new agent context window on the SAME branch is still a W bump.
+#   Run `git branch --show-current` — if the branch matches the memory,
+#   bump W.  If it's a different branch, bump Z.
+INTEGRATION_VERSION = "2.1.8.4"
 
 # Config keys (CONF_HOST from homeassistant.const is used for host)
 CONF_COMMAND_PORT = "command_port"
