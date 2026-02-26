@@ -7,7 +7,18 @@ DOMAIN = "tellstick_local"
 # integration can detect when on-disk files were updated behind a
 # running HA instance (i.e. the app copied a newer version but HA
 # hasn't restarted yet).
-INTEGRATION_VERSION = "2.1.8.2"
+#
+# VERSION BUMP RULES — read this file before bumping, every time:
+#   X.Y.Z.W
+#   W → bump for each prompt within the SAME PR (same branch, same PR)
+#   Z → bump ONLY when a brand-new PR is opened (new branch)
+#   Y → minor feature release
+#   X → major release
+#
+#   "New agent session" = new PR (new branch).  NOT a new context window.
+#   Every agent invocation is a new context window — that is NOT a Z bump.
+#   Check the current branch/PR before deciding W vs Z.
+INTEGRATION_VERSION = "2.1.8.3"
 
 # Config keys (CONF_HOST from homeassistant.const is used for host)
 CONF_COMMAND_PORT = "command_port"
