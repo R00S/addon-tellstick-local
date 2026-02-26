@@ -257,6 +257,28 @@ class TellStickController:
             "tdDim", [_encode_int(device_id), _encode_int(level)]
         )
 
+    async def up(self, device_id: int) -> int:
+        """Send tdUp command (blinds open/up). Returns 0 on success.
+
+        Mirrors the turn_on/turn_off pattern — one TCP connection per command.
+        Used by cover entities (hasta, brateck protocols).
+        """
+        return await self._call_int(
+            "tdUp", [_encode_int(device_id)]
+        )
+
+    async def down(self, device_id: int) -> int:
+        """Send tdDown command (blinds close/down). Returns 0 on success."""
+        return await self._call_int(
+            "tdDown", [_encode_int(device_id)]
+        )
+
+    async def stop(self, device_id: int) -> int:
+        """Send tdStop command (blinds stop). Returns 0 on success."""
+        return await self._call_int(
+            "tdStop", [_encode_int(device_id)]
+        )
+
     async def ping(self) -> bool:
         """Try to get the device count to confirm the connection is alive."""
         try:
