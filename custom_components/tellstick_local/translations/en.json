@@ -6,6 +6,12 @@
       }
     }
   },
+  "issues": {
+    "restart_required": {
+      "title": "Restart required — TellStick Local v{new_version} installed",
+      "description": "The TellStick Local app installed integration **v{new_version}** (currently loaded: v{current_version}).\n\nRestart Home Assistant to activate the new version."
+    }
+  },
   "config": {
     "flow_title": "TellStick: {name}",
     "step": {

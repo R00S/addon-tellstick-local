@@ -38,7 +38,6 @@ class TellStickEntity(RestoreEntity):
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, f"{entry_id}_{device_uid}")},
             name=name,
-            manufacturer="Telldus Technologies",
             model=f"{protocol}/{model}" if model else protocol,
         )
 
