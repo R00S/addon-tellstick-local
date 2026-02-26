@@ -134,36 +134,36 @@ Source: `ProtocolHasta.cpp::methods()` and `ProtocolBrateck.cpp::methods()`.
 Earlier versions incorrectly created these devices as switch entities, so HA
 sent `tdTurnOn`/`tdTurnOff` which telldusd silently rejected.
 
-**Solution Applied**: Added `cover.py` platform.  Both protocols are listed in
-`_COVER_PROTOCOLS` in `cover.py` and `switch.py`.  `_is_cover()` routes them to
+**Solution Applied**: Added `cover.py` platform. Both protocols are listed in
+`_COVER_PROTOCOLS` in `cover.py` and `switch.py`. `_is_cover()` routes them to
 `TellStickCover` (Up/Down/Stop); `_is_switch()` now explicitly excludes them.
 
-Hasta remotes have **exactly three buttons**: Up, Down, Stop.  Brateck has the
-same three-button model.  The cover entity state is updated optimistically from
-remote button press events (method:up / method:down).  No position feedback is
+Hasta remotes have **exactly three buttons**: Up, Down, Stop. Brateck has the
+same three-button model. The cover entity state is updated optimistically from
+remote button press events (method:up / method:down). No position feedback is
 available from either protocol.
 
 ### Hasta protocol — two variants (verified from ProtocolHasta.cpp)
 
 There are **two versions** of the Hasta protocol with completely different RF
-encoding.  Both are handled by the same `hasta` protocol name in telldusd; the
+encoding. Both are handled by the same `hasta` protocol name in telldusd; the
 model string distinguishes them.
 
-| Aspect               | v1 — `selflearning`                     | v2 — `selflearningv2`                          |
-| -------------------- | --------------------------------------- | ---------------------------------------------- |
-| Model string         | `selflearning`                          | `selflearningv2`                               |
-| Pulse values         | 33 ≈ 330 µs / 17 ≈ 170 µs              | 63 ≈ 630 µs / 35 ≈ 350 µs                     |
-| Preamble             | `[164,1,164,1,164,164]` (3 × 2 pulses) | `[245,1,245,245,63,1,63,1,35,35]` (5 × 2 + 2) |
-| House byte order     | Little-endian (bytes swapped on decode) | Big-endian (high byte first)                   |
-| Method — UP          | high-nibble `0x0`                       | high-nibble `0xC`                              |
-| Method — DOWN        | high-nibble `0x1`                       | high-nibble `0x1` (also `0x8`)                 |
-| Method — STOP        | high-nibble `0x5`                       | high-nibble `0x5`                              |
-| Method — LEARN       | high-nibble `0x4`                       | high-nibble `0x4`                              |
-| Checksum             | None                                    | Yes — `((sum/256+1)*256+1) - sum`              |
-| Typical devices      | Older Hasta motors                      | Newer Hasta motors, Rollertrol                 |
+| Aspect           | v1 — `selflearning`                     | v2 — `selflearningv2`                         |
+| ---------------- | --------------------------------------- | --------------------------------------------- |
+| Model string     | `selflearning`                          | `selflearningv2`                              |
+| Pulse values     | 33 ≈ 330 µs / 17 ≈ 170 µs               | 63 ≈ 630 µs / 35 ≈ 350 µs                     |
+| Preamble         | `[164,1,164,1,164,164]` (3 × 2 pulses)  | `[245,1,245,245,63,1,63,1,35,35]` (5 × 2 + 2) |
+| House byte order | Little-endian (bytes swapped on decode) | Big-endian (high byte first)                  |
+| Method — UP      | high-nibble `0x0`                       | high-nibble `0xC`                             |
+| Method — DOWN    | high-nibble `0x1`                       | high-nibble `0x1` (also `0x8`)                |
+| Method — STOP    | high-nibble `0x5`                       | high-nibble `0x5`                             |
+| Method — LEARN   | high-nibble `0x4`                       | high-nibble `0x4`                             |
+| Checksum         | None                                    | Yes — `((sum/256+1)*256+1) - sum`             |
+| Typical devices  | Older Hasta motors                      | Newer Hasta motors, Rollertrol                |
 
-**Important:** The two variants are **not interchangeable**.  A v2 remote cannot
-teach a v1 motor and vice versa.  The device catalog has separate entries:
+**Important:** The two variants are **not interchangeable**. A v2 remote cannot
+teach a v1 motor and vice versa. The device catalog has separate entries:
 
 - `"Hasta — Blinds"` → protocol `hasta`, model `selflearning:hasta`
 - `"Hasta — Blinds (v2)"` → protocol `hasta`, model `selflearningv2:hasta`
@@ -171,19 +171,19 @@ teach a v1 motor and vice versa.  The device catalog has separate entries:
 
 **Integration behaviour**: `cover.py` handles both transparently — it only checks
 `_is_cover(protocol)` which returns `True` for any `hasta` device regardless of
-model.  Both variants decode to the same `method:up/down/stop` event format, so
+model. Both variants decode to the same `method:up/down/stop` event format, so
 no model-specific code is needed in the integration.
 
 ### Issue: Mandolyn incorrectly listed as a TX (switch) protocol
 
 **Root Cause**: `mandolyn` was in `TX_PROTOCOLS` and `PROTOCOL_DEFAULT_MODELS`
-but it is **RX-only**.  `ProtocolMandolyn` only has a `static decodeData()`
+but it is **RX-only**. `ProtocolMandolyn` only has a `static decodeData()`
 method, no `methods()` or `getStringForMethod()`, and is **not registered in
 `Protocol::getProtocolInstance()`** (verified in
 `telldus-core-2.1.3-beta1/service/Protocol.cpp`).
 
 Mandolyn is a temperature/humidity **sensor** protocol used by Mandolyn/Summerbird
-IVT wireless thermometers.  Events arrive as
+IVT wireless thermometers. Events arrive as
 `class:sensor;protocol:mandolyn;model:temperaturehumidity;...` and are handled
 automatically by the sensor platform — no device catalog entry needed.
 
@@ -202,79 +202,79 @@ Source: `Protocol::getProtocolInstance()` in `service/Protocol.cpp`.
 **RX-only (sensor/event receive only — cannot send commands):** `fineoffset`,
 `mandolyn`, `oregon`.
 These protocols have only `static decodeData()` and are NOT in
-`getProtocolInstance()`.  Do NOT add them to `TX_PROTOCOLS`.
+`getProtocolInstance()`. Do NOT add them to `TX_PROTOCOLS`.
 
 ### Protocol → HA entity type
 
-| Protocol   | HA entity | Commands    | Notes                                      |
-| ---------- | --------- | ----------- | ------------------------------------------ |
-| `arctech`  | switch / light / cover | ON/OFF/DIM | Model decides: selflearning-switch → switch, selflearning-dimmer → light, bell → switch |
-| `hasta`    | **cover** | UP/DOWN/STOP | Two variants: `selflearning` (v1, older motors) and `selflearningv2` (v2, newer motors + Rollertrol). NOT interchangeable. |
-| `brateck`  | **cover** | UP/DOWN/STOP | Projector screens/blinds. Do NOT use as switch. |
-| `comen`    | switch    | ON/OFF/LEARN | Anslut/Jula brand                         |
-| `everflourish` | switch | ON/OFF/LEARN | GAO brand                               |
-| `fuhaote`  | switch    | ON/OFF       | HQ brand                                  |
-| `ikea`     | switch/light | ON/OFF/DIM | IKEA Koppla                               |
-| `mandolyn` | **sensor** | — (RX only) | Mandolyn/Summerbird temperature+humidity sensors |
-| `fineoffset` | **sensor** | — (RX only) | Nexa LMST-606/WDS-100 weather sensors    |
-| `oregon`   | **sensor** | — (RX only) | Oregon Scientific weather sensors         |
-| `risingsun` | switch   | ON/OFF       | Conrad, Otio, Kjell & Company             |
-| `sartano`  | switch    | ON/OFF       | Brennenstuhl, Elro, Rusta, Sartano        |
-| `silvanchip` | switch  | ON/OFF/LEARN | Ecosavers, KingPin KP100                 |
-| `upm`      | switch    | ON/OFF/LEARN | UPM                                       |
-| `waveman`  | switch    | ON/OFF       | Old arctech family                        |
-| `x10`      | switch    | ON/OFF       | X10 protocol                              |
-| `yidong`   | switch    | ON/OFF       | Goobay                                    |
+| Protocol       | HA entity              | Commands     | Notes                                                                                                                      |
+| -------------- | ---------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `arctech`      | switch / light / cover | ON/OFF/DIM   | Model decides: selflearning-switch → switch, selflearning-dimmer → light, bell → switch                                    |
+| `hasta`        | **cover**              | UP/DOWN/STOP | Two variants: `selflearning` (v1, older motors) and `selflearningv2` (v2, newer motors + Rollertrol). NOT interchangeable. |
+| `brateck`      | **cover**              | UP/DOWN/STOP | Projector screens/blinds. Do NOT use as switch.                                                                            |
+| `comen`        | switch                 | ON/OFF/LEARN | Anslut/Jula brand                                                                                                          |
+| `everflourish` | switch                 | ON/OFF/LEARN | GAO brand                                                                                                                  |
+| `fuhaote`      | switch                 | ON/OFF       | HQ brand                                                                                                                   |
+| `ikea`         | switch/light           | ON/OFF/DIM   | IKEA Koppla                                                                                                                |
+| `mandolyn`     | **sensor**             | — (RX only)  | Mandolyn/Summerbird temperature+humidity sensors                                                                           |
+| `fineoffset`   | **sensor**             | — (RX only)  | Nexa LMST-606/WDS-100 weather sensors                                                                                      |
+| `oregon`       | **sensor**             | — (RX only)  | Oregon Scientific weather sensors                                                                                          |
+| `risingsun`    | switch                 | ON/OFF       | Conrad, Otio, Kjell & Company                                                                                              |
+| `sartano`      | switch                 | ON/OFF       | Brennenstuhl, Elro, Rusta, Sartano                                                                                         |
+| `silvanchip`   | switch                 | ON/OFF/LEARN | Ecosavers, KingPin KP100                                                                                                   |
+| `upm`          | switch                 | ON/OFF/LEARN | UPM                                                                                                                        |
+| `waveman`      | switch                 | ON/OFF       | Old arctech family                                                                                                         |
+| `x10`          | switch                 | ON/OFF       | X10 protocol                                                                                                               |
+| `yidong`       | switch                 | ON/OFF       | Goobay                                                                                                                     |
 
 ### Brand → protocol mapping (device catalog)
 
 The `DEVICE_CATALOG` in `const.py` maps user-friendly brand names to
-`(protocol, model, widget)` tuples.  Most European/Nordic 433 MHz brands use
+`(protocol, model, widget)` tuples. Most European/Nordic 433 MHz brands use
 `arctech` selflearning:
 
-| Brand                   | Protocol    | Notes                                      |
-| ----------------------- | ----------- | ------------------------------------------ |
-| Anslut (Jula)           | comen       | Comen selflearning                         |
-| Brennenstuhl            | sartano     | Code switch                                |
-| Chacon                  | arctech     | Code switch + selflearning                 |
-| CoCo Technologies       | arctech     | Code switch + selflearning                 |
-| Conrad / Otio           | risingsun   | Selflearning                               |
-| Ecosavers               | silvanchip  | Ecosavers model                            |
-| Elro                    | sartano / arctech | AB600 uses arctech codeswitch         |
-| GAO                     | risingsun / everflourish | Both code switch and selflearning |
-| Goobay                  | yidong      |                                            |
-| Hasta                   | hasta       | **Cover** — UP/DOWN/STOP                  |
-| HomeEasy (UK)           | arctech     | Selflearning                               |
-| HQ                      | fuhaote     | Code switch                                |
-| IKEA Koppla             | ikea        | Selflearning on/off and dimmer             |
-| Intertechno             | arctech     | Code switch + selflearning                 |
-| Kappa                   | arctech     | Code switch + selflearning                 |
-| KingPin                 | silvanchip  | KP100 model                                |
-| Kjell & Company         | risingsun   | Code switch                                |
-| KlikAanKlikUit (KAKU)   | arctech     | Code switch + selflearning (popular NL)    |
-| **Lidl (Silvercrest)**  | arctech     | Selflearning — 433 MHz sockets             |
-| Luxorparts / Cleverio   | arctech     | Selflearning                               |
-| Nexa                    | arctech     | Code switch + selflearning (popular Nordic)|
-| Otio                    | risingsun   | Selflearning                               |
-| **Profile**             | arctech     | Selflearning — Nordic/Norwegian brand      |
-| Proove                  | arctech     | Code switch + selflearning (popular Nordic)|
-| Rollertrol              | hasta       | **Cover** — selflearningv2                 |
-| Roxcore                 | brateck     | **Cover** — projector screen               |
-| Rusta                   | sartano / arctech | Both code switch and selflearning     |
-| Sartano                 | sartano     | Code switch                                |
-| **Telldus**             | arctech     | Own-branded devices use arctech selflearning|
-| **Trust Smart Home**    | arctech     | Selflearning on/off and dimmer (NL brand)  |
-| UPM                     | upm         | Selflearning                               |
-| Waveman                 | waveman     | Code switch                                |
-| X10                     | x10         | Code switch                                |
+| Brand                  | Protocol                 | Notes                                        |
+| ---------------------- | ------------------------ | -------------------------------------------- |
+| Anslut (Jula)          | comen                    | Comen selflearning                           |
+| Brennenstuhl           | sartano                  | Code switch                                  |
+| Chacon                 | arctech                  | Code switch + selflearning                   |
+| CoCo Technologies      | arctech                  | Code switch + selflearning                   |
+| Conrad / Otio          | risingsun                | Selflearning                                 |
+| Ecosavers              | silvanchip               | Ecosavers model                              |
+| Elro                   | sartano / arctech        | AB600 uses arctech codeswitch                |
+| GAO                    | risingsun / everflourish | Both code switch and selflearning            |
+| Goobay                 | yidong                   |                                              |
+| Hasta                  | hasta                    | **Cover** — UP/DOWN/STOP                     |
+| HomeEasy (UK)          | arctech                  | Selflearning                                 |
+| HQ                     | fuhaote                  | Code switch                                  |
+| IKEA Koppla            | ikea                     | Selflearning on/off and dimmer               |
+| Intertechno            | arctech                  | Code switch + selflearning                   |
+| Kappa                  | arctech                  | Code switch + selflearning                   |
+| KingPin                | silvanchip               | KP100 model                                  |
+| Kjell & Company        | risingsun                | Code switch                                  |
+| KlikAanKlikUit (KAKU)  | arctech                  | Code switch + selflearning (popular NL)      |
+| **Lidl (Silvercrest)** | arctech                  | Selflearning — 433 MHz sockets               |
+| Luxorparts / Cleverio  | arctech                  | Selflearning                                 |
+| Nexa                   | arctech                  | Code switch + selflearning (popular Nordic)  |
+| Otio                   | risingsun                | Selflearning                                 |
+| **Profile**            | arctech                  | Selflearning — Nordic/Norwegian brand        |
+| Proove                 | arctech                  | Code switch + selflearning (popular Nordic)  |
+| Rollertrol             | hasta                    | **Cover** — selflearningv2                   |
+| Roxcore                | brateck                  | **Cover** — projector screen                 |
+| Rusta                  | sartano / arctech        | Both code switch and selflearning            |
+| Sartano                | sartano                  | Code switch                                  |
+| **Telldus**            | arctech                  | Own-branded devices use arctech selflearning |
+| **Trust Smart Home**   | arctech                  | Selflearning on/off and dimmer (NL brand)    |
+| UPM                    | upm                      | Selflearning                                 |
+| Waveman                | waveman                  | Code switch                                  |
+| X10                    | x10                      | Code switch                                  |
 
 **Bold** = brands added in this PR (were missing from the original catalog).
 
 ### Mandolyn / Summerbird sensor note
 
 Mandolyn (brand: Mandolyn, Summerbird IVT) makes wireless temperature/humidity
-sensors that are automatically discovered by the sensor platform.  They are NOT
-switches and require no device catalog entry.  The `mandolyn` protocol is
+sensors that are automatically discovered by the sensor platform. They are NOT
+switches and require no device catalog entry. The `mandolyn` protocol is
 **sensor-only** (RX only).
 
 ## Home Assistant Integration
