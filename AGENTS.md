@@ -143,6 +143,37 @@ same three-button model.  The cover entity state is updated optimistically from
 remote button press events (method:up / method:down).  No position feedback is
 available from either protocol.
 
+### Hasta protocol — two variants (verified from ProtocolHasta.cpp)
+
+There are **two versions** of the Hasta protocol with completely different RF
+encoding.  Both are handled by the same `hasta` protocol name in telldusd; the
+model string distinguishes them.
+
+| Aspect               | v1 — `selflearning`                     | v2 — `selflearningv2`                          |
+| -------------------- | --------------------------------------- | ---------------------------------------------- |
+| Model string         | `selflearning`                          | `selflearningv2`                               |
+| Pulse values         | 33 ≈ 330 µs / 17 ≈ 170 µs              | 63 ≈ 630 µs / 35 ≈ 350 µs                     |
+| Preamble             | `[164,1,164,1,164,164]` (3 × 2 pulses) | `[245,1,245,245,63,1,63,1,35,35]` (5 × 2 + 2) |
+| House byte order     | Little-endian (bytes swapped on decode) | Big-endian (high byte first)                   |
+| Method — UP          | high-nibble `0x0`                       | high-nibble `0xC`                              |
+| Method — DOWN        | high-nibble `0x1`                       | high-nibble `0x1` (also `0x8`)                 |
+| Method — STOP        | high-nibble `0x5`                       | high-nibble `0x5`                              |
+| Method — LEARN       | high-nibble `0x4`                       | high-nibble `0x4`                              |
+| Checksum             | None                                    | Yes — `((sum/256+1)*256+1) - sum`              |
+| Typical devices      | Older Hasta motors                      | Newer Hasta motors, Rollertrol                 |
+
+**Important:** The two variants are **not interchangeable**.  A v2 remote cannot
+teach a v1 motor and vice versa.  The device catalog has separate entries:
+
+- `"Hasta — Blinds"` → protocol `hasta`, model `selflearning:hasta`
+- `"Hasta — Blinds (v2)"` → protocol `hasta`, model `selflearningv2:hasta`
+- `"Rollertrol — Blinds"` → protocol `hasta`, model `selflearningv2:rollertrol`
+
+**Integration behaviour**: `cover.py` handles both transparently — it only checks
+`_is_cover(protocol)` which returns `True` for any `hasta` device regardless of
+model.  Both variants decode to the same `method:up/down/stop` event format, so
+no model-specific code is needed in the integration.
+
 ### Issue: Mandolyn incorrectly listed as a TX (switch) protocol
 
 **Root Cause**: `mandolyn` was in `TX_PROTOCOLS` and `PROTOCOL_DEFAULT_MODELS`
@@ -178,7 +209,7 @@ These protocols have only `static decodeData()` and are NOT in
 | Protocol   | HA entity | Commands    | Notes                                      |
 | ---------- | --------- | ----------- | ------------------------------------------ |
 | `arctech`  | switch / light / cover | ON/OFF/DIM | Model decides: selflearning-switch → switch, selflearning-dimmer → light, bell → switch |
-| `hasta`    | **cover** | UP/DOWN/STOP | Hasta remotes have exactly 3 buttons. Do NOT use as switch. |
+| `hasta`    | **cover** | UP/DOWN/STOP | Two variants: `selflearning` (v1, older motors) and `selflearningv2` (v2, newer motors + Rollertrol). NOT interchangeable. |
 | `brateck`  | **cover** | UP/DOWN/STOP | Projector screens/blinds. Do NOT use as switch. |
 | `comen`    | switch    | ON/OFF/LEARN | Anslut/Jula brand                         |
 | `everflourish` | switch | ON/OFF/LEARN | GAO brand                               |
