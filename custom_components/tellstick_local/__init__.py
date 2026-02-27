@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import pathlib
 import time
@@ -120,33 +119,63 @@ _KNOWN_DEVICE_SHADOW_SECS = 1.0
 _SENSOR_SUFFIX: dict[int, str] = {1: "temperature", 2: "humidity"}
 
 _ISSUE_RESTART = "restart_required"
+_NOTIF_UPDATED = "tellstick_update_applied"
 
 
 def _check_version_mismatch(hass: HomeAssistant) -> None:
-    """Notify the user if on-disk integration files are newer than loaded code.
+    """Notify the user based on a sentinel file written by integration.sh.
 
-    The TellStick Local app copies updated integration files to
-    ``/config/custom_components/tellstick_local/`` at startup.  If the
-    version in the on-disk ``manifest.json`` differs from the compiled-in
-    ``INTEGRATION_VERSION``, HA Core must be restarted to load the new code.
+    ``integration.sh`` writes a ``.pending_update`` file (containing the new
+    version string) to the integration directory every time it copies an
+    update.  Three cases:
+
+    1. **No sentinel** – normal startup with no pending update: clear stale
+       notices and return.
+    2. **Sentinel version == INTEGRATION_VERSION** – the restart *applied* the
+       update (HA re-imported the module with the new code).  Delete the
+       sentinel, clear stale notices, and show an "update installed"
+       informational notification so the user knows the new version is active.
+    3. **Sentinel version != INTEGRATION_VERSION** – old code is still in
+       memory (hot-reload after an app-only restart, without restarting HA
+       Core).  Fire a repair issue *and* a persistent notification asking the
+       user to restart HA.  Leave the sentinel in place so case 2 fires after
+       the restart.
     """
+    sentinel_path = pathlib.Path(__file__).parent / ".pending_update"
     try:
-        disk_manifest = pathlib.Path(__file__).parent / "manifest.json"
-        disk_version = json.loads(disk_manifest.read_text()).get("version", "")
-    except (FileNotFoundError, json.JSONDecodeError, KeyError, OSError) as exc:
-        _LOGGER.debug("Could not read on-disk manifest for version check: %s", exc)
-        return
+        pending_version = sentinel_path.read_text().strip()
+    except (FileNotFoundError, OSError):
+        pending_version = ""
 
-    if not disk_version or disk_version == INTEGRATION_VERSION:
-        # Versions match (or unreadable) — clear any stale repair issue and notification
+    if not pending_version:
+        # No pending update — clear any stale notices (including previous "update applied")
         async_delete_issue(hass, DOMAIN, _ISSUE_RESTART)
         pn_async_dismiss(hass, _ISSUE_RESTART)
+        pn_async_dismiss(hass, _NOTIF_UPDATED)
         return
 
+    if pending_version == INTEGRATION_VERSION:
+        # The restart applied the update — new code is now running
+        try:
+            sentinel_path.unlink()
+        except OSError:
+            pass
+        async_delete_issue(hass, DOMAIN, _ISSUE_RESTART)
+        pn_async_dismiss(hass, _ISSUE_RESTART)
+        _LOGGER.info("TellStick Local updated to v%s", INTEGRATION_VERSION)
+        pn_async_create(
+            hass,
+            f"TellStick Local integration updated to **v{INTEGRATION_VERSION}**.",
+            title=f"TellStick Local v{INTEGRATION_VERSION} installed",
+            notification_id=_NOTIF_UPDATED,
+        )
+        return
+
+    # Sentinel present, version mismatch: old code in memory, restart needed
     _LOGGER.warning(
         "TellStick Local integration on disk is v%s but loaded code is v%s — "
         "restart Home Assistant to apply the update",
-        disk_version,
+        pending_version,
         INTEGRATION_VERSION,
     )
     async_create_issue(
@@ -157,18 +186,18 @@ def _check_version_mismatch(hass: HomeAssistant) -> None:
         severity=IssueSeverity.WARNING,
         translation_key=_ISSUE_RESTART,
         translation_placeholders={
-            "new_version": disk_version,
+            "new_version": pending_version,
             "current_version": INTEGRATION_VERSION,
         },
     )
     pn_async_create(
         hass,
         (
-            f"TellStick Local integration **v{disk_version}** has been installed "
+            f"TellStick Local integration **v{pending_version}** has been installed "
             f"(currently loaded: v{INTEGRATION_VERSION}).\n\n"
             "**Restart Home Assistant** to activate the new version."
         ),
-        title=f"Restart required — TellStick Local v{disk_version} installed",
+        title=f"Restart required — TellStick Local v{pending_version} installed",
         notification_id=_ISSUE_RESTART,
     )
 
