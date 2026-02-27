@@ -51,6 +51,7 @@ from .const import (
     DOMAIN,
     ENTRY_DEVICE_ID_MAP,
     ENTRY_TELLSTICK_CONTROLLER,
+    SENSOR_TYPE_NAMES,
     SIGNAL_NEW_DEVICE,
     WIDGET_PARAMS,
     build_device_uid,
@@ -120,7 +121,18 @@ def _build_device_label(uid: str, cfg: dict[str, Any]) -> str:
     model = cfg.get(CONF_DEVICE_MODEL, "")
     if uid.startswith("sensor_"):
         sensor_id = cfg.get("sensor_id", "")
-        detail = f"sensor {sensor_id}" if sensor_id else f"{protocol}/{model}"
+        data_type = cfg.get("data_type")
+        type_str = (
+            SENSOR_TYPE_NAMES.get(data_type, "")
+            if data_type is not None
+            else ""
+        )
+        if sensor_id and type_str:
+            detail = f"sensor {sensor_id} {type_str}"
+        elif sensor_id:
+            detail = f"sensor {sensor_id}"
+        else:
+            detail = f"{protocol}/{model}"
     else:
         house = cfg.get(CONF_DEVICE_HOUSE, "")
         unit = cfg.get(CONF_DEVICE_UNIT, "")
@@ -546,12 +558,20 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
         if entry:
             devices = entry.options.get(CONF_DEVICES, {})
-            # Filter to compatible type (sensors only replace sensors, etc.)
+            # Filter to compatible type: sensors only replace sensors of the
+            # same data_type (temperature ↔ temperature, humidity ↔ humidity).
+            # This prevents accidentally migrating a humidity sensor onto a
+            # temperature entity (issue #33).
             is_sensor = dev_type == "sensor"
+            discovered_data_type = info.get("data_type") if is_sensor else None
             compatible = {
                 uid: cfg
                 for uid, cfg in devices.items()
                 if uid.startswith("sensor_") == is_sensor
+                and (
+                    not is_sensor
+                    or cfg.get("data_type") == discovered_data_type
+                )
             }
             if compatible:
                 replace_options = {"": "— Add as new device —"}

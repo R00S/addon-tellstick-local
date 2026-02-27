@@ -19,7 +19,7 @@ DOMAIN = "tellstick_local"
 #   A new agent context window on the SAME branch is still a W bump.
 #   Run `git branch --show-current` — if the branch matches the memory,
 #   bump W.  If it's a different branch, bump Z.
-INTEGRATION_VERSION = "2.1.8.8"
+INTEGRATION_VERSION = "2.1.8.9"
 
 # Config keys (CONF_HOST from homeassistant.const is used for host)
 CONF_COMMAND_PORT = "command_port"
@@ -63,6 +63,12 @@ TELLSTICK_RAINTOTAL = 8
 TELLSTICK_WINDDIRECTION = 16
 TELLSTICK_WINDAVERAGE = 32
 TELLSTICK_WINDGUST = 64
+
+# Human-readable names for the sensor data types above
+SENSOR_TYPE_NAMES: dict[int, str] = {
+    TELLSTICK_TEMPERATURE: "temperature",
+    TELLSTICK_HUMIDITY: "humidity",
+}
 
 # HA platforms
 PLATFORMS = ["button", "cover", "switch", "light", "sensor"]
