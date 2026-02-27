@@ -35,7 +35,7 @@ if [[ "${INSTALLED_VERSION}" != "none" ]]; then
     if curl -s -X POST \
         -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
         -H "Content-Type: application/json" \
-        -d "{\"title\":\"TellStick Local — restart required\",\"message\":\"The TellStick Local app installed integration **v${BUNDLED_VERSION}** (previously v${INSTALLED_VERSION}).\\n\\n**Restart Home Assistant** to activate the new version.\\n\\nGo to **Settings → System** and click **Restart Home Assistant**.\",\"notification_id\":\"restart_required\"}" \
+        -d "{\"title\":\"TellStick Local — restart required\",\"message\":\"The TellStick Local app installed integration **v${BUNDLED_VERSION}** (previously v${INSTALLED_VERSION}).\\n\\n**Restart Home Assistant** to activate the new version.\\n\\nGo to **Settings → Developer tools → Restart**.\",\"notification_id\":\"restart_required\"}" \
         "http://supervisor/core/api/services/persistent_notification/create" \
         > /dev/null 2>&1; then
         bashio::log.info "Persistent notification sent — user will be prompted to restart HA"

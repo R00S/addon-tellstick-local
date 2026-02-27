@@ -169,7 +169,8 @@ async def _check_version_mismatch(hass: HomeAssistant) -> None:
         (
             f"TellStick Local integration **v{disk_version}** has been installed "
             f"(currently loaded: v{INTEGRATION_VERSION}).\n\n"
-            "**Restart Home Assistant** to activate the new version."
+            "**Restart Home Assistant** to activate the new version.\n\n"
+            "Go to **Settings → Developer tools → Restart**."
         ),
         title=f"Restart required — TellStick Local v{disk_version} installed",
         notification_id=_ISSUE_RESTART,
