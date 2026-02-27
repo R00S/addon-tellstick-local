@@ -152,9 +152,13 @@ async def _check_version_mismatch(hass: HomeAssistant) -> None:
         disk_version,
         INTEGRATION_VERSION,
     )
-    # TODO: The repair issue below does not appear in Settings → Repairs in practice.
-    # Parked until proper research is done into why async_create_issue has no effect
-    # here — do not guess or take shortcuts before investigating the HA repairs API.
+    # PARKED: Still no repair issue. No more dev time must be spent on this until
+    # copilot agents have fixed these issues:
+    #   - agents guessing instead of doing research
+    #   - agents reimplementing already failed code
+    #   - agents not reading prompts
+    #   - agents taking shortcuts to shortsightedly save tokens, creating a lot more
+    #     load by failing
     async_create_issue(
         hass,
         DOMAIN,
