@@ -152,6 +152,9 @@ async def _check_version_mismatch(hass: HomeAssistant) -> None:
         disk_version,
         INTEGRATION_VERSION,
     )
+    # TODO: The repair issue below does not appear in Settings → Repairs in practice.
+    # Parked until proper research is done into why async_create_issue has no effect
+    # here — do not guess or take shortcuts before investigating the HA repairs API.
     async_create_issue(
         hass,
         DOMAIN,
