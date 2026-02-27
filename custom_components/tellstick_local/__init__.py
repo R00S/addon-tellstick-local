@@ -13,7 +13,7 @@ from homeassistant.helpers.issue_registry import (
     async_create_issue,
     async_delete_issue,
 )
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import SOURCE_IGNORE, ConfigEntry
 from homeassistant.const import CONF_HOST, EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
@@ -292,6 +292,48 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if ctrl:
             await ctrl.disconnect()
     return ok
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Clear runtime dedup state when a natively-ignored discovery entry is removed.
+
+    When the user clicks the HA-native "Ignore" button on a pending integration
+    discovery flow, HA creates a separate config entry with source=SOURCE_IGNORE
+    and unique_id="rf_{device_uid}".  When they later un-ignore the device from
+    the tile in Settings → Devices & Services, HA removes that entry and calls
+    this hook.  We clear the UID from the in-memory deduplication sets so the
+    device can be re-discovered the next time it sends an RF signal — without
+    requiring an integration reload.
+
+    NOTE: This function is called for ALL entries being removed for this domain,
+    including the main hub entry.  We guard on source == SOURCE_IGNORE and
+    unique_id prefix "rf_" so we only act on our own discovery-ignored entries.
+    """
+    if entry.source != SOURCE_IGNORE:
+        return
+
+    unique_id = entry.unique_id or ""
+    if not unique_id.startswith("rf_"):
+        return
+
+    device_uid = unique_id[3:]  # strip the "rf_" prefix we add in the flow
+
+    for entry_data in hass.data.get(DOMAIN, {}).values():
+        if not isinstance(entry_data, dict):
+            continue
+        discovered: set[str] = entry_data.get("_discovered_uids", set())
+        discovered.discard(device_uid)
+
+        # Also clear the protocol+model deduplication key so the next RF signal
+        # from this device is not silently swallowed.  Sensor UIDs use a
+        # different code path and do not participate in proto_model dedup.
+        if not device_uid.startswith("sensor_"):
+            seen_proto_models: set[str] = entry_data.get(
+                "_discovered_protocol_models", set()
+            )
+            parts = device_uid.split("_", 2)
+            if len(parts) >= 2:
+                seen_proto_models.discard(f"{parts[0]}_{parts[1]}")
 
 
 async def async_remove_config_entry_device(
