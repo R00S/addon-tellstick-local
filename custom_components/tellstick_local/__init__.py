@@ -416,6 +416,14 @@ def _handle_raw_event(
     if not device_uid:
         return
 
+    # Sensor protocols (fineoffset, oregon, mandolyn) emit TDRawDeviceEvent
+    # with class:sensor AND a separate TDSensorEvent.  The raw event carries
+    # no house/unit, so device_uid is just "fineoffset_temperaturehumidity" —
+    # adding it produces an empty device with no entities.  Sensor data is
+    # handled exclusively by _handle_sensor_event; bail out here.
+    if params.get("class") == "sensor":
+        return
+
     _LOGGER.debug("Raw RF event from %s: %s", device_uid, params)
 
     # Broadcast for entity listeners (state updates for existing entities)
