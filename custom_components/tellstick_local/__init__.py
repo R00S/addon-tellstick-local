@@ -122,17 +122,20 @@ _SENSOR_SUFFIX: dict[int, str] = {1: "temperature", 2: "humidity"}
 _ISSUE_RESTART = "restart_required"
 
 
-def _check_version_mismatch(hass: HomeAssistant) -> None:
+async def _check_version_mismatch(hass: HomeAssistant) -> None:
     """Fire or clear a repair issue based on on-disk manifest vs loaded code.
 
     The TellStick Local app copies updated integration files to
     ``/config/custom_components/tellstick_local/`` at startup.  If the
     version in the on-disk ``manifest.json`` differs from the compiled-in
     ``INTEGRATION_VERSION``, HA Core must be restarted to load the new code.
+
+    File I/O is offloaded to a thread executor to avoid blocking the event loop.
     """
+    disk_manifest = pathlib.Path(__file__).parent / "manifest.json"
     try:
-        disk_manifest = pathlib.Path(__file__).parent / "manifest.json"
-        disk_version = json.loads(disk_manifest.read_text()).get("version", "")
+        raw = await hass.async_add_executor_job(disk_manifest.read_text)
+        disk_version = json.loads(raw).get("version", "")
     except (FileNotFoundError, json.JSONDecodeError, KeyError, OSError) as exc:
         _LOGGER.debug("Could not read on-disk manifest for version check: %s", exc)
         return
@@ -182,7 +185,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # manifest.json will have a higher version than the loaded code.
     # In that case we fire a persistent notification so the user knows
     # a restart is needed.
-    _check_version_mismatch(hass)
+    await _check_version_mismatch(hass)
 
     host = entry.data[CONF_HOST]
     cmd_port = entry.data[CONF_COMMAND_PORT]
