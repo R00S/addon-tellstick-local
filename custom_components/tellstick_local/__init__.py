@@ -8,6 +8,10 @@ import pathlib
 import time
 from typing import Any
 
+from homeassistant.components.persistent_notification import (
+    async_create as pn_async_create,
+    async_dismiss as pn_async_dismiss,
+)
 from homeassistant.helpers.issue_registry import (
     IssueSeverity,
     async_create_issue,
@@ -134,8 +138,9 @@ def _check_version_mismatch(hass: HomeAssistant) -> None:
         return
 
     if not disk_version or disk_version == INTEGRATION_VERSION:
-        # Versions match (or unreadable) — clear any stale repair issue
+        # Versions match (or unreadable) — clear any stale repair issue and notification
         async_delete_issue(hass, DOMAIN, _ISSUE_RESTART)
+        pn_async_dismiss(hass, _ISSUE_RESTART)
         return
 
     _LOGGER.warning(
@@ -155,6 +160,16 @@ def _check_version_mismatch(hass: HomeAssistant) -> None:
             "new_version": disk_version,
             "current_version": INTEGRATION_VERSION,
         },
+    )
+    pn_async_create(
+        hass,
+        (
+            f"TellStick Local integration **v{disk_version}** has been installed "
+            f"(currently loaded: v{INTEGRATION_VERSION}).\n\n"
+            "**Restart Home Assistant** to activate the new version."
+        ),
+        title=f"Restart required — TellStick Local v{disk_version} installed",
+        notification_id=_ISSUE_RESTART,
     )
 
 
