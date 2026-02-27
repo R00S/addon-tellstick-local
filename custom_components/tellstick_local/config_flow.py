@@ -1020,8 +1020,18 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                 self.config_entry.entry_id, {}
             )
             discovered: set[str] = entry_data.get("_discovered_uids", set())
+            seen_proto_models: set[str] = entry_data.get(
+                "_discovered_protocol_models", set()
+            )
             for uid in to_unignore:
                 discovered.discard(uid)
+                # Clear protocol+model deduplication so re-discovery can fire.
+                # UID format: "{protocol}_{model}_{house}_{unit}".
+                # proto_model_key used in _fire_device_discovery is "{protocol}_{model}".
+                if not uid.startswith("sensor_"):
+                    parts = uid.split("_", 2)
+                    if len(parts) >= 2:
+                        seen_proto_models.discard(f"{parts[0]}_{parts[1]}")
 
             return self.async_create_entry(title="", data=new_options)
 

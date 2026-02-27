@@ -47,7 +47,7 @@ YAML file editing.
 | **Per-device deletion**     | Delete any device from its device page ⋮ menu                                      |
 | **Device state info**       | Protocol, model, house code and unit code shown as entity state attributes         |
 | **GUI-only management**     | Add, rename, edit and remove devices via HA UI — no YAML, no restart               |
-| **Upgrade notifications**   | After an app update, HA shows a notification if a restart is needed                |
+| **Upgrade notifications**   | After an app update, HA shows a persistent notification to restart — go to **Settings → Developer tools → Restart** |
 | **Local push**              | RF events arrive in real time; no polling, no cloud                                |
 | **Automations**             | Device triggers on any 433 MHz button press, usable directly in HA automations     |
 | **Companion app**           | Identical UX in the HA Android/iOS app                                             |
@@ -249,6 +249,11 @@ These devices must be added via Method B (self-learning teach).
 ---
 
 ## Troubleshooting
+
+### "A notification appeared saying restart is required"
+
+Go to **Settings → Developer tools → Restart** and restart Home Assistant to load the
+newly installed integration version. The notification will dismiss itself after restart.
 
 ### "No setup prompt appeared after installing the app"
 

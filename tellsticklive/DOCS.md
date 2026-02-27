@@ -69,8 +69,8 @@ See the [project README](https://github.com/R00S/addon-tellsticklive-roosfork) f
 full pairing instructions and supported devices.
 
 > **Upgrade notifications:** When the app updates the integration code, HA shows a
-> persistent notification if a restart is needed. No more silent breakage after
-> updates.
+> persistent notification if a restart is needed. Go to
+> **Settings → Developer tools → Restart** to apply the update.
 
 ---
 

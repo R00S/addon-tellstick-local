@@ -8,12 +8,16 @@ import pathlib
 import time
 from typing import Any
 
+from homeassistant.components.persistent_notification import (
+    async_create as pn_async_create,
+    async_dismiss as pn_async_dismiss,
+)
 from homeassistant.helpers.issue_registry import (
     IssueSeverity,
     async_create_issue,
     async_delete_issue,
 )
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import SOURCE_IGNORE, ConfigEntry
 from homeassistant.const import CONF_HOST, EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
@@ -118,24 +122,28 @@ _SENSOR_SUFFIX: dict[int, str] = {1: "temperature", 2: "humidity"}
 _ISSUE_RESTART = "restart_required"
 
 
-def _check_version_mismatch(hass: HomeAssistant) -> None:
-    """Notify the user if on-disk integration files are newer than loaded code.
+async def _check_version_mismatch(hass: HomeAssistant) -> None:
+    """Fire or clear a repair issue based on on-disk manifest vs loaded code.
 
     The TellStick Local app copies updated integration files to
     ``/config/custom_components/tellstick_local/`` at startup.  If the
     version in the on-disk ``manifest.json`` differs from the compiled-in
     ``INTEGRATION_VERSION``, HA Core must be restarted to load the new code.
+
+    File I/O is offloaded to a thread executor to avoid blocking the event loop.
     """
+    disk_manifest = pathlib.Path(__file__).parent / "manifest.json"
     try:
-        disk_manifest = pathlib.Path(__file__).parent / "manifest.json"
-        disk_version = json.loads(disk_manifest.read_text()).get("version", "")
+        raw = await hass.async_add_executor_job(disk_manifest.read_text)
+        disk_version = json.loads(raw).get("version", "")
     except (FileNotFoundError, json.JSONDecodeError, KeyError, OSError) as exc:
         _LOGGER.debug("Could not read on-disk manifest for version check: %s", exc)
         return
 
     if not disk_version or disk_version == INTEGRATION_VERSION:
-        # Versions match (or unreadable) — clear any stale repair issue
+        # Versions match — clear any stale repair issue / notification
         async_delete_issue(hass, DOMAIN, _ISSUE_RESTART)
+        pn_async_dismiss(hass, _ISSUE_RESTART)
         return
 
     _LOGGER.warning(
@@ -144,6 +152,13 @@ def _check_version_mismatch(hass: HomeAssistant) -> None:
         disk_version,
         INTEGRATION_VERSION,
     )
+    # PARKED: Still no repair issue. No more dev time must be spent on this until
+    # copilot agents have fixed these issues:
+    #   - agents guessing instead of doing research
+    #   - agents reimplementing already failed code
+    #   - agents not reading prompts
+    #   - agents taking shortcuts to shortsightedly save tokens, creating a lot more
+    #     load by failing
     async_create_issue(
         hass,
         DOMAIN,
@@ -156,6 +171,17 @@ def _check_version_mismatch(hass: HomeAssistant) -> None:
             "current_version": INTEGRATION_VERSION,
         },
     )
+    pn_async_create(
+        hass,
+        (
+            f"TellStick Local integration **v{disk_version}** has been installed "
+            f"(currently loaded: v{INTEGRATION_VERSION}).\n\n"
+            "**Restart Home Assistant** to activate the new version.\n\n"
+            "Go to **Settings → Developer tools → Restart**."
+        ),
+        title=f"Restart required — TellStick Local v{disk_version} installed",
+        notification_id=_ISSUE_RESTART,
+    )
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -167,7 +193,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # manifest.json will have a higher version than the loaded code.
     # In that case we fire a persistent notification so the user knows
     # a restart is needed.
-    _check_version_mismatch(hass)
+    await _check_version_mismatch(hass)
 
     host = entry.data[CONF_HOST]
     cmd_port = entry.data[CONF_COMMAND_PORT]
@@ -294,6 +320,48 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return ok
 
 
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Clear runtime dedup state when a natively-ignored discovery entry is removed.
+
+    When the user clicks the HA-native "Ignore" button on a pending integration
+    discovery flow, HA creates a separate config entry with source=SOURCE_IGNORE
+    and unique_id="rf_{device_uid}".  When they later un-ignore the device from
+    the tile in Settings → Devices & Services, HA removes that entry and calls
+    this hook.  We clear the UID from the in-memory deduplication sets so the
+    device can be re-discovered the next time it sends an RF signal — without
+    requiring an integration reload.
+
+    NOTE: This function is called for ALL entries being removed for this domain,
+    including the main hub entry.  We guard on source == SOURCE_IGNORE and
+    unique_id prefix "rf_" so we only act on our own discovery-ignored entries.
+    """
+    if entry.source != SOURCE_IGNORE:
+        return
+
+    unique_id = entry.unique_id or ""
+    if not unique_id.startswith("rf_"):
+        return
+
+    device_uid = unique_id[3:]  # strip the "rf_" prefix we add in the flow
+
+    for entry_data in hass.data.get(DOMAIN, {}).values():
+        if not isinstance(entry_data, dict):
+            continue
+        discovered: set[str] = entry_data.get("_discovered_uids", set())
+        discovered.discard(device_uid)
+
+        # Also clear the protocol+model deduplication key so the next RF signal
+        # from this device is not silently swallowed.  Sensor UIDs use a
+        # different code path and do not participate in proto_model dedup.
+        if not device_uid.startswith("sensor_"):
+            seen_proto_models: set[str] = entry_data.get(
+                "_discovered_protocol_models", set()
+            )
+            parts = device_uid.split("_", 2)
+            if len(parts) >= 2:
+                seen_proto_models.discard(f"{parts[0]}_{parts[1]}")
+
+
 async def async_remove_config_entry_device(
     hass: HomeAssistant, entry: ConfigEntry, device_entry: dr.DeviceEntry
 ) -> bool:
@@ -372,6 +440,14 @@ def _handle_raw_event(
     params = event.params
     device_uid = event.device_id
     if not device_uid:
+        return
+
+    # Sensor protocols (fineoffset, oregon, mandolyn) emit TDRawDeviceEvent
+    # with class:sensor AND a separate TDSensorEvent.  The raw event carries
+    # no house/unit, so device_uid is just "fineoffset_temperaturehumidity" —
+    # adding it produces an empty device with no entities.  Sensor data is
+    # handled exclusively by _handle_sensor_event; bail out here.
+    if params.get("class") == "sensor":
         return
 
     _LOGGER.debug("Raw RF event from %s: %s", device_uid, params)

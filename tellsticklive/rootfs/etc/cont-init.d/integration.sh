@@ -29,19 +29,26 @@ cp -rf "${SRC}/." "${DEST}/"
 bashio::log.info "TellStick Local integration v${BUNDLED_VERSION} installed."
 
 if [[ "${INSTALLED_VERSION}" != "none" ]]; then
-    bashio::log.info "Integration updated from v${INSTALLED_VERSION} to v${BUNDLED_VERSION} — reloading config entry so HA raises a repair issue..."
-    # Trigger a config-entry reload so that _check_version_mismatch() in
-    # __init__.py runs while the OLD code is still in memory.  The reload:
-    #   1. reads the new on-disk manifest.json (new version)
-    #   2. compares it to INTEGRATION_VERSION frozen at HA startup (old version)
-    #   3. calls async_create_issue → appears in Settings → Repairs
-    # After the user restarts HA the new code is loaded, versions match, and
-    # async_delete_issue clears the repair item automatically.
+    bashio::log.info "Integration updated from v${INSTALLED_VERSION} to v${BUNDLED_VERSION} — notifying user to restart HA Core..."
+    # Fire a persistent notification directly via the HA API so the user
+    # sees it regardless of whether a config-entry reload succeeds.
+    if curl -s -X POST \
+        -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d "{\"title\":\"TellStick Local — restart required\",\"message\":\"The TellStick Local app installed integration **v${BUNDLED_VERSION}** (previously v${INSTALLED_VERSION}).\\n\\n**Restart Home Assistant** to activate the new version.\\n\\nGo to **Settings → Developer tools → Restart**.\",\"notification_id\":\"restart_required\"}" \
+        "http://supervisor/core/api/services/persistent_notification/create" \
+        > /dev/null 2>&1; then
+        bashio::log.info "Persistent notification sent — user will be prompted to restart HA"
+    else
+        bashio::log.warning "Could not send notification — please restart Home Assistant manually to load TellStick Local v${BUNDLED_VERSION}"
+    fi
+    # Also trigger a config-entry reload so the repair issue fires immediately
+    # (reload runs old code still in memory, detects manifest version mismatch).
     ENTRIES_JSON=$(curl -sf \
         -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
         "http://supervisor/core/api/config/config_entries" 2>/dev/null || true)
     if [[ -z "${ENTRIES_JSON}" ]]; then
-        bashio::log.warning "Could not reach HA API — repair issue will appear after next HA restart"
+        bashio::log.warning "Could not reach HA API for config entry reload — repair issue will appear after next HA restart"
     else
         ENTRY_IDS=$(jq -r '.[] | select(.domain == "tellstick_local") | .entry_id' \
             <<< "${ENTRIES_JSON}" 2>/dev/null || true)
