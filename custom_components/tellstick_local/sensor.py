@@ -13,6 +13,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import PERCENTAGE, UnitOfTemperature
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .client import SensorEvent
@@ -123,16 +124,46 @@ class TellStickSensor(TellStickEntity, SensorEntity):
         data_type: int,
     ) -> None:
         """Initialize a TellStick sensor."""
+        meta = _SENSOR_META.get(data_type)
+        suffix, device_class, unit = meta if meta else (None, None, None)
+
+        # Entity name is just the measurement type ("Temperature" / "Humidity").
+        # With _attr_has_entity_name = True the HA frontend displays it as
+        # "{device name} Temperature", which is the standard HA pattern.
+        # Note: suffix is None only for unknown data_types, which are already
+        # filtered out by the _SENSOR_META check in async_setup_entry, so
+        # the fallback to `name` is purely defensive.
+        type_name = suffix.capitalize() if suffix else name
+
+        # Device name: strip the type suffix from the stored name so that
+        # temperature and humidity entities share a consistent device name.
+        # e.g. "TellStick sensor 202 temperature" → "TellStick sensor 202"
+        if suffix and name.lower().endswith(f" {suffix}"):
+            device_name = name[: -(len(suffix) + 1)]
+        else:
+            device_name = name
+
         super().__init__(
             entry_id=entry_id,
             device_uid=device_uid,
-            name=name,
+            name=type_name,
             protocol=protocol,
             model=model,
         )
+
+        # Group temperature + humidity from the same physical sensor under one
+        # HA device.  Use sensor_{sensor_id} (without the type suffix) as the
+        # shared device identifier so both entities appear under one device.
+        # _attr_unique_id is still {entry_id}_sensor_{id}_{suffix} (unchanged)
+        # so entity history and entity_ids are fully preserved.
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, f"{entry_id}_sensor_{sensor_id}")},
+            name=device_name,
+            model=f"{protocol}/{model}" if model else protocol,
+        )
+
         self._sensor_id = sensor_id
         self._data_type = data_type
-        _, device_class, unit = _SENSOR_META.get(data_type, (None, None, None))
         self._attr_device_class = device_class
         self._attr_native_unit_of_measurement = unit
 
