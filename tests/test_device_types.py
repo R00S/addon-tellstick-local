@@ -526,6 +526,101 @@ def test_diagnostics_sensor_type_name_resolution():
 
 
 # ---------------------------------------------------------------------------
+# Section 9 — _migrate_sensor_companion imports cleanly
+# ---------------------------------------------------------------------------
+
+def test_migrate_sensor_companion_importable():
+    """_migrate_sensor_companion is importable from config_flow."""
+    from custom_components.tellstick_local.config_flow import _migrate_sensor_companion
+    assert callable(_migrate_sensor_companion)
+
+
+def test_migrate_sensor_companion_skips_when_no_companion():
+    """_migrate_sensor_companion is a no-op when no companion exists in options."""
+    from custom_components.tellstick_local.config_flow import _migrate_sensor_companion
+    # Call with options that have no companion entry
+    opts = {
+        "devices": {
+            "sensor_202_temperature": {
+                "name": "New temp", "sensor_id": 202, "data_type": 1,
+            },
+        },
+    }
+    result = _migrate_sensor_companion(
+        Mock(),   # hass
+        Mock(entry_id="eid"),  # entry
+        "100", "202", "temperature", opts,
+    )
+    # Options unchanged (no companion to migrate)
+    assert "sensor_100_humidity" not in result.get("devices", {})
+    assert "sensor_202_humidity" not in result.get("devices", {})
+    # Primary entry preserved
+    assert "sensor_202_temperature" in result["devices"]
+
+
+def test_migrate_sensor_companion_migrates_humidity():
+    """When migrating temperature, companion humidity is also migrated."""
+    from custom_components.tellstick_local.config_flow import _migrate_sensor_companion
+    from unittest.mock import patch
+    mock_ent_reg = Mock()
+    mock_ent_reg.async_entries_for_config_entry = Mock(return_value=[])
+    hass = Mock()
+    hass.data = {"tellstick_local": {"eid": {"_discovered_uids": set()}}}
+    entry = Mock(entry_id="eid")
+    opts = {
+        "devices": {
+            "sensor_202_temperature": {
+                "name": "New temp", "sensor_id": 202, "data_type": 1,
+            },
+            "sensor_100_humidity": {
+                "name": "Old hum", "sensor_id": 100, "data_type": 2,
+            },
+        },
+    }
+    with patch("custom_components.tellstick_local.config_flow.er.async_get", return_value=mock_ent_reg), \
+         patch("custom_components.tellstick_local.config_flow.er.async_entries_for_config_entry", return_value=[]):
+        result = _migrate_sensor_companion(
+            hass, entry, "100", "202", "temperature", opts,
+        )
+    # Old humidity removed, new humidity added
+    assert "sensor_100_humidity" not in result["devices"]
+    assert "sensor_202_humidity" in result["devices"]
+    # New humidity has updated sensor_id
+    assert result["devices"]["sensor_202_humidity"]["sensor_id"] == 202
+    # Old humidity UID added to ignored list
+    assert "sensor_100_humidity" in result.get("ignored_uids", {})
+
+
+def test_migrate_sensor_companion_preserves_primary():
+    """Companion migration preserves the primary entity's config."""
+    from custom_components.tellstick_local.config_flow import _migrate_sensor_companion
+    from unittest.mock import patch
+    mock_ent_reg = Mock()
+    mock_ent_reg.async_entries_for_config_entry = Mock(return_value=[])
+    hass = Mock()
+    hass.data = {"tellstick_local": {"eid": {"_discovered_uids": set()}}}
+    entry = Mock(entry_id="eid")
+    opts = {
+        "devices": {
+            "sensor_202_temperature": {
+                "name": "My temp", "sensor_id": 202, "data_type": 1,
+            },
+            "sensor_100_humidity": {
+                "name": "My hum", "sensor_id": 100, "data_type": 2,
+            },
+        },
+    }
+    with patch("custom_components.tellstick_local.config_flow.er.async_get", return_value=mock_ent_reg), \
+         patch("custom_components.tellstick_local.config_flow.er.async_entries_for_config_entry", return_value=[]):
+        result = _migrate_sensor_companion(
+            hass, entry, "100", "202", "temperature", opts,
+        )
+    # Primary entry preserved
+    assert "sensor_202_temperature" in result["devices"]
+    assert result["devices"]["sensor_202_temperature"]["name"] == "My temp"
+
+
+# ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
 
@@ -581,6 +676,11 @@ TESTS = [
     test_diagnostics_imports_cleanly,
     test_diagnostics_has_required_function,
     test_diagnostics_sensor_type_name_resolution,
+    # Sensor migration
+    test_migrate_sensor_companion_importable,
+    test_migrate_sensor_companion_skips_when_no_companion,
+    test_migrate_sensor_companion_migrates_humidity,
+    test_migrate_sensor_companion_preserves_primary,
 ]
 
 
@@ -598,6 +698,7 @@ if __name__ == "__main__":
         "Compatible filter (data_type guard)": range(33, 38),
         "SENSOR_TYPE_NAMES constant": range(38, 40),
         "Diagnostics": range(40, 43),
+        "Sensor migration (issue #33)": range(43, 47),
     }
 
     for section_name, idx_range in sections.items():

@@ -168,15 +168,26 @@ def _migrate_device_uid(
                 new_unique_id=f"{entry_id}_{new_uid}",
             )
 
-    # Update device registry identifiers
+    # Update device registry identifiers.
+    # Sensors use a shared device identifier: sensor_{sensor_id} (no type
+    # suffix).  Temperature + humidity entities share one HA device.
     dev_reg = dr.async_get(hass)
+    if old_uid.startswith("sensor_"):
+        old_parts = old_uid.split("_")
+        new_parts = new_uid.split("_")
+        old_dev_key = f"sensor_{old_parts[1]}" if len(old_parts) >= 2 else old_uid
+        new_dev_key = f"sensor_{new_parts[1]}" if len(new_parts) >= 2 else new_uid
+    else:
+        old_dev_key = old_uid
+        new_dev_key = new_uid
+
     device_entry = dev_reg.async_get_device(
-        identifiers={(DOMAIN, f"{entry_id}_{old_uid}")}
+        identifiers={(DOMAIN, f"{entry_id}_{old_dev_key}")}
     )
     if device_entry:
         dev_reg.async_update_device(
             device_entry.id,
-            new_identifiers={(DOMAIN, f"{entry_id}_{new_uid}")},
+            new_identifiers={(DOMAIN, f"{entry_id}_{new_dev_key}")},
         )
 
     # Update runtime maps
@@ -194,6 +205,73 @@ def _migrate_device_uid(
     devices[new_uid] = new_cfg
     new_options = dict(entry.options)
     new_options[CONF_DEVICES] = devices
+    return new_options
+
+
+@callback
+def _migrate_sensor_companion(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    old_sensor_id: str,
+    new_sensor_id: str,
+    primary_suffix: str,
+    new_options: dict[str, Any],
+) -> dict[str, Any]:
+    """Migrate the companion sensor entity (temp↔hum) for a sensor pair.
+
+    When a temperature sensor is migrated, this also migrates the
+    corresponding humidity entity (and vice versa), so both entities
+    move atomically to the new sensor_id.
+
+    ``new_options`` must already contain the primary migration's changes
+    (from ``_migrate_device_uid``).  Returns the further-updated options.
+    """
+    entry_id = entry.entry_id
+    devices = new_options.get(CONF_DEVICES, {})
+
+    # Find companion suffixes that have stored entries
+    companions = [
+        s for s in ("temperature", "humidity")
+        if s != primary_suffix and f"sensor_{old_sensor_id}_{s}" in devices
+    ]
+    if not companions:
+        return new_options
+
+    ent_reg = er.async_get(hass)
+    entry_data = hass.data.get(DOMAIN, {}).get(entry_id, {})
+    discovered: set[str] = entry_data.get("_discovered_uids", set())
+
+    for comp_suffix in companions:
+        comp_old_uid = f"sensor_{old_sensor_id}_{comp_suffix}"
+        comp_new_uid = f"sensor_{new_sensor_id}_{comp_suffix}"
+
+        # Update companion entity unique_id
+        for ent in er.async_entries_for_config_entry(ent_reg, entry_id):
+            if ent.unique_id == f"{entry_id}_{comp_old_uid}":
+                ent_reg.async_update_entity(
+                    ent.entity_id,
+                    new_unique_id=f"{entry_id}_{comp_new_uid}",
+                )
+
+        # Update companion in options
+        comp_cfg = dict(devices[comp_old_uid])
+        comp_cfg["sensor_id"] = int(new_sensor_id)
+        devs = dict(new_options[CONF_DEVICES])
+        devs.pop(comp_old_uid, None)
+        devs[comp_new_uid] = comp_cfg
+        new_options = dict(new_options)
+        new_options[CONF_DEVICES] = devs
+        devices = new_options[CONF_DEVICES]
+
+        # Ignore companion old UID
+        ignored = dict(new_options.get(CONF_IGNORED_UIDS, {}))
+        ignored[comp_old_uid] = comp_cfg.get(CONF_DEVICE_NAME, comp_old_uid)
+        new_options[CONF_IGNORED_UIDS] = ignored
+
+        # Update discovered set
+        discovered.discard(comp_old_uid)
+        discovered.add(comp_new_uid)
+
     return new_options
 
 
@@ -437,6 +515,19 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 ignored = dict(new_options.get(CONF_IGNORED_UIDS, {}))
                 ignored[replace_uid] = old_name
                 new_options[CONF_IGNORED_UIDS] = ignored
+
+                # Sensor pair: also migrate companion entity (temp↔hum)
+                # so the user doesn't have to merge twice (issue #33).
+                if dev_type == "sensor":
+                    old_parts = replace_uid.split("_")
+                    new_parts = device_uid.split("_")
+                    if len(old_parts) >= 3 and len(new_parts) >= 3:
+                        new_options = _migrate_sensor_companion(
+                            self.hass, entry,
+                            old_parts[1], new_parts[1],
+                            old_parts[2], new_options,
+                        )
+
                 self.hass.config_entries.async_update_entry(
                     entry, options=new_options
                 )
@@ -731,6 +822,13 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                     new_uid = f"sensor_{new_id_int}_{suffix}"
                     new_options = _migrate_device_uid(
                         self.hass, self.config_entry, uid, new_uid, cfg
+                    )
+                    # Also migrate companion entity (temp↔hum) so both
+                    # entities move atomically (issue #33).
+                    new_options = _migrate_sensor_companion(
+                        self.hass, self.config_entry,
+                        str(old_id_int), str(new_id_int),
+                        suffix, new_options,
                     )
                     # Reload so the running entity picks up the new sensor_id.
                     self.hass.async_create_task(
