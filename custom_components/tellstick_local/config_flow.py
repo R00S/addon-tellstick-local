@@ -253,15 +253,15 @@ def _migrate_sensor_companion(
                     new_unique_id=f"{entry_id}_{comp_new_uid}",
                 )
 
-        # Update companion in options
-        comp_cfg = dict(devices[comp_old_uid])
+        # Update companion in options (read from current new_options each time)
+        cur_devices = new_options.get(CONF_DEVICES, {})
+        comp_cfg = dict(cur_devices[comp_old_uid])
         comp_cfg["sensor_id"] = int(new_sensor_id)
-        devs = dict(new_options[CONF_DEVICES])
+        devs = dict(cur_devices)
         devs.pop(comp_old_uid, None)
         devs[comp_new_uid] = comp_cfg
         new_options = dict(new_options)
         new_options[CONF_DEVICES] = devs
-        devices = new_options[CONF_DEVICES]
 
         # Ignore companion old UID
         ignored = dict(new_options.get(CONF_IGNORED_UIDS, {}))
