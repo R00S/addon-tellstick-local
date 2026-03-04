@@ -669,6 +669,38 @@ def _handle_sensor_event(
         async_dispatcher_send(
             hass, SIGNAL_NEW_DEVICE.format(entry.entry_id), event
         )
+        # Auto-persist this data_type if not already stored.  After a
+        # migration or add-as-new for one data_type, the companion
+        # (temp↔hum) arrives later and must also be persisted so it
+        # survives restarts.  Issue #33.
+        if suffix:
+            sensor_uid = f"sensor_{event.sensor_id}_{suffix}"
+            if sensor_uid not in stored_devices:
+                # Derive device name from existing companion entry
+                base_name = ""
+                for uid, cfg in stored_devices.items():
+                    if uid.startswith(sensor_prefix):
+                        base_name = cfg.get(CONF_DEVICE_NAME, "")
+                        break
+                for s in ("temperature", "humidity"):
+                    if base_name.lower().endswith(f" {s}"):
+                        base_name = base_name[: -(len(s) + 1)]
+                        break
+                if not base_name:
+                    base_name = f"TellStick sensor {event.sensor_id}"
+                existing_devices = dict(stored_devices)
+                existing_devices[sensor_uid] = {
+                    CONF_DEVICE_NAME: f"{base_name} {suffix}",
+                    CONF_DEVICE_PROTOCOL: event.protocol or "",
+                    CONF_DEVICE_MODEL: event.model or "",
+                    "sensor_id": event.sensor_id,
+                    "data_type": event.data_type,
+                }
+                new_options = dict(entry.options)
+                new_options[CONF_DEVICES] = existing_devices
+                hass.config_entries.async_update_entry(
+                    entry, options=new_options
+                )
     elif suffix and automatic_add:
         # Auto-add: persist sensor and fire signal
         sensor_uid = f"sensor_{event.sensor_id}_{suffix}"
@@ -692,12 +724,21 @@ def _handle_sensor_event(
                 hass, SIGNAL_NEW_DEVICE.format(entry.entry_id), event
             )
     elif suffix:
-        # Unknown sensor — fire a discovery config flow
+        # Unknown sensor — fire a discovery config flow.
+        # Deduplicate by sensor_id (not by individual data_type) so
+        # only ONE discovery flow fires per physical sensor.  A temp+hum
+        # sensor sends separate events for each type; without this,
+        # the user sees two "Add" entries for the same sensor.  Issue #33.
+        sensor_dedup = f"sensor_{event.sensor_id}"
         sensor_uid = f"sensor_{event.sensor_id}_{suffix}"
         entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
         discovered: set[str] = entry_data.get("_discovered_uids", set())
         ignored_uids = entry.options.get(CONF_IGNORED_UIDS, {})
-        if sensor_uid not in discovered and sensor_uid not in ignored_uids:
+        if (
+            sensor_dedup not in discovered
+            and sensor_uid not in ignored_uids
+        ):
+            discovered.add(sensor_dedup)
             discovered.add(sensor_uid)
             hass.async_create_task(
                 hass.config_entries.flow.async_init(

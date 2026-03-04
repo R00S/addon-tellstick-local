@@ -114,8 +114,14 @@ def _build_params_schema(
     return vol.Schema(schema_dict)
 
 
-def _build_device_label(uid: str, cfg: dict[str, Any]) -> str:
-    """Build a human-readable label for a device dropdown entry."""
+def _build_device_label(
+    uid: str, cfg: dict[str, Any], *, sensor_grouped: bool = False
+) -> str:
+    """Build a human-readable label for a device dropdown entry.
+
+    When *sensor_grouped* is True, the label omits the data_type suffix
+    because the dropdown shows one entry per physical sensor_id.
+    """
     name = cfg.get(CONF_DEVICE_NAME, uid)
     protocol = cfg.get(CONF_DEVICE_PROTOCOL, "")
     model = cfg.get(CONF_DEVICE_MODEL, "")
@@ -127,7 +133,14 @@ def _build_device_label(uid: str, cfg: dict[str, Any]) -> str:
             if data_type is not None
             else ""
         )
-        if sensor_id and type_str:
+        if sensor_grouped:
+            # Strip type suffix from name for grouped display
+            for s in ("temperature", "humidity"):
+                if name.lower().endswith(f" {s}"):
+                    name = name[: -(len(s) + 1)]
+                    break
+            detail = f"sensor {sensor_id}" if sensor_id else f"{protocol}/{model}"
+        elif sensor_id and type_str:
             detail = f"sensor {sensor_id} {type_str}"
         elif sensor_id:
             detail = f"sensor {sensor_id}"
@@ -245,13 +258,28 @@ def _migrate_sensor_companion(
         comp_old_uid = f"sensor_{old_sensor_id}_{comp_suffix}"
         comp_new_uid = f"sensor_{new_sensor_id}_{comp_suffix}"
 
-        # Update companion entity unique_id
+        # Update companion entity unique_id in the entity registry.
+        # If the update fails (e.g. new unique_id already exists),
+        # remove the orphaned old entity to prevent "unavailable" ghosts.
         for ent in er.async_entries_for_config_entry(ent_reg, entry_id):
             if ent.unique_id == f"{entry_id}_{comp_old_uid}":
-                ent_reg.async_update_entity(
-                    ent.entity_id,
-                    new_unique_id=f"{entry_id}_{comp_new_uid}",
-                )
+                try:
+                    ent_reg.async_update_entity(
+                        ent.entity_id,
+                        new_unique_id=f"{entry_id}_{comp_new_uid}",
+                    )
+                except ValueError:
+                    _LOGGER.warning(
+                        "Companion entity %s: unique_id conflict, removing orphan",
+                        ent.entity_id,
+                    )
+                    ent_reg.async_remove(ent.entity_id)
+                break
+        else:
+            _LOGGER.debug(
+                "Companion entity for %s not found in entity registry",
+                comp_old_uid,
+            )
 
         # Update companion in options (read from current new_options each time)
         cur_devices = new_options.get(CONF_DEVICES, {})
@@ -263,14 +291,12 @@ def _migrate_sensor_companion(
         new_options = dict(new_options)
         new_options[CONF_DEVICES] = devs
 
-        # Ignore companion old UID
-        ignored = dict(new_options.get(CONF_IGNORED_UIDS, {}))
-        ignored[comp_old_uid] = comp_cfg.get(CONF_DEVICE_NAME, comp_old_uid)
-        new_options[CONF_IGNORED_UIDS] = ignored
-
-        # Update discovered set
+        # Update discovered set — mark both old and new as handled so
+        # pending discovery flows for the companion are suppressed.
         discovered.discard(comp_old_uid)
         discovered.add(comp_new_uid)
+        # Also mark the sensor_id-level dedup key
+        discovered.add(f"sensor_{new_sensor_id}")
 
     return new_options
 
@@ -464,6 +490,11 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             device_uid = info["device_uid"]
 
+            # Re-check: if the device was already stored (e.g. companion
+            # migration added it while this flow was pending), abort.
+            if device_uid in entry.options.get(CONF_DEVICES, {}):
+                return self.async_abort(reason="already_added")
+
             # Handle ignore checkbox
             if user_input.get("ignore", False):
                 ignored = dict(entry.options.get(CONF_IGNORED_UIDS, {}))
@@ -519,13 +550,17 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 # Sensor pair: also migrate companion entity (temp↔hum)
                 # so the user doesn't have to merge twice (issue #33).
                 if dev_type == "sensor":
+                    old_sid = str(old_cfg.get("sensor_id", ""))
+                    new_sid = str(info.get("sensor_id", ""))
                     old_parts = replace_uid.split("_")
-                    new_parts = device_uid.split("_")
-                    if len(old_parts) >= 3 and len(new_parts) >= 3:
+                    primary_suffix = (
+                        old_parts[2] if len(old_parts) >= 3 else "sensor"
+                    )
+                    if old_sid and new_sid and old_sid != new_sid:
                         new_options = _migrate_sensor_companion(
                             self.hass, entry,
-                            old_parts[1], new_parts[1],
-                            old_parts[2], new_options,
+                            old_sid, new_sid,
+                            primary_suffix, new_options,
                         )
 
                 self.hass.config_entries.async_update_entry(
@@ -649,25 +684,34 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
         if entry:
             devices = entry.options.get(CONF_DEVICES, {})
-            # Filter to compatible type: sensors only replace sensors of the
-            # same data_type (temperature ↔ temperature, humidity ↔ humidity).
-            # This prevents accidentally migrating a humidity sensor onto a
-            # temperature entity (issue #33).
             is_sensor = dev_type == "sensor"
-            discovered_data_type = info.get("data_type") if is_sensor else None
-            compatible = {
-                uid: cfg
-                for uid, cfg in devices.items()
-                if uid.startswith("sensor_") == is_sensor
-                and (
-                    not is_sensor
-                    or cfg.get("data_type") == discovered_data_type
-                )
-            }
+            if is_sensor:
+                # Group sensors by sensor_id for the replace dropdown.
+                # Temp+hum entities share one physical sensor; show one
+                # entry per sensor_id so the user picks once and the
+                # companion migration handles both.  Issue #33.
+                seen_ids: set[int] = set()
+                compatible: dict[str, dict[str, Any]] = {}
+                for uid, cfg in devices.items():
+                    if not uid.startswith("sensor_"):
+                        continue
+                    sid = cfg.get("sensor_id")
+                    if sid is None or sid in seen_ids:
+                        continue
+                    seen_ids.add(sid)
+                    compatible[uid] = cfg
+            else:
+                compatible = {
+                    uid: cfg
+                    for uid, cfg in devices.items()
+                    if not uid.startswith("sensor_")
+                }
             if compatible:
                 replace_options = {"": "— Add as new device —"}
                 for uid, cfg in compatible.items():
-                    replace_options[uid] = _build_device_label(uid, cfg)
+                    replace_options[uid] = _build_device_label(
+                        uid, cfg, sensor_grouped=is_sensor
+                    )
                 schema_dict[
                     vol.Optional("replace_device", default="")
                 ] = vol.In(replace_options)

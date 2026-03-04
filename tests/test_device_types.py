@@ -387,13 +387,28 @@ def test_label_cover_unchanged():
 # ---------------------------------------------------------------------------
 
 def _apply_compatible_filter(devices: dict, dev_type: str, discovered_data_type):
-    """Replicate the compatible filter logic from async_step_add_rf_device."""
+    """Replicate the compatible filter logic from async_step_add_rf_device.
+
+    For sensors, groups by sensor_id (one entry per physical sensor).
+    For non-sensors, returns all non-sensor devices.
+    """
     is_sensor = dev_type == "sensor"
+    if is_sensor:
+        seen_ids: set[int] = set()
+        result: dict = {}
+        for uid, cfg in devices.items():
+            if not uid.startswith("sensor_"):
+                continue
+            sid = cfg.get("sensor_id")
+            if sid is None or sid in seen_ids:
+                continue
+            seen_ids.add(sid)
+            result[uid] = cfg
+        return result
     return {
         uid: cfg
         for uid, cfg in devices.items()
-        if uid.startswith("sensor_") == is_sensor
-        and (not is_sensor or cfg.get("data_type") == discovered_data_type)
+        if not uid.startswith("sensor_")
     }
 
 
@@ -426,24 +441,24 @@ SAMPLE_DEVICES = {
 
 
 def test_filter_temperature_discovery_shows_only_temperature():
-    """Discovering a temperature sensor → dropdown shows only temperature sensors."""
+    """Discovering a sensor → dropdown groups by sensor_id (one per sensor)."""
     result = _apply_compatible_filter(SAMPLE_DEVICES, "sensor", 1)
-    assert "sensor_100_temperature" in result
-    assert "sensor_200_temperature" in result
-    # Humidity must NOT appear
-    assert "sensor_100_humidity" not in result
+    # One entry per sensor_id — sensor 100 and sensor 200
+    sensor_ids = {cfg.get("sensor_id") for cfg in result.values()}
+    assert 100 in sensor_ids
+    assert 200 in sensor_ids
     # Switches and covers must NOT appear
     assert "arctech_selflearning_999_1" not in result
     assert "hasta_selflearning_A_1" not in result
 
 
 def test_filter_humidity_discovery_shows_only_humidity():
-    """Discovering a humidity sensor → dropdown shows only humidity sensors."""
+    """Discovering a sensor → dropdown groups by sensor_id, same behavior as temp."""
     result = _apply_compatible_filter(SAMPLE_DEVICES, "sensor", 2)
-    assert "sensor_100_humidity" in result
-    # Temperature sensors must NOT appear
-    assert "sensor_100_temperature" not in result
-    assert "sensor_200_temperature" not in result
+    # Same as temperature: one entry per sensor_id
+    sensor_ids = {cfg.get("sensor_id") for cfg in result.values()}
+    assert 100 in sensor_ids
+    assert 200 in sensor_ids
     # Switches and covers must NOT appear
     assert "arctech_selflearning_999_1" not in result
     assert "hasta_selflearning_A_1" not in result
@@ -587,8 +602,8 @@ def test_migrate_sensor_companion_migrates_humidity():
     assert "sensor_202_humidity" in result["devices"]
     # New humidity has updated sensor_id
     assert result["devices"]["sensor_202_humidity"]["sensor_id"] == 202
-    # Old humidity UID added to ignored list
-    assert "sensor_100_humidity" in result.get("ignored_uids", {})
+    # Old humidity UID should NOT be added to ignored list (issue #33 fix)
+    assert "sensor_100_humidity" not in result.get("ignored_uids", {})
 
 
 def test_migrate_sensor_companion_preserves_primary():
@@ -618,6 +633,76 @@ def test_migrate_sensor_companion_preserves_primary():
     # Primary entry preserved
     assert "sensor_202_temperature" in result["devices"]
     assert result["devices"]["sensor_202_temperature"]["name"] == "My temp"
+
+
+def test_label_sensor_grouped_strips_type_suffix():
+    """sensor_grouped=True strips the type suffix from name and detail."""
+    from custom_components.tellstick_local.config_flow import _build_device_label
+    cfg = {"name": "Outdoor temp temperature", "sensor_id": 100, "data_type": 1,
+           "protocol": "fineoffset", "model": "temperature"}
+    label = _build_device_label("sensor_100_temperature", cfg, sensor_grouped=True)
+    assert "sensor 100" in label
+    # Must NOT include "temperature" in detail
+    assert "temperature)" not in label
+
+
+def test_label_sensor_grouped_without_suffix():
+    """sensor_grouped=True with a name that has no type suffix keeps name intact."""
+    from custom_components.tellstick_local.config_flow import _build_device_label
+    cfg = {"name": "Wine cellar", "sensor_id": 100, "data_type": 1,
+           "protocol": "fineoffset", "model": "temperature"}
+    label = _build_device_label("sensor_100_temperature", cfg, sensor_grouped=True)
+    assert "Wine cellar" in label
+    assert "sensor 100)" in label
+
+
+def test_filter_sensor_groups_by_sensor_id():
+    """Sensor discovery groups replace dropdown by sensor_id (one entry per physical sensor)."""
+    result = _apply_compatible_filter(SAMPLE_DEVICES, "sensor", 1)
+    # Two physical sensors: 100 and 200
+    assert len(result) == 2
+    sensor_ids = {cfg.get("sensor_id") for cfg in result.values()}
+    assert sensor_ids == {100, 200}
+    # No duplicate for sensor 100 (has both temp and hum)
+    uids = list(result.keys())
+    assert all(uid.startswith("sensor_") for uid in uids)
+
+
+def test_companion_migration_handles_conflict():
+    """When companion entity unique_id already exists, orphan is cleaned up."""
+    from custom_components.tellstick_local.config_flow import _migrate_sensor_companion
+    from unittest.mock import patch
+
+    mock_ent = Mock()
+    mock_ent.unique_id = "eid_sensor_100_humidity"
+    mock_ent.entity_id = "sensor.old_humidity"
+
+    mock_ent_reg = Mock()
+
+    hass = Mock()
+    hass.data = {"tellstick_local": {"eid": {"_discovered_uids": set()}}}
+    entry = Mock(entry_id="eid")
+    opts = {
+        "devices": {
+            "sensor_202_temperature": {"name": "T", "sensor_id": 202, "data_type": 1},
+            "sensor_100_humidity": {"name": "H", "sensor_id": 100, "data_type": 2},
+        },
+    }
+
+    # Simulate conflict: async_update_entity raises ValueError
+    mock_ent_reg.async_update_entity.side_effect = ValueError("conflict")
+
+    with patch("custom_components.tellstick_local.config_flow.er.async_get", return_value=mock_ent_reg), \
+         patch("custom_components.tellstick_local.config_flow.er.async_entries_for_config_entry", return_value=[mock_ent]):
+        result = _migrate_sensor_companion(
+            hass, entry, "100", "202", "temperature", opts,
+        )
+
+    # Orphan should be removed
+    mock_ent_reg.async_remove.assert_called_once_with("sensor.old_humidity")
+    # Options still updated
+    assert "sensor_202_humidity" in result["devices"]
+    assert "sensor_100_humidity" not in result["devices"]
 
 
 # ---------------------------------------------------------------------------
@@ -681,6 +766,12 @@ TESTS = [
     test_migrate_sensor_companion_skips_when_no_companion,
     test_migrate_sensor_companion_migrates_humidity,
     test_migrate_sensor_companion_preserves_primary,
+    # Sensor grouped labels and filter
+    test_label_sensor_grouped_strips_type_suffix,
+    test_label_sensor_grouped_without_suffix,
+    test_filter_sensor_groups_by_sensor_id,
+    # Companion migration robustness
+    test_companion_migration_handles_conflict,
 ]
 
 
@@ -699,6 +790,8 @@ if __name__ == "__main__":
         "SENSOR_TYPE_NAMES constant": range(38, 40),
         "Diagnostics": range(40, 43),
         "Sensor migration (issue #33)": range(43, 47),
+        "Sensor grouped labels & filter": range(47, 50),
+        "Companion migration robustness": range(50, 51),
     }
 
     for section_name, idx_range in sections.items():
