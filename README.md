@@ -206,7 +206,7 @@ each protocol supports.
 | `everflourish` | Switch         | GAO, Everflourish, Rusta                                                                                              |
 | `hasta`        | Cover          | Hasta, Rollertrol motorised blinds                                                                                    |
 | `mandolyn`     | Switch         | Mandolyn / Summerbird                                                                                                 |
-| `sartano`      | Switch         | Sartano, Brennenstuhl, Rusta, Elro                                                                                    |
+| `sartano`      | Switch         | Sartano, Brennenstuhl, Rusta, Elro (**opt-in** — see note below)                                                      |
 | `waveman`      | Switch         | Waveman                                                                                                               |
 | `x10`          | Switch         | X10                                                                                                                   |
 | `fineoffset`   | Sensor         | Nexa LMST-606 / WDS-100 thermometers, Fine Offset weather stations                                                    |
@@ -215,6 +215,11 @@ each protocol supports.
 > **Nexa note:** Nexa _switches, dimmers, remotes and buttons_ use the `arctech`
 > protocol. Nexa _thermometers and weather sensors_ (LMST-606, WDS-100 etc.) use
 > the `fineoffset` protocol — they appear automatically as sensor entities.
+
+> **Sartano note:** Sartano/codeswitch auto-detection is **off by default**
+> because `telldusd` often falsely decodes arctech signals as sartano. If you
+> actually have sartano hardware, enable the **"Detect sartano/codeswitch
+> devices"** toggle in **Configure → Settings**.
 
 > **Self-learning receivers (Luxorparts 50969/50970, Nexa, etc.):** These receivers
 > are dual-protocol — they learn whatever code is sent during pairing. Use
@@ -294,6 +299,11 @@ button press can trigger 2-3 different protocol interpretations (e.g. arctech +
 everflourish + waveman). Add only the correct one for your device brand. For the
 false-positive ones, check **"Ignore this device"** on the discovery form to hide
 them permanently.
+
+> **Sartano phantom devices:** The most common false positive is sartano/codeswitch
+> appearing alongside arctech/selflearning. To avoid this, sartano auto-detection
+> is **off by default**. If you have real sartano hardware, enable the
+> **"Detect sartano/codeswitch devices"** toggle in **Configure → Settings**.
 
 ---
 

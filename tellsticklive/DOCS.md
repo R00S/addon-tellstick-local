@@ -50,6 +50,10 @@ All device management happens in the integration under **Settings → Devices & 
 
 - **Automatic add** — click **Configure** (⚙), enable it, then press any 433 MHz
   remote to discover devices
+- **Sartano opt-in** — sartano/codeswitch auto-detection is **off by default**
+  because arctech signals are often falsely decoded as sartano. Enable the
+  **"Detect sartano/codeswitch devices"** toggle in **Configure → Settings** if
+  you have real sartano hardware
 - **Add device button** — click **Add device** on the integration card to manually
   pair a self-learning receiver (pick type, send pairing signal)
 - **Ignore unwanted devices** — check "Ignore this device" on the discovery form to
