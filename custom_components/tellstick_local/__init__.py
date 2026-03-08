@@ -418,7 +418,7 @@ async def async_remove_config_entry_device(
         # Remove all entries: sensor_{id}_temperature, sensor_{id}_humidity
         sensor_prefix = f"{device_uid}_"
         for uid in list(stored_devices.keys()):
-            if uid.startswith(sensor_prefix) or uid == device_uid:
+            if uid.startswith(sensor_prefix):
                 del stored_devices[uid]
                 removed_any = True
                 discovered.discard(uid)

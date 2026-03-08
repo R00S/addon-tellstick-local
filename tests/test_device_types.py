@@ -706,6 +706,54 @@ def test_companion_migration_handles_conflict():
 
 
 # ---------------------------------------------------------------------------
+# Helper function tests (_extract_sensor_suffix, _strip_sensor_suffix)
+# ---------------------------------------------------------------------------
+
+def test_extract_sensor_suffix_temperature():
+    """_extract_sensor_suffix returns 'temperature' for temp UIDs."""
+    from custom_components.tellstick_local.config_flow import _extract_sensor_suffix
+    assert _extract_sensor_suffix("sensor_200_temperature") == "temperature"
+
+
+def test_extract_sensor_suffix_humidity():
+    """_extract_sensor_suffix returns 'humidity' for hum UIDs."""
+    from custom_components.tellstick_local.config_flow import _extract_sensor_suffix
+    assert _extract_sensor_suffix("sensor_200_humidity") == "humidity"
+
+
+def test_extract_sensor_suffix_fallback():
+    """_extract_sensor_suffix returns 'sensor' for unexpected UIDs."""
+    from custom_components.tellstick_local.config_flow import _extract_sensor_suffix
+    assert _extract_sensor_suffix("sensor_200") == "sensor"
+    assert _extract_sensor_suffix("sensor_200_unknown") == "sensor"
+
+
+def test_strip_sensor_suffix_temperature():
+    """_strip_sensor_suffix strips ' temperature' suffix."""
+    from custom_components.tellstick_local.config_flow import _strip_sensor_suffix
+    assert _strip_sensor_suffix("Vinkällare temperature") == "Vinkällare"
+
+
+def test_strip_sensor_suffix_humidity():
+    """_strip_sensor_suffix strips ' humidity' suffix."""
+    from custom_components.tellstick_local.config_flow import _strip_sensor_suffix
+    assert _strip_sensor_suffix("Outdoor humidity") == "Outdoor"
+
+
+def test_strip_sensor_suffix_no_suffix():
+    """_strip_sensor_suffix returns name unchanged when no suffix."""
+    from custom_components.tellstick_local.config_flow import _strip_sensor_suffix
+    assert _strip_sensor_suffix("Wine cellar") == "Wine cellar"
+
+
+def test_strip_sensor_suffix_case_insensitive():
+    """_strip_sensor_suffix is case-insensitive for matching."""
+    from custom_components.tellstick_local.config_flow import _strip_sensor_suffix
+    assert _strip_sensor_suffix("Outdoor Temperature") == "Outdoor"
+    assert _strip_sensor_suffix("Outdoor HUMIDITY") == "Outdoor"
+
+
+# ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
 
@@ -772,6 +820,14 @@ TESTS = [
     test_filter_sensor_groups_by_sensor_id,
     # Companion migration robustness
     test_companion_migration_handles_conflict,
+    # Helper functions
+    test_extract_sensor_suffix_temperature,
+    test_extract_sensor_suffix_humidity,
+    test_extract_sensor_suffix_fallback,
+    test_strip_sensor_suffix_temperature,
+    test_strip_sensor_suffix_humidity,
+    test_strip_sensor_suffix_no_suffix,
+    test_strip_sensor_suffix_case_insensitive,
 ]
 
 
@@ -792,6 +848,7 @@ if __name__ == "__main__":
         "Sensor migration (issue #33)": range(43, 47),
         "Sensor grouped labels & filter": range(47, 50),
         "Companion migration robustness": range(50, 51),
+        "Helper functions": range(51, 58),
     }
 
     for section_name, idx_range in sections.items():

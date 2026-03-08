@@ -114,6 +114,30 @@ def _build_params_schema(
     return vol.Schema(schema_dict)
 
 
+def _extract_sensor_suffix(uid: str) -> str:
+    """Extract the data-type suffix from a sensor UID.
+
+    Sensor UIDs have format ``sensor_{sensor_id}_{suffix}`` where suffix
+    is ``temperature`` or ``humidity``.  Returns ``"sensor"`` as fallback
+    for unexpected formats.
+    """
+    parts = uid.split("_")
+    suffix = parts[2] if len(parts) >= 3 else "sensor"
+    return suffix if suffix in ("temperature", "humidity") else "sensor"
+
+
+def _strip_sensor_suffix(name: str) -> str:
+    """Strip a trailing type suffix from a sensor name.
+
+    ``"Vinkällare temperature"`` → ``"Vinkällare"``.
+    Returns the name unchanged if no known suffix is found.
+    """
+    for s in ("temperature", "humidity"):
+        if name.lower().endswith(f" {s}"):
+            return name[: -(len(s) + 1)]
+    return name
+
+
 def _build_device_label(
     uid: str, cfg: dict[str, Any], *, sensor_grouped: bool = False
 ) -> str:
@@ -135,10 +159,7 @@ def _build_device_label(
         )
         if sensor_grouped:
             # Strip type suffix from name for grouped display
-            for s in ("temperature", "humidity"):
-                if name.lower().endswith(f" {s}"):
-                    name = name[: -(len(s) + 1)]
-                    break
+            name = _strip_sensor_suffix(name)
             detail = f"sensor {sensor_id}" if sensor_id else f"{protocol}/{model}"
         elif sensor_id and type_str:
             detail = f"sensor {sensor_id} {type_str}"
@@ -525,10 +546,7 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     # Issue #33.
                     old_sid = str(replace_cfg.get("sensor_id", ""))
                     new_sid = str(info.get("sensor_id", ""))
-                    disc_parts = device_uid.split("_")
-                    disc_suffix = (
-                        disc_parts[2] if len(disc_parts) >= 3 else ""
-                    )
+                    disc_suffix = _extract_sensor_suffix(device_uid)
 
                     # Find the old entry that matches the discovery data type
                     all_devices = entry.options.get(CONF_DEVICES, {})
@@ -879,10 +897,7 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
 
         # Show base name for grouped sensors
         if uid.startswith("sensor_"):
-            for s in ("temperature", "humidity"):
-                if name.lower().endswith(f" {s}"):
-                    name = name[: -(len(s) + 1)]
-                    break
+            name = _strip_sensor_suffix(name)
 
         menu_options = ["device_detail"]
         menu_options.append("delete_device")
@@ -921,8 +936,7 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                         continue
                     if e_cfg.get("sensor_id") != old_id_int:
                         continue
-                    parts = e_uid.split("_")
-                    e_suffix = parts[2] if len(parts) >= 3 else "sensor"
+                    e_suffix = _extract_sensor_suffix(e_uid)
                     e_cfg = dict(e_cfg)
                     e_cfg[CONF_DEVICE_NAME] = f"{base_name} {e_suffix}"
                     devices[e_uid] = e_cfg
@@ -932,9 +946,7 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
 
                 if new_id_int != old_id_int:
                     cfg["sensor_id"] = new_id_int
-                    suffix = uid.rsplit("_", 1)[-1]  # "temperature"/"humidity"
-                    if suffix not in ("temperature", "humidity"):
-                        suffix = "sensor"
+                    suffix = _extract_sensor_suffix(uid)
                     new_uid = f"sensor_{new_id_int}_{suffix}"
                     # Write name-updated devices back before migration
                     temp_options = dict(self.config_entry.options)
@@ -1004,10 +1016,7 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
 
         if uid.startswith("sensor_"):
             # Show base name (without type suffix) for grouped display
-            for s in ("temperature", "humidity"):
-                if name.lower().endswith(f" {s}"):
-                    name = name[: -(len(s) + 1)]
-                    break
+            name = _strip_sensor_suffix(name)
             sensor_id = cfg.get("sensor_id", 0)
             schema_dict: dict[Any, Any] = {
                 vol.Required("name", default=name): str,
@@ -1163,10 +1172,7 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
         # Show base name for grouped sensors
         name = cfg.get(CONF_DEVICE_NAME, uid)
         if uid.startswith("sensor_"):
-            for s in ("temperature", "humidity"):
-                if name.lower().endswith(f" {s}"):
-                    name = name[: -(len(s) + 1)]
-                    break
+            name = _strip_sensor_suffix(name)
 
         return self.async_show_form(
             step_id="delete_device",
