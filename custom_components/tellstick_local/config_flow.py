@@ -513,16 +513,44 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             if replace_uid:
                 # Replace existing device — migrate UID + preserve history
-                old_cfg = dict(
+                replace_cfg = dict(
                     entry.options.get(CONF_DEVICES, {}).get(replace_uid, {})
                 )
-                old_name = old_cfg.get(CONF_DEVICE_NAME, replace_uid)
-                # Keep old name if user didn't change the default
-                if name == default_name:
-                    name = old_name
 
-                # Build new config from the discovered signal
                 if dev_type == "sensor":
+                    # Sensor replacement: the replace dropdown groups by
+                    # sensor_id, so replace_uid may point to ANY data_type
+                    # entry (temperature or humidity).  We must match old
+                    # entries by data type to avoid cross-wiring entities.
+                    # Issue #33.
+                    old_sid = str(replace_cfg.get("sensor_id", ""))
+                    new_sid = str(info.get("sensor_id", ""))
+                    disc_parts = device_uid.split("_")
+                    disc_suffix = (
+                        disc_parts[2] if len(disc_parts) >= 3 else ""
+                    )
+
+                    # Find the old entry that matches the discovery data type
+                    all_devices = entry.options.get(CONF_DEVICES, {})
+                    correct_old_uid = (
+                        f"sensor_{old_sid}_{disc_suffix}"
+                        if old_sid and disc_suffix
+                        else replace_uid
+                    )
+                    if correct_old_uid in all_devices:
+                        matched_cfg = dict(all_devices[correct_old_uid])
+                        matched_name = matched_cfg.get(
+                            CONF_DEVICE_NAME, correct_old_uid
+                        )
+                    else:
+                        correct_old_uid = replace_uid
+                        matched_name = replace_cfg.get(
+                            CONF_DEVICE_NAME, replace_uid
+                        )
+
+                    if name == default_name:
+                        name = matched_name
+
                     new_cfg = {
                         CONF_DEVICE_NAME: name,
                         CONF_DEVICE_PROTOCOL: info.get("protocol", ""),
@@ -530,7 +558,30 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         "sensor_id": info.get("sensor_id"),
                         "data_type": info.get("data_type"),
                     }
+
+                    new_options = _migrate_device_uid(
+                        self.hass, entry, correct_old_uid, device_uid,
+                        new_cfg,
+                    )
+
+                    # No ignored-list entry for sensors — the old sensor_id
+                    # is gone after battery replacement and won't re-appear.
+
+                    # Migrate companion (temp↔hum) so the user doesn't have
+                    # to merge twice.
+                    if old_sid and new_sid and old_sid != new_sid:
+                        new_options = _migrate_sensor_companion(
+                            self.hass, entry,
+                            old_sid, new_sid,
+                            disc_suffix, new_options,
+                        )
                 else:
+                    old_name = replace_cfg.get(
+                        CONF_DEVICE_NAME, replace_uid
+                    )
+                    if name == default_name:
+                        name = old_name
+
                     new_cfg = {
                         CONF_DEVICE_NAME: name,
                         CONF_DEVICE_PROTOCOL: info.get("protocol", ""),
@@ -539,29 +590,15 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_DEVICE_UNIT: info.get("unit", ""),
                     }
 
-                new_options = _migrate_device_uid(
-                    self.hass, entry, replace_uid, device_uid, new_cfg
-                )
-                # Ignore old UID to prevent re-detection
-                ignored = dict(new_options.get(CONF_IGNORED_UIDS, {}))
-                ignored[replace_uid] = old_name
-                new_options[CONF_IGNORED_UIDS] = ignored
-
-                # Sensor pair: also migrate companion entity (temp↔hum)
-                # so the user doesn't have to merge twice (issue #33).
-                if dev_type == "sensor":
-                    old_sid = str(old_cfg.get("sensor_id", ""))
-                    new_sid = str(info.get("sensor_id", ""))
-                    old_parts = replace_uid.split("_")
-                    primary_suffix = (
-                        old_parts[2] if len(old_parts) >= 3 else "sensor"
+                    new_options = _migrate_device_uid(
+                        self.hass, entry, replace_uid, device_uid, new_cfg
                     )
-                    if old_sid and new_sid and old_sid != new_sid:
-                        new_options = _migrate_sensor_companion(
-                            self.hass, entry,
-                            old_sid, new_sid,
-                            primary_suffix, new_options,
-                        )
+                    # Ignore old UID to prevent re-detection
+                    ignored = dict(
+                        new_options.get(CONF_IGNORED_UIDS, {})
+                    )
+                    ignored[replace_uid] = old_name
+                    new_options[CONF_IGNORED_UIDS] = ignored
 
                 self.hass.config_entries.async_update_entry(
                     entry, options=new_options
@@ -806,9 +843,21 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
             self._edit_uid = user_input["device"]
             return await self.async_step_device_actions()
 
+        # Group sensors by sensor_id so one physical sensor shows once.
         labels: dict[str, str] = {}
+        seen_sensor_ids: set[int] = set()
         for uid, cfg in devices.items():
-            labels[uid] = _build_device_label(uid, cfg)
+            if uid.startswith("sensor_"):
+                sid = cfg.get("sensor_id")
+                if sid is not None and sid in seen_sensor_ids:
+                    continue
+                if sid is not None:
+                    seen_sensor_ids.add(sid)
+                labels[uid] = _build_device_label(
+                    uid, cfg, sensor_grouped=True
+                )
+            else:
+                labels[uid] = _build_device_label(uid, cfg)
 
         return self.async_show_form(
             step_id="manage_device",
@@ -846,10 +895,8 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
         cfg = dict(devices.get(uid, {}))
 
         if user_input is not None:
-            cfg[CONF_DEVICE_NAME] = user_input["name"]
-
             if uid.startswith("sensor_"):
-                # Sensor: check if sensor_id changed → UID migration
+                base_name = user_input["name"]
                 old_sensor_id = cfg.get("sensor_id", 0)
                 new_sensor_id = user_input.get("sensor_id", old_sensor_id)
                 try:
@@ -858,12 +905,36 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                 except (ValueError, TypeError):
                     old_id_int = 0
                     new_id_int = 0
+
+                # Update name for ALL entries of this sensor_id.
+                # base_name is the device name without type suffix; each
+                # entry gets "base_name temperature" / "base_name humidity".
+                for e_uid, e_cfg in list(devices.items()):
+                    if not e_uid.startswith("sensor_"):
+                        continue
+                    if e_cfg.get("sensor_id") != old_id_int:
+                        continue
+                    parts = e_uid.split("_")
+                    e_suffix = parts[2] if len(parts) >= 3 else "sensor"
+                    e_cfg = dict(e_cfg)
+                    e_cfg[CONF_DEVICE_NAME] = f"{base_name} {e_suffix}"
+                    devices[e_uid] = e_cfg
+
+                # Re-read cfg after name update
+                cfg = dict(devices.get(uid, cfg))
+
                 if new_id_int != old_id_int:
                     cfg["sensor_id"] = new_id_int
                     suffix = uid.rsplit("_", 1)[-1]  # "temperature"/"humidity"
                     if suffix not in ("temperature", "humidity"):
                         suffix = "sensor"
                     new_uid = f"sensor_{new_id_int}_{suffix}"
+                    # Write name-updated devices back before migration
+                    temp_options = dict(self.config_entry.options)
+                    temp_options[CONF_DEVICES] = devices
+                    self.hass.config_entries.async_update_entry(
+                        self.config_entry, options=temp_options
+                    )
                     new_options = _migrate_device_uid(
                         self.hass, self.config_entry, uid, new_uid, cfg
                     )
@@ -882,6 +953,7 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                     )
                     return self.async_create_entry(title="", data=new_options)
             else:
+                cfg[CONF_DEVICE_NAME] = user_input["name"]
                 # Device: check if house/unit changed → UID migration
                 if "house" in user_input:
                     cfg[CONF_DEVICE_HOUSE] = str(user_input["house"])
@@ -923,17 +995,25 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
         protocol = cfg.get(CONF_DEVICE_PROTOCOL, "")
         model = cfg.get(CONF_DEVICE_MODEL, "")
 
-        schema_dict: dict[Any, Any] = {
-            vol.Required("name", default=name): str,
-        }
         if uid.startswith("sensor_"):
+            # Show base name (without type suffix) for grouped display
+            for s in ("temperature", "humidity"):
+                if name.lower().endswith(f" {s}"):
+                    name = name[: -(len(s) + 1)]
+                    break
             sensor_id = cfg.get("sensor_id", 0)
-            schema_dict[vol.Required("sensor_id", default=sensor_id)] = int
+            schema_dict: dict[Any, Any] = {
+                vol.Required("name", default=name): str,
+                vol.Required("sensor_id", default=sensor_id): int,
+            }
         else:
             house = cfg.get(CONF_DEVICE_HOUSE, "")
             unit = cfg.get(CONF_DEVICE_UNIT, "")
-            schema_dict[vol.Optional("house", default=house)] = str
-            schema_dict[vol.Optional("unit", default=unit)] = str
+            schema_dict = {
+                vol.Required("name", default=name): str,
+                vol.Optional("house", default=house): str,
+                vol.Optional("unit", default=unit): str,
+            }
 
         return self.async_show_form(
             step_id="device_detail",
