@@ -89,11 +89,13 @@ _LOGGER = logging.getLogger(__name__)
 #   - RFLink (HA core): manual YAML aliasing — user maps multiple IDs to
 #     one entity.
 #
-# Our approach (three complementary layers):
-#   1. _discovered_uids: set — blocks same UID from being discovered twice
-#   2. _last_known_event_time: float — suppresses unknown events within 1s
-#      of a known device event (cross-protocol false positives from the
-#      same RF signal; works because arctech is decoded FIRST)
+# Our approach — batch-based burst processing (three layers):
+#   1. _pending_unknown_events: list — unknown events are collected into
+#      a batch and processed by a SINGLE timer after _BURST_COLLECT_SECS.
+#      Only the FIRST event from each batch is kept; all others are
+#      discarded as cross-decode phantoms.  If a known-device event was
+#      seen during the burst, ALL unknown events are suppressed.
+#   2. _discovered_uids: set — blocks same UID from being discovered twice
 #   3. _discovered_protocol_models: set — deduplicates by protocol+model
 #      per session (TelldusCenter approach; NOT pre-seeded from stored
 #      devices — pre-seeding blocks new devices sharing a protocol+model
@@ -116,25 +118,15 @@ _LOGGER = logging.getLogger(__name__)
 # ProtocolSartano).  1 second gives ample margin.
 _KNOWN_DEVICE_SHADOW_SECS = 1.0
 
-# Seconds to suppress cross-protocol phantom discoveries.  telldusd runs
-# ALL protocol decoders on every RF signal — identical protocols like
-# sartano + x10 both decode the same signal, producing two "new" events
-# with different protocol names but the same physical device.  The first
-# decode triggers a discovery/auto-add; subsequent decodes within this
-# window are suppressed as phantoms.  500 ms is generous (cross-decodes
-# arrive within ~100 ms) while short enough to not block a user pressing
-# two different buttons in quick succession.
-_CROSS_DECODE_WINDOW_SECS = 0.5
-
-# Seconds to defer processing of unknown-device events.  When a door
-# sensor fires, telldusd decodes the RF signal as BOTH the real device
-# (arctech/selflearning) AND a phantom (sartano/codeswitch).  Previous
-# timing-only suppression assumed arctech events always arrived first,
-# but event ordering through socat/TCP is not guaranteed.  By deferring
-# unknown-event processing, we ensure the known-device event has time
-# to set _last_known_event_time before the phantom is evaluated.
+# Seconds to collect unknown-device events into a batch before processing.
+# telldusd runs ALL protocol decoders on every RF signal: one button press
+# produces N TDRawDeviceEvent events (arctech, waveman, sartano, …) within
+# ~100 ms.  Instead of processing each event individually (which relies on
+# fragile inter-callback timing), we collect them in a pending list and
+# process the batch with a SINGLE timer.  Only the FIRST unknown event from
+# each batch is kept; all others are discarded as cross-decode phantoms.
 # 300 ms is invisible to the user but 3× the ~100 ms cross-decode window.
-_PHANTOM_DEFER_SECS = 0.3
+_BURST_COLLECT_SECS = 0.3
 
 # Sensor data-type → suffix (mirrors sensor.py _SENSOR_META keys)
 _SENSOR_SUFFIX: dict[int, str] = {1: "temperature", 2: "humidity"}
@@ -289,15 +281,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "_discovered_protocol_models": set(),
         # Timestamp of the last known-device raw event.  Used to suppress
         # false-positive unknown events from the same RF signal.
-        # Protocol.cpp decodes arctech first (ProtocolNexa → ProtocolWaveman
-        # → ProtocolSartano), so known-device events always arrive before
-        # their cross-protocol false positives.
         "_last_known_event_time": 0.0,
-        # Timestamp of the last discovery/auto-add event that was actually
-        # fired (not suppressed).  Used to suppress cross-protocol phantom
-        # discoveries: sartano+x10 decode the same RF signal, but only the
-        # first decode should trigger a discovery.  Issue #33.
-        "_last_discovery_fire_time": 0.0,
+        # Pending unknown-device events waiting for batch processing.
+        # Events are collected here and processed by a single timer to
+        # eliminate inter-callback timing dependencies.
+        "_pending_unknown_events": [],
+        # Whether a known-device event was seen during the current burst.
+        # If True, ALL pending unknown events are phantoms.
+        "_burst_has_known": False,
+        # Whether a batch timer is already scheduled.
+        "_burst_timer_set": False,
     }
 
     @callback
@@ -524,10 +517,11 @@ def _handle_raw_event(
     automatic_add = entry.options.get(CONF_AUTOMATIC_ADD, DEFAULT_AUTOMATIC_ADD)
 
     if device_uid in stored_devices:
-        # Known device — record timestamp so we can suppress false-positive
-        # unknown events from the same RF signal (they arrive within ms).
+        # Known device — record timestamp AND mark current burst so that
+        # all pending unknown events from the same RF signal are suppressed.
         entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
         entry_data["_last_known_event_time"] = time.monotonic()
+        entry_data["_burst_has_known"] = True
         # Fire SIGNAL_NEW_DEVICE so platforms can revive entities after a
         # restart (the entity is pre-created from stored config, but the
         # signal lets late-starting platforms pick it up).
@@ -535,40 +529,89 @@ def _handle_raw_event(
             hass, SIGNAL_NEW_DEVICE.format(entry.entry_id), event
         )
     else:
-        # Unknown device — defer processing to allow known-device events
-        # from the same RF signal to arrive first and set the timestamp.
-        # Without deferral, phantoms like sartano/codeswitch slip through
-        # when they arrive before the real arctech event.  Issue #33.
-        hass.loop.call_later(
-            _PHANTOM_DEFER_SECS,
-            _process_unknown_event,
-            hass, entry, device_uid, params, event, automatic_add,
-        )
+        # Unknown device — collect into a pending batch.  A single timer
+        # processes the entire batch after _BURST_COLLECT_SECS.  Only the
+        # FIRST unknown event from each burst is kept; all others are
+        # discarded as cross-decode phantoms.  This replaces the previous
+        # individual call_later-per-event approach that relied on fragile
+        # inter-callback timing.  Issue #33.
+        entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
+        pending: list = entry_data.get("_pending_unknown_events", [])
+        pending.append((device_uid, params, event, automatic_add))
+        if not entry_data.get("_burst_timer_set"):
+            entry_data["_burst_timer_set"] = True
+            hass.loop.call_later(
+                _BURST_COLLECT_SECS,
+                _process_pending_burst,
+                hass, entry,
+            )
 
 
 @callback
-def _process_unknown_event(
+def _process_pending_burst(
     hass: HomeAssistant,
     entry: ConfigEntry,
-    device_uid: str,
-    params: dict[str, str],
-    event: RawDeviceEvent,
-    automatic_add: bool,
 ) -> None:
-    """Process an unknown-device event after a short deferral.
+    """Process a batch of unknown-device events from one RF signal burst.
 
-    Called by ``loop.call_later`` so that known-device events from the
-    same RF signal have time to set ``_last_known_event_time``.
+    Called by a SINGLE ``loop.call_later`` timer after ``_BURST_COLLECT_SECS``.
+    All cross-decode events from the same RF signal are collected in
+    ``_pending_unknown_events`` and processed together.  Only the **first**
+    event in the batch is acted on; all others are suppressed as phantoms.
+
+    If a known-device event was seen during the burst (``_burst_has_known``),
+    ALL unknown events are suppressed — they are false-positive cross-decodes
+    of the known device's RF signal.
     """
-    # Guard: integration may have been unloaded during the delay.
     entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
     if entry_data is None:
         return
 
-    if automatic_add:
-        _auto_add_device(hass, entry, device_uid, params, event)
+    # Harvest and reset batch state
+    pending = entry_data.get("_pending_unknown_events", [])
+    burst_has_known = entry_data.get("_burst_has_known", False)
+    entry_data["_pending_unknown_events"] = []
+    entry_data["_burst_has_known"] = False
+    entry_data["_burst_timer_set"] = False
+
+    if not pending:
+        return
+
+    discovered: set[str] = entry_data.get("_discovered_uids", set())
+
+    # Also check the known-device shadow timestamp as a safety net.
+    # This catches the case where the known device event set the timestamp
+    # but _burst_has_known was already reset by a prior burst.
+    last_known = entry_data.get("_last_known_event_time", 0.0)
+    now = time.monotonic()
+    if burst_has_known or (now - last_known < _KNOWN_DEVICE_SHADOW_SECS):
+        # A known device was in this burst — all unknowns are phantoms.
+        for device_uid, _params, _event, _auto in pending:
+            discovered.add(device_uid)
+        _LOGGER.debug(
+            "Suppressed %d phantom event(s) (known device in burst)",
+            len(pending),
+        )
+        return
+
+    # All events are unknown.  Process only the FIRST one (highest-priority
+    # protocol — Protocol.cpp decodes ProtocolNexa/arctech first).
+    first_uid, first_params, first_event, first_auto = pending[0]
+
+    # Mark all UIDs as discovered so they're not processed again.
+    for device_uid, _params, _event, _auto in pending:
+        discovered.add(device_uid)
+
+    if len(pending) > 1:
+        _LOGGER.debug(
+            "Burst: keeping %s, suppressing %d phantom(s)",
+            first_uid, len(pending) - 1,
+        )
+
+    if first_auto:
+        _auto_add_device(hass, entry, first_uid, first_params, first_event)
     else:
-        _fire_device_discovery(hass, entry, device_uid, params)
+        _fire_device_discovery(hass, entry, first_uid, first_params)
 
 
 def _fire_device_discovery(
@@ -577,7 +620,13 @@ def _fire_device_discovery(
     device_uid: str,
     params: dict[str, str],
 ) -> None:
-    """Fire an integration_discovery config flow for a new 433 MHz device."""
+    """Fire an integration_discovery config flow for a new 433 MHz device.
+
+    Called by ``_process_pending_burst`` for the first unknown event in a
+    batch.  Cross-decode phantom suppression is handled by the batch
+    processor; this function provides secondary dedup (UID, ignored,
+    protocol+model).
+    """
     entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
     discovered: set[str] = entry_data.get("_discovered_uids", set())
 
@@ -590,43 +639,22 @@ def _fire_device_discovery(
         discovered.add(device_uid)
         return
 
-    # Suppress false positives from a known device's RF signal.
-    # Protocol.cpp decodes arctech first, so the known-device event
-    # (if any) has already been processed and set the timestamp.
-    last_known = entry_data.get("_last_known_event_time", 0.0)
-    now = time.monotonic()
-    if now - last_known < _KNOWN_DEVICE_SHADOW_SECS:
-        discovered.add(device_uid)
-        return
-
-    # Suppress cross-protocol phantom discoveries.  Identical protocols
-    # (e.g. sartano + x10) decode the same RF signal with different
-    # protocol names.  The first decode triggers a discovery; subsequent
-    # decodes within the window are phantoms.  Issue #33.
-    last_fire = entry_data.get("_last_discovery_fire_time", 0.0)
-    if now - last_fire < _CROSS_DECODE_WINDOW_SECS:
-        discovered.add(device_uid)
-        return
-
     # Deduplicate by protocol+model, matching TelldusCenter's approach
-    # (filtereddeviceproxymodel.cpp:60-70).  telldusd fires ALL protocol
-    # decoders on every RF signal, and some devices decode with different
-    # house/unit values on each transmission.  We only fire one discovery
-    # flow per unique protocol+model combination.
+    # (filtereddeviceproxymodel.cpp:60-70).  Some devices produce different
+    # house/unit values on each transmission (unstable UID).  We only fire
+    # one discovery flow per unique protocol+model combination.
     protocol = params.get("protocol", "")
     model = params.get("model", "")
     proto_model_key = f"{protocol}_{model}"
-    seen_proto_models: set[str] = entry_data["_discovered_protocol_models"]
+    seen_proto_models: set[str] = entry_data.get(
+        "_discovered_protocol_models", set()
+    )
     if proto_model_key in seen_proto_models:
         discovered.add(device_uid)
-        # Still update fire time so cross-decode phantoms from this RF
-        # signal are suppressed (e.g. sartano from an arctech signal).
-        entry_data["_last_discovery_fire_time"] = now
         return
     seen_proto_models.add(proto_model_key)
 
     discovered.add(device_uid)
-    entry_data["_last_discovery_fire_time"] = now
     hass.async_create_task(
         hass.config_entries.flow.async_init(
             DOMAIN,
@@ -651,7 +679,13 @@ def _auto_add_device(
     params: dict[str, str],
     event: RawDeviceEvent,
 ) -> None:
-    """Auto-add a new device: persist in options, register with telldusd, fire signal."""
+    """Auto-add a new device: persist in options, register with telldusd, fire signal.
+
+    Called by ``_process_pending_burst`` for the first unknown event in a
+    batch.  Cross-decode phantom suppression is handled by the batch
+    processor; this function provides secondary dedup (UID, ignored,
+    protocol+model).
+    """
     entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
     discovered: set[str] = entry_data.get("_discovered_uids", set())
     if device_uid in discovered:
@@ -663,18 +697,6 @@ def _auto_add_device(
     if device_uid in ignored_uids:
         return
 
-    # Suppress false positives from a known device's RF signal.
-    last_known = entry_data.get("_last_known_event_time", 0.0)
-    now = time.monotonic()
-    if now - last_known < _KNOWN_DEVICE_SHADOW_SECS:
-        return
-
-    # Suppress cross-protocol phantoms (same RF signal decoded as
-    # different protocols, e.g. sartano + x10).  Issue #33.
-    last_fire = entry_data.get("_last_discovery_fire_time", 0.0)
-    if now - last_fire < _CROSS_DECODE_WINDOW_SECS:
-        return
-
     protocol = params.get("protocol", "")
     model = params.get("model", "")
 
@@ -682,19 +704,16 @@ def _auto_add_device(
     # (filtereddeviceproxymodel.cpp:60-70).  Only auto-add the first
     # event for each protocol+model combination per session.
     proto_model_key = f"{protocol}_{model}"
-    seen_proto_models: set[str] = entry_data["_discovered_protocol_models"]
+    seen_proto_models: set[str] = entry_data.get(
+        "_discovered_protocol_models", set()
+    )
     if proto_model_key in seen_proto_models:
-        # Still update fire time so cross-decode phantoms from this RF
-        # signal are suppressed (e.g. sartano from an arctech signal).
-        entry_data["_last_discovery_fire_time"] = now
         return
     seen_proto_models.add(proto_model_key)
 
     house = params.get("house", "")
     unit = params.get("unit", params.get("code", ""))
     name = f"TellStick {device_uid}"
-
-    entry_data["_last_discovery_fire_time"] = now
 
     # Persist immediately
     existing_devices = dict(entry.options.get(CONF_DEVICES, {}))
