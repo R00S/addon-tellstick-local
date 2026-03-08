@@ -536,7 +536,7 @@ def _handle_raw_event(
         # individual call_later-per-event approach that relied on fragile
         # inter-callback timing.  Issue #33.
         entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
-        pending: list = entry_data.get("_pending_unknown_events", [])
+        pending: list = entry_data.setdefault("_pending_unknown_events", [])
         pending.append((device_uid, params, event, automatic_add))
         if not entry_data.get("_burst_timer_set"):
             entry_data["_burst_timer_set"] = True
