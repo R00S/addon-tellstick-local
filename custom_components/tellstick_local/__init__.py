@@ -32,6 +32,7 @@ from .client import (
 from .const import (
     CONF_AUTOMATIC_ADD,
     CONF_COMMAND_PORT,
+    CONF_DETECT_SARTANO,
     CONF_DEVICE_HOUSE,
     CONF_DEVICE_MODEL,
     CONF_DEVICE_NAME,
@@ -41,6 +42,7 @@ from .const import (
     CONF_EVENT_PORT,
     CONF_IGNORED_UIDS,
     DEFAULT_AUTOMATIC_ADD,
+    DEFAULT_DETECT_SARTANO,
     DOMAIN,
     ENTRY_DEVICE_ID_MAP,
     ENTRY_TELLSTICK_CONTROLLER,
@@ -115,6 +117,26 @@ _LOGGER = logging.getLogger(__name__)
 # (Protocol.cpp decodes sequentially: ProtocolNexa → ProtocolWaveman →
 # ProtocolSartano).  1 second gives ample margin.
 _KNOWN_DEVICE_SHADOW_SECS = 1.0
+
+# Seconds to suppress cross-protocol phantom discoveries.  telldusd runs
+# ALL protocol decoders on every RF signal — identical protocols like
+# sartano + x10 both decode the same signal, producing two "new" events
+# with different protocol names but the same physical device.  The first
+# decode triggers a discovery/auto-add; subsequent decodes within this
+# window are suppressed as phantoms.  500 ms is generous (cross-decodes
+# arrive within ~100 ms) while short enough to not block a user pressing
+# two different buttons in quick succession.
+_CROSS_DECODE_WINDOW_SECS = 0.5
+
+# Seconds to defer processing of unknown-device events.  When a door
+# sensor fires, telldusd decodes the RF signal as BOTH the real device
+# (arctech/selflearning) AND a phantom (sartano/codeswitch).  Previous
+# timing-only suppression assumed arctech events always arrived first,
+# but event ordering through socat/TCP is not guaranteed.  By deferring
+# unknown-event processing, we ensure the known-device event has time
+# to set _last_known_event_time before the phantom is evaluated.
+# 300 ms is invisible to the user but 3× the ~100 ms cross-decode window.
+_PHANTOM_DEFER_SECS = 0.3
 
 # Sensor data-type → suffix (mirrors sensor.py _SENSOR_META keys)
 _SENSOR_SUFFIX: dict[int, str] = {1: "temperature", 2: "humidity"}
@@ -273,6 +295,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # → ProtocolSartano), so known-device events always arrive before
         # their cross-protocol false positives.
         "_last_known_event_time": 0.0,
+        # Timestamp of the last discovery/auto-add event that was actually
+        # fired (not suppressed).  Used to suppress cross-protocol phantom
+        # discoveries: sartano+x10 decode the same RF signal, but only the
+        # first decode should trigger a discovery.  Issue #33.
+        "_last_discovery_fire_time": 0.0,
     }
 
     @callback
@@ -385,26 +412,55 @@ async def async_remove_config_entry_device(
         ENTRY_TELLSTICK_CONTROLLER
     )
     device_id_map: dict[str, int] = entry_data.get(ENTRY_DEVICE_ID_MAP, {})
-    if controller and device_uid in device_id_map:
-        try:
-            await controller.remove_device(device_id_map[device_uid])
-        except Exception:  # noqa: BLE001
-            _LOGGER.warning(
-                "Could not remove device %s from telldusd", device_uid
-            )
-        device_id_map.pop(device_uid, None)
+    discovered: set[str] = entry_data.get("_discovered_uids", set())
 
-    # Remove from stored devices if present
+    # Sensor devices use identifier "sensor_{sensor_id}" (no type suffix).
+    # Stored entries are "sensor_{sensor_id}_temperature" / "_humidity".
+    # Find and remove ALL matching entries.
     stored_devices: dict[str, Any] = dict(entry.options.get(CONF_DEVICES, {}))
-    if device_uid in stored_devices:
+    removed_any = False
+
+    if device_uid.startswith("sensor_") and device_uid in stored_devices:
+        # Exact match (unlikely — sensors use sensor_{id} without suffix)
         del stored_devices[device_uid]
+        removed_any = True
+        discovered.discard(device_uid)
+    elif device_uid.startswith("sensor_"):
+        # Shared identifier format: sensor_{sensor_id}
+        # Remove all entries: sensor_{id}_temperature, sensor_{id}_humidity
+        sensor_prefix = f"{device_uid}_"
+        for uid in list(stored_devices.keys()):
+            if uid.startswith(sensor_prefix):
+                del stored_devices[uid]
+                removed_any = True
+                discovered.discard(uid)
+                # Remove from telldusd map
+                if controller and uid in device_id_map:
+                    try:
+                        await controller.remove_device(device_id_map[uid])
+                    except Exception:  # noqa: BLE001
+                        _LOGGER.warning(
+                            "Could not remove %s from telldusd", uid
+                        )
+                    device_id_map.pop(uid, None)
+    elif device_uid in stored_devices:
+        # Non-sensor device: exact UID match
+        del stored_devices[device_uid]
+        removed_any = True
+        discovered.discard(device_uid)
+        if controller and device_uid in device_id_map:
+            try:
+                await controller.remove_device(device_id_map[device_uid])
+            except Exception:  # noqa: BLE001
+                _LOGGER.warning(
+                    "Could not remove device %s from telldusd", device_uid
+                )
+            device_id_map.pop(device_uid, None)
+
+    if removed_any:
         new_options = dict(entry.options)
         new_options[CONF_DEVICES] = stored_devices
         hass.config_entries.async_update_entry(entry, options=new_options)
-
-    # Allow re-discovery if the device sends again
-    discovered: set[str] = entry_data.get("_discovered_uids", set())
-    discovered.discard(device_uid)
 
     return True
 
@@ -480,13 +536,54 @@ def _handle_raw_event(
         async_dispatcher_send(
             hass, SIGNAL_NEW_DEVICE.format(entry.entry_id), event
         )
-    elif automatic_add:
-        # Auto-add mode: immediately add the device and fire signal
+    else:
+        # Unknown device — defer processing to allow known-device events
+        # from the same RF signal to arrive first and set the timestamp.
+        # Without deferral, phantoms like sartano/codeswitch slip through
+        # when they arrive before the real arctech event.  Issue #33.
+        hass.loop.call_later(
+            _PHANTOM_DEFER_SECS,
+            _process_unknown_event,
+            hass, entry, device_uid, params, event, automatic_add,
+        )
+
+
+@callback
+def _process_unknown_event(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    device_uid: str,
+    params: dict[str, str],
+    event: RawDeviceEvent,
+    automatic_add: bool,
+) -> None:
+    """Process an unknown-device event after a short deferral.
+
+    Called by ``loop.call_later`` so that known-device events from the
+    same RF signal have time to set ``_last_known_event_time``.
+    """
+    # Guard: integration may have been unloaded during the delay.
+    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    if entry_data is None:
+        return
+
+    # Sartano/codeswitch opt-in: skip auto-detection of sartano protocol
+    # unless the user has explicitly enabled it.  telldusd cross-decodes
+    # arctech signals as sartano phantoms; this is the simplest workaround.
+    protocol = params.get("protocol", "")
+    if protocol == "sartano":
+        detect_sartano = entry.options.get(
+            CONF_DETECT_SARTANO, DEFAULT_DETECT_SARTANO
+        )
+        if not detect_sartano:
+            _LOGGER.debug(
+                "Ignoring sartano event %s (detect_sartano is off)", device_uid
+            )
+            return
+
+    if automatic_add:
         _auto_add_device(hass, entry, device_uid, params, event)
     else:
-        # Discovery mode: fire a discovery config flow.  The device will
-        # appear in the "Discovered" section of Settings → Devices & Services.
-        # The user clicks Configure → names it → it becomes a stored device.
         _fire_device_discovery(hass, entry, device_uid, params)
 
 
@@ -513,7 +610,17 @@ def _fire_device_discovery(
     # Protocol.cpp decodes arctech first, so the known-device event
     # (if any) has already been processed and set the timestamp.
     last_known = entry_data.get("_last_known_event_time", 0.0)
-    if time.monotonic() - last_known < _KNOWN_DEVICE_SHADOW_SECS:
+    now = time.monotonic()
+    if now - last_known < _KNOWN_DEVICE_SHADOW_SECS:
+        discovered.add(device_uid)
+        return
+
+    # Suppress cross-protocol phantom discoveries.  Identical protocols
+    # (e.g. sartano + x10) decode the same RF signal with different
+    # protocol names.  The first decode triggers a discovery; subsequent
+    # decodes within the window are phantoms.  Issue #33.
+    last_fire = entry_data.get("_last_discovery_fire_time", 0.0)
+    if now - last_fire < _CROSS_DECODE_WINDOW_SECS:
         discovered.add(device_uid)
         return
 
@@ -528,10 +635,14 @@ def _fire_device_discovery(
     seen_proto_models: set[str] = entry_data["_discovered_protocol_models"]
     if proto_model_key in seen_proto_models:
         discovered.add(device_uid)
+        # Still update fire time so cross-decode phantoms from this RF
+        # signal are suppressed (e.g. sartano from an arctech signal).
+        entry_data["_last_discovery_fire_time"] = now
         return
     seen_proto_models.add(proto_model_key)
 
     discovered.add(device_uid)
+    entry_data["_last_discovery_fire_time"] = now
     hass.async_create_task(
         hass.config_entries.flow.async_init(
             DOMAIN,
@@ -570,7 +681,14 @@ def _auto_add_device(
 
     # Suppress false positives from a known device's RF signal.
     last_known = entry_data.get("_last_known_event_time", 0.0)
-    if time.monotonic() - last_known < _KNOWN_DEVICE_SHADOW_SECS:
+    now = time.monotonic()
+    if now - last_known < _KNOWN_DEVICE_SHADOW_SECS:
+        return
+
+    # Suppress cross-protocol phantoms (same RF signal decoded as
+    # different protocols, e.g. sartano + x10).  Issue #33.
+    last_fire = entry_data.get("_last_discovery_fire_time", 0.0)
+    if now - last_fire < _CROSS_DECODE_WINDOW_SECS:
         return
 
     protocol = params.get("protocol", "")
@@ -582,12 +700,17 @@ def _auto_add_device(
     proto_model_key = f"{protocol}_{model}"
     seen_proto_models: set[str] = entry_data["_discovered_protocol_models"]
     if proto_model_key in seen_proto_models:
+        # Still update fire time so cross-decode phantoms from this RF
+        # signal are suppressed (e.g. sartano from an arctech signal).
+        entry_data["_last_discovery_fire_time"] = now
         return
     seen_proto_models.add(proto_model_key)
 
     house = params.get("house", "")
     unit = params.get("unit", params.get("code", ""))
     name = f"TellStick {device_uid}"
+
+    entry_data["_last_discovery_fire_time"] = now
 
     # Persist immediately
     existing_devices = dict(entry.options.get(CONF_DEVICES, {}))
@@ -669,6 +792,38 @@ def _handle_sensor_event(
         async_dispatcher_send(
             hass, SIGNAL_NEW_DEVICE.format(entry.entry_id), event
         )
+        # Auto-persist this data_type if not already stored.  After a
+        # migration or add-as-new for one data_type, the companion
+        # (temp↔hum) arrives later and must also be persisted so it
+        # survives restarts.  Issue #33.
+        if suffix:
+            sensor_uid = f"sensor_{event.sensor_id}_{suffix}"
+            if sensor_uid not in stored_devices:
+                # Derive device name from existing companion entry
+                base_name = ""
+                for uid, cfg in stored_devices.items():
+                    if uid.startswith(sensor_prefix):
+                        base_name = cfg.get(CONF_DEVICE_NAME, "")
+                        break
+                for s in ("temperature", "humidity"):
+                    if base_name.lower().endswith(f" {s}"):
+                        base_name = base_name[: -(len(s) + 1)]
+                        break
+                if not base_name:
+                    base_name = f"TellStick sensor {event.sensor_id}"
+                existing_devices = dict(stored_devices)
+                existing_devices[sensor_uid] = {
+                    CONF_DEVICE_NAME: f"{base_name} {suffix}",
+                    CONF_DEVICE_PROTOCOL: event.protocol or "",
+                    CONF_DEVICE_MODEL: event.model or "",
+                    "sensor_id": event.sensor_id,
+                    "data_type": event.data_type,
+                }
+                new_options = dict(entry.options)
+                new_options[CONF_DEVICES] = existing_devices
+                hass.config_entries.async_update_entry(
+                    entry, options=new_options
+                )
     elif suffix and automatic_add:
         # Auto-add: persist sensor and fire signal
         sensor_uid = f"sensor_{event.sensor_id}_{suffix}"
@@ -692,12 +847,21 @@ def _handle_sensor_event(
                 hass, SIGNAL_NEW_DEVICE.format(entry.entry_id), event
             )
     elif suffix:
-        # Unknown sensor — fire a discovery config flow
+        # Unknown sensor — fire a discovery config flow.
+        # Deduplicate by sensor_id (not by individual data_type) so
+        # only ONE discovery flow fires per physical sensor.  A temp+hum
+        # sensor sends separate events for each type; without this,
+        # the user sees two "Add" entries for the same sensor.  Issue #33.
+        sensor_dedup = f"sensor_{event.sensor_id}"
         sensor_uid = f"sensor_{event.sensor_id}_{suffix}"
         entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
         discovered: set[str] = entry_data.get("_discovered_uids", set())
         ignored_uids = entry.options.get(CONF_IGNORED_UIDS, {})
-        if sensor_uid not in discovered and sensor_uid not in ignored_uids:
+        if (
+            sensor_dedup not in discovered
+            and sensor_uid not in ignored_uids
+        ):
+            discovered.add(sensor_dedup)
             discovered.add(sensor_uid)
             hass.async_create_task(
                 hass.config_entries.flow.async_init(

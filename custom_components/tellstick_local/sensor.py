@@ -88,7 +88,13 @@ async def async_setup_entry(
         known.add(uid)
         protocol = event.protocol or ""
         model = event.model or ""
-        name = f"TellStick sensor {event.sensor_id} {suffix}"
+        # Use stored name from entry options when available (e.g. after
+        # discovery Add flow sets a user-provided name).  Fall back to
+        # the default sensor name.
+        stored_cfg = entry.options.get(CONF_DEVICES, {}).get(uid, {})
+        name = stored_cfg.get(
+            CONF_DEVICE_NAME, f"TellStick sensor {event.sensor_id} {suffix}"
+        )
         entity = TellStickSensor(
             entry_id=entry.entry_id,
             device_uid=uid,

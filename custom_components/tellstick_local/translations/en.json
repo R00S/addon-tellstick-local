@@ -72,7 +72,8 @@
       "settings": {
         "title": "TellStick Local settings",
         "data": {
-          "automatic_add": "Automatically add new devices (when off, new devices appear as 'Discovered' for manual confirmation)"
+          "automatic_add": "Automatically add new devices (when off, new devices appear as 'Discovered' for manual confirmation)",
+          "detect_sartano": "Detect sartano/codeswitch devices (off by default — arctech signals are often falsely decoded as sartano)"
         }
       },
       "manage_device": {
