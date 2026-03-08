@@ -877,6 +877,13 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
         cfg = devices.get(uid, {})
         name = cfg.get(CONF_DEVICE_NAME, uid)
 
+        # Show base name for grouped sensors
+        if uid.startswith("sensor_"):
+            for s in ("temperature", "humidity"):
+                if name.lower().endswith(f" {s}"):
+                    name = name[: -(len(s) + 1)]
+                    break
+
         menu_options = ["device_detail"]
         menu_options.append("delete_device")
 
@@ -1078,7 +1085,6 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             ignore = user_input.get("ignore", True)
 
-            # Remove from telldusd
             entry_data = self.hass.data.get(DOMAIN, {}).get(
                 self.config_entry.entry_id, {}
             )
@@ -1088,39 +1094,79 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
             device_id_map: dict[str, int] = entry_data.get(
                 ENTRY_DEVICE_ID_MAP, {}
             )
-            if controller and uid in device_id_map:
-                try:
-                    await controller.remove_device(device_id_map[uid])
-                except Exception:  # noqa: BLE001
-                    _LOGGER.warning("Could not remove %s from telldusd", uid)
-                device_id_map.pop(uid, None)
-
-            # Remove from device registry
+            discovered: set[str] = entry_data.get("_discovered_uids", set())
             dev_reg = dr.async_get(self.hass)
+
+            # For sensors: collect all entries for the same sensor_id
+            # (temp + hum share one physical device).
+            uids_to_remove = [uid]
+            if uid.startswith("sensor_"):
+                sensor_id = cfg.get("sensor_id")
+                if sensor_id is not None:
+                    for other_uid, other_cfg in devices.items():
+                        if (
+                            other_uid != uid
+                            and other_uid.startswith("sensor_")
+                            and other_cfg.get("sensor_id") == sensor_id
+                        ):
+                            uids_to_remove.append(other_uid)
+
+            new_devices = dict(devices)
+            ignored = dict(
+                self.config_entry.options.get(CONF_IGNORED_UIDS, {})
+            )
+
+            for remove_uid in uids_to_remove:
+                remove_cfg = new_devices.pop(remove_uid, {})
+
+                # Remove from telldusd
+                if controller and remove_uid in device_id_map:
+                    try:
+                        await controller.remove_device(
+                            device_id_map[remove_uid]
+                        )
+                    except Exception:  # noqa: BLE001
+                        _LOGGER.warning(
+                            "Could not remove %s from telldusd", remove_uid
+                        )
+                    device_id_map.pop(remove_uid, None)
+
+                if ignore:
+                    ignored[remove_uid] = remove_cfg.get(
+                        CONF_DEVICE_NAME, remove_uid
+                    )
+
+                discovered.discard(remove_uid)
+
+            # Remove from device registry.  Sensors use a shared device
+            # identifier: sensor_{sensor_id} (no type suffix).
+            if uid.startswith("sensor_"):
+                sensor_id = cfg.get("sensor_id")
+                dev_key = f"sensor_{sensor_id}" if sensor_id else uid
+            else:
+                dev_key = uid
             device_entry = dev_reg.async_get_device(
                 identifiers={
-                    (DOMAIN, f"{self.config_entry.entry_id}_{uid}")
+                    (DOMAIN, f"{self.config_entry.entry_id}_{dev_key}")
                 }
             )
             if device_entry:
                 dev_reg.async_remove_device(device_entry.id)
 
-            # Update options
-            new_devices = dict(devices)
-            new_devices.pop(uid, None)
             new_options = dict(self.config_entry.options)
             new_options[CONF_DEVICES] = new_devices
-
             if ignore:
-                ignored = dict(new_options.get(CONF_IGNORED_UIDS, {}))
-                ignored[uid] = cfg.get(CONF_DEVICE_NAME, uid)
                 new_options[CONF_IGNORED_UIDS] = ignored
 
-            # Allow re-discovery if not ignoring
-            discovered: set[str] = entry_data.get("_discovered_uids", set())
-            discovered.discard(uid)
-
             return self.async_create_entry(title="", data=new_options)
+
+        # Show base name for grouped sensors
+        name = cfg.get(CONF_DEVICE_NAME, uid)
+        if uid.startswith("sensor_"):
+            for s in ("temperature", "humidity"):
+                if name.lower().endswith(f" {s}"):
+                    name = name[: -(len(s) + 1)]
+                    break
 
         return self.async_show_form(
             step_id="delete_device",
@@ -1130,7 +1176,7 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                 }
             ),
             description_placeholders={
-                "name": cfg.get(CONF_DEVICE_NAME, uid),
+                "name": name,
             },
         )
 
@@ -1172,7 +1218,24 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                 self.config_entry.options.get(CONF_IGNORED_UIDS, {})
             )
 
+            # Expand selection to include companion sensor entries
+            all_uids: list[str] = []
             for uid in selected:
+                all_uids.append(uid)
+                if uid.startswith("sensor_"):
+                    sel_cfg = new_devices.get(uid, {})
+                    sid = sel_cfg.get("sensor_id")
+                    if sid is not None:
+                        for o_uid, o_cfg in new_devices.items():
+                            if (
+                                o_uid != uid
+                                and o_uid.startswith("sensor_")
+                                and o_cfg.get("sensor_id") == sid
+                                and o_uid not in all_uids
+                            ):
+                                all_uids.append(o_uid)
+
+            for uid in all_uids:
                 cfg = new_devices.pop(uid, {})
 
                 # Remove from telldusd
@@ -1183,10 +1246,16 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                         pass
                     device_id_map.pop(uid, None)
 
-                # Remove from device registry
+                # Remove from device registry.  Sensors use shared device
+                # identifier: sensor_{sensor_id} (no type suffix).
+                if uid.startswith("sensor_"):
+                    sensor_id = cfg.get("sensor_id")
+                    dev_key = f"sensor_{sensor_id}" if sensor_id else uid
+                else:
+                    dev_key = uid
                 device_entry = dev_reg.async_get_device(
                     identifiers={
-                        (DOMAIN, f"{self.config_entry.entry_id}_{uid}")
+                        (DOMAIN, f"{self.config_entry.entry_id}_{dev_key}")
                     }
                 )
                 if device_entry:
@@ -1203,9 +1272,21 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                 new_options[CONF_IGNORED_UIDS] = ignored
             return self.async_create_entry(title="", data=new_options)
 
+        # Group sensors by sensor_id in the multi-select
         labels: dict[str, str] = {}
+        seen_sensor_ids: set[int] = set()
         for uid, cfg in devices.items():
-            labels[uid] = _build_device_label(uid, cfg)
+            if uid.startswith("sensor_"):
+                sid = cfg.get("sensor_id")
+                if sid is not None and sid in seen_sensor_ids:
+                    continue
+                if sid is not None:
+                    seen_sensor_ids.add(sid)
+                labels[uid] = _build_device_label(
+                    uid, cfg, sensor_grouped=True
+                )
+            else:
+                labels[uid] = _build_device_label(uid, cfg)
 
         return self.async_show_form(
             step_id="remove_devices",
