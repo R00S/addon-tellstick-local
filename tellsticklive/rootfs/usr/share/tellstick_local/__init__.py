@@ -546,6 +546,7 @@ def _handle_raw_event(
         )
 
 
+@callback
 def _process_unknown_event(
     hass: HomeAssistant,
     entry: ConfigEntry,
