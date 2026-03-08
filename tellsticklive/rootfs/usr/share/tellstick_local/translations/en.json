@@ -1,118 +1,187 @@
 {
-  "config": {
-    "flow_title": "TellStick: {name}",
-    "step": {
-      "hassio_confirm": {
-        "title": "TellStick Local detected",
-        "description": "The **{addon}** app is running and ready.\n\nIt will connect on **{host}** (command port **{command_port}**, event port **{event_port}**).\n\nClick **Submit** to set up TellStick Local."
-      },
-      "user": {
-        "title": "Connect to TellStick daemon",
-        "description": "Enter the host and port of the TellStick Local app.",
-        "data": {
-          "host": "Host",
-          "command_port": "Command port",
-          "event_port": "Event port"
+    "entity": {
+        "button": {
+            "learn": {
+                "name": "Send learn signal"
+            }
         }
-      },
-      "confirm_rf_device": {
-        "title": "New 433 MHz device detected",
-        "description": "A 433 MHz device was detected via RF signal:\n\n- **Protocol:** {protocol}\n- **Model:** {model}\n- **House:** {house}\n- **Unit:** {unit}\n- **UID:** {device_uid}\n\nGive it a name and click **Submit** to add it.",
-        "data": {
-          "name": "Device name"
-        }
-      }
     },
-    "error": {
-      "cannot_connect": "Cannot connect to the TellStick daemon. Check that the app is running and the host/ports are correct.",
-      "unknown": "Unexpected error. See logs for details."
+    "issues": {
+        "restart_required": {
+            "title": "Restart required — TellStick Local v{new_version} installed",
+            "description": "The TellStick Local app installed integration **v{new_version}** (currently loaded: v{current_version}).\n\nRestart Home Assistant to activate the new version."
+        }
     },
-    "abort": {
-      "already_configured": "This TellStick daemon is already configured.",
-      "already_added": "This device is already added.",
-      "device_added": "Device added successfully! It will appear in your device list.",
-      "entry_not_found": "TellStick Local integration not found. Please set it up first."
-    }
-  },
-  "options": {
-    "step": {
-      "init": {
-        "menu_options": {
-          "settings": "Settings",
-          "edit_device": "View / edit a device"
-        }
-      },
-      "settings": {
-        "title": "TellStick Local settings",
-        "data": {
-          "automatic_add": "Automatically add new devices (when off, new devices appear as 'Discovered' for manual confirmation)"
-        }
-      },
-      "edit_device": {
-        "title": "Select a device",
-        "description": "Pick a device to view or edit its house/unit codes.",
-        "data": {
-          "device": "Device"
-        }
-      },
-      "device_detail": {
-        "title": "Edit device: {device_uid}",
-        "description": "Protocol: **{protocol}** / Model: **{model}**\n\nChange the name or house/unit codes below.",
-        "data": {
-          "name": "Device name",
-          "house": "House code",
-          "unit": "Unit code"
-        }
-      }
-    },
-    "abort": {
-      "no_devices": "No devices to edit."
-    }
-  },
-  "config_subentries": {
-    "device": {
-      "initiate_flow": {
-        "user": "Add 433 MHz device"
-      },
-      "step": {
-        "user": {
-          "title": "Add a device",
-          "description": "Pick your device type and give it a name.",
-          "data": {
-            "name": "Device name",
-            "device_type": "Device type"
-          }
+    "config": {
+        "flow_title": "TellStick: {name}",
+        "step": {
+            "hassio_confirm": {
+                "title": "TellStick Local detected",
+                "description": "The **{addon}** app is running and ready.\n\nIt will connect on **{host}** (command port **{command_port}**, event port **{event_port}**).\n\nClick **Submit** to set up TellStick Local."
+            },
+            "user": {
+                "title": "Connect to TellStick daemon",
+                "description": "Enter the host and ports of the TellStick Local app.\n\nFind the correct hostname in the **app log** — look for the line `use host: …`. For apps installed from a custom repository the hostname includes a prefix (e.g. `e9305338-tellsticklive`).",
+                "data": {
+                    "host": "Host",
+                    "command_port": "Command port",
+                    "event_port": "Event port"
+                },
+                "data_description": {
+                    "host": "Hostname of the TellStick Local app. Check the app log for the `use host:` line to find the correct value.",
+                    "command_port": "TCP port for TellStick commands (default: 50800).",
+                    "event_port": "TCP port for TellStick events (default: 50801)."
+                }
+            },
+            "add_rf_device": {
+                "title": "New 433 MHz device detected",
+                "description": "A 433 MHz device was detected via RF signal:\n\n- **Protocol:** {protocol}\n- **Model:** {model}\n- **House:** {house}\n- **Unit:** {unit}\n- **UID:** {device_uid}\n\nGive the device a name and click **Submit** to add it. You can also select an existing device to replace (e.g. after battery change), or check **Ignore** to hide it.",
+                "data": {
+                    "name": "Device name",
+                    "replace_device": "Replace existing device",
+                    "ignore": "Ignore this device"
+                },
+                "data_description": {
+                    "ignore": "Check to permanently hide this device. You can un-ignore it later from integration options."
+                }
+            }
         },
-        "params": {
-          "title": "Device parameters",
-          "description": "Enter the parameters for **{device_type}**. Ranges and defaults match the hardware.",
-          "data": {
-            "house": "House code",
-            "unit": "Unit code",
-            "code": "Code (10 digits, 0 or 1)",
-            "system": "System",
-            "units": "Units (comma-separated, 1–10)",
-            "fade": "Fade (smooth)"
-          }
+        "error": {
+            "cannot_connect": "Cannot connect to the TellStick daemon. Check that the app is running and the host/ports are correct.",
+            "unknown": "Unexpected error. See logs for details."
         },
-        "confirm": {
-          "title": "Send pairing signal",
-          "description": "**{name}** ({protocol}/{model}) will learn house code **{house}**, unit **{unit}**.\n\nPut your 433 MHz receiver in **learn mode** now, then click **Submit** — the pairing signal is sent immediately."
+        "abort": {
+            "already_configured": "This TellStick daemon is already configured.",
+            "already_added": "This device is already added.",
+            "device_added": "Device added successfully! It will appear in your device list.",
+            "device_replaced": "Device replaced successfully! The existing entity now uses the new device ID. History and entity ID are preserved.",
+            "device_ignored": "Device ignored. It will no longer appear as discovered. You can un-ignore it from the integration options.",
+            "entry_not_found": "TellStick Local integration not found. Please set it up first."
         }
-      },
-      "error": {
-        "invalid_code": "Parameter values must not be empty.",
-        "teach_failed": "Failed to send pairing signal. Check that the TellStick app is running."
-      },
-      "abort": {
-        "device_added": "Device paired successfully! It will appear in your device list shortly."
-      }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "menu_options": {
+                    "settings": "Settings",
+                    "manage_device": "Edit a device",
+                    "remove_devices": "Remove multiple devices",
+                    "manage_ignored": "Manage ignored devices"
+                }
+            },
+            "settings": {
+                "title": "TellStick Local settings",
+                "data": {
+                    "automatic_add": "Automatically add new devices (when off, new devices appear as 'Discovered' for manual confirmation)",
+                    "detect_sartano": "Detect sartano/codeswitch devices (off by default — arctech signals are often falsely decoded as sartano)"
+                }
+            },
+            "manage_device": {
+                "title": "Select a device",
+                "description": "Pick a device to edit or delete.\n\nTo send a learn signal, go to the device page and press the **Send learn signal** button.",
+                "data": {
+                    "device": "Device"
+                }
+            },
+            "device_actions": {
+                "title": "Manage: {name}",
+                "description": "Choose an action for **{name}**.",
+                "menu_options": {
+                    "device_detail": "Edit device",
+                    "teach_device": "Send learn signal",
+                    "delete_device": "Delete device"
+                }
+            },
+            "device_detail": {
+                "title": "Edit device",
+                "description": "**{device_uid}**\n\nProtocol: **{protocol}** / Model: **{model}**\n\nChange the name or parameters below. Changing house/unit codes or sensor ID will update the device identity — entity ID and history are preserved.",
+                "data": {
+                    "name": "Device name",
+                    "house": "House code",
+                    "unit": "Unit code",
+                    "sensor_id": "Sensor ID"
+                },
+                "data_description": {
+                    "sensor_id": "The numeric ID from the RF signal. Change this when a sensor gets a new ID (e.g. after battery replacement) to keep entity history."
+                }
+            },
+            "teach_device": {
+                "title": "Send learn signal",
+                "description": "This will send a learn/pairing signal for **{name}** ({protocol}/{model}).\n\nPut your 433 MHz receiver in **learn mode** now, then click **Submit**."
+            },
+            "delete_device": {
+                "title": "Delete device",
+                "description": "Delete **{name}** from this integration?",
+                "data": {
+                    "ignore": "Also ignore this device (prevents automatic re-detection)"
+                }
+            },
+            "remove_devices": {
+                "title": "Remove multiple devices",
+                "description": "Select devices to remove from this integration.",
+                "data": {
+                    "devices": "Devices to remove",
+                    "ignore": "Also ignore removed devices (prevents automatic re-detection)"
+                }
+            },
+            "manage_ignored": {
+                "title": "Manage ignored devices",
+                "description": "Select devices to un-ignore. Un-ignored devices can be detected again when they send an RF signal.",
+                "data": {
+                    "devices": "Devices to un-ignore"
+                }
+            }
+        },
+        "abort": {
+            "no_devices": "No devices to manage.",
+            "no_ignored": "No ignored devices.",
+            "teach_sent": "Learn signal sent successfully! If the receiver was in learn mode, it should now be paired."
+        }
+    },
+    "config_subentries": {
+        "device": {
+            "initiate_flow": {
+                "user": "Add 433 MHz device"
+            },
+            "step": {
+                "user": {
+                    "title": "Add a device",
+                    "description": "Pick your device type and give it a name.",
+                    "data": {
+                        "name": "Device name",
+                        "device_type": "Device type"
+                    }
+                },
+                "params": {
+                    "title": "Device parameters",
+                    "description": "Enter the parameters for **{device_type}**. Ranges and defaults match the hardware.",
+                    "data": {
+                        "house": "House code",
+                        "unit": "Unit code",
+                        "code": "Code (10 digits, 0 or 1)",
+                        "system": "System",
+                        "units": "Units (comma-separated, 1-10)",
+                        "fade": "Fade (smooth)"
+                    }
+                },
+                "confirm": {
+                    "title": "Send pairing signal",
+                    "description": "**{name}** ({protocol}/{model}) will learn house code **{house}**, unit **{unit}**.\n\nPut your 433 MHz receiver in **learn mode** now, then click **Submit** — the pairing signal is sent immediately."
+                }
+            },
+            "error": {
+                "invalid_code": "Parameter values must not be empty.",
+                "teach_failed": "Failed to send pairing signal. Check that the TellStick app is running."
+            },
+            "abort": {
+                "device_added": "Device paired successfully! It will appear in your device list shortly."
+            }
+        }
+    },
+    "device_automation": {
+        "trigger_type": {
+            "turned_on": "{entity_name} turned on",
+            "turned_off": "{entity_name} turned off"
+        }
     }
-  },
-  "device_automation": {
-    "trigger_type": {
-      "turned_on": "{entity_name} turned on",
-      "turned_off": "{entity_name} turned off"
-    }
-  }
 }

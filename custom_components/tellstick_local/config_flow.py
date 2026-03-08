@@ -34,6 +34,7 @@ from .client import RawDeviceEvent, SensorEvent, TellStickController
 from .const import (
     CONF_AUTOMATIC_ADD,
     CONF_COMMAND_PORT,
+    CONF_DETECT_SARTANO,
     CONF_DEVICE_HOUSE,
     CONF_DEVICE_MODEL,
     CONF_DEVICE_NAME,
@@ -44,6 +45,7 @@ from .const import (
     CONF_IGNORED_UIDS,
     DEFAULT_AUTOMATIC_ADD,
     DEFAULT_COMMAND_PORT,
+    DEFAULT_DETECT_SARTANO,
     DEFAULT_EVENT_PORT,
     DEFAULT_HOST,
     DEVICE_CATALOG_LABELS,
@@ -831,16 +833,21 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             new_options = dict(self.config_entry.options)
             new_options[CONF_AUTOMATIC_ADD] = user_input[CONF_AUTOMATIC_ADD]
+            new_options[CONF_DETECT_SARTANO] = user_input[CONF_DETECT_SARTANO]
             return self.async_create_entry(title="", data=new_options)
 
-        current = self.config_entry.options.get(
+        current_auto = self.config_entry.options.get(
             CONF_AUTOMATIC_ADD, DEFAULT_AUTOMATIC_ADD
+        )
+        current_sartano = self.config_entry.options.get(
+            CONF_DETECT_SARTANO, DEFAULT_DETECT_SARTANO
         )
         return self.async_show_form(
             step_id="settings",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_AUTOMATIC_ADD, default=current): bool,
+                    vol.Required(CONF_AUTOMATIC_ADD, default=current_auto): bool,
+                    vol.Required(CONF_DETECT_SARTANO, default=current_sartano): bool,
                 }
             ),
         )

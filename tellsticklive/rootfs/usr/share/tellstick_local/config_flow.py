@@ -10,7 +10,7 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
 
 try:
     from homeassistant.config_entries import (
@@ -20,6 +20,11 @@ try:
 except ImportError:
     ConfigSubentryFlow = None  # type: ignore[assignment,misc]
     SubentryFlowResult = dict  # type: ignore[assignment,misc]
+from homeassistant.helpers import (
+    device_registry as dr,
+    entity_registry as er,
+)
+import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.service_info.hassio import HassioServiceInfo
 from homeassistant.const import CONF_HOST
@@ -29,6 +34,7 @@ from .client import RawDeviceEvent, SensorEvent, TellStickController
 from .const import (
     CONF_AUTOMATIC_ADD,
     CONF_COMMAND_PORT,
+    CONF_DETECT_SARTANO,
     CONF_DEVICE_HOUSE,
     CONF_DEVICE_MODEL,
     CONF_DEVICE_NAME,
@@ -36,8 +42,10 @@ from .const import (
     CONF_DEVICE_UNIT,
     CONF_DEVICES,
     CONF_EVENT_PORT,
+    CONF_IGNORED_UIDS,
     DEFAULT_AUTOMATIC_ADD,
     DEFAULT_COMMAND_PORT,
+    DEFAULT_DETECT_SARTANO,
     DEFAULT_EVENT_PORT,
     DEFAULT_HOST,
     DEVICE_CATALOG_LABELS,
@@ -45,6 +53,7 @@ from .const import (
     DOMAIN,
     ENTRY_DEVICE_ID_MAP,
     ENTRY_TELLSTICK_CONTROLLER,
+    SENSOR_TYPE_NAMES,
     SIGNAL_NEW_DEVICE,
     WIDGET_PARAMS,
     build_device_uid,
@@ -107,6 +116,214 @@ def _build_params_schema(
     return vol.Schema(schema_dict)
 
 
+def _extract_sensor_suffix(uid: str) -> str:
+    """Extract the data-type suffix from a sensor UID.
+
+    Sensor UIDs have format ``sensor_{sensor_id}_{suffix}`` where suffix
+    is ``temperature`` or ``humidity``.  Returns ``"sensor"`` as fallback
+    for unexpected formats.
+    """
+    parts = uid.split("_")
+    suffix = parts[2] if len(parts) >= 3 else "sensor"
+    return suffix if suffix in ("temperature", "humidity") else "sensor"
+
+
+def _strip_sensor_suffix(name: str) -> str:
+    """Strip a trailing type suffix from a sensor name.
+
+    ``"Vinkällare temperature"`` → ``"Vinkällare"``.
+    Returns the name unchanged if no known suffix is found.
+    """
+    for s in ("temperature", "humidity"):
+        if name.lower().endswith(f" {s}"):
+            return name[: -(len(s) + 1)]
+    return name
+
+
+def _build_device_label(
+    uid: str, cfg: dict[str, Any], *, sensor_grouped: bool = False
+) -> str:
+    """Build a human-readable label for a device dropdown entry.
+
+    When *sensor_grouped* is True, the label omits the data_type suffix
+    because the dropdown shows one entry per physical sensor_id.
+    """
+    name = cfg.get(CONF_DEVICE_NAME, uid)
+    protocol = cfg.get(CONF_DEVICE_PROTOCOL, "")
+    model = cfg.get(CONF_DEVICE_MODEL, "")
+    if uid.startswith("sensor_"):
+        sensor_id = cfg.get("sensor_id", "")
+        data_type = cfg.get("data_type")
+        type_str = (
+            SENSOR_TYPE_NAMES.get(data_type, "")
+            if data_type is not None
+            else ""
+        )
+        if sensor_grouped:
+            # Strip type suffix from name for grouped display
+            name = _strip_sensor_suffix(name)
+            detail = f"sensor {sensor_id}" if sensor_id else f"{protocol}/{model}"
+        elif sensor_id and type_str:
+            detail = f"sensor {sensor_id} {type_str}"
+        elif sensor_id:
+            detail = f"sensor {sensor_id}"
+        else:
+            detail = f"{protocol}/{model}"
+    else:
+        house = cfg.get(CONF_DEVICE_HOUSE, "")
+        unit = cfg.get(CONF_DEVICE_UNIT, "")
+        detail = f"{protocol}/{model}" if model else protocol
+        if house:
+            detail += f" house:{house}"
+        if unit:
+            detail += f" unit:{unit}"
+    return f"{name} ({detail})" if detail else name
+
+
+@callback
+def _migrate_device_uid(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    old_uid: str,
+    new_uid: str,
+    new_cfg: dict[str, Any],
+) -> dict[str, Any]:
+    """Migrate a device from old_uid to new_uid, preserving entity/history.
+
+    Updates entity registry, device registry, and runtime maps.
+    Returns the updated options dict (caller must save it).
+    """
+    entry_id = entry.entry_id
+
+    # Update entity registry unique_id
+    ent_reg = er.async_get(hass)
+    for entity_entry in er.async_entries_for_config_entry(ent_reg, entry_id):
+        if entity_entry.unique_id == f"{entry_id}_{old_uid}":
+            ent_reg.async_update_entity(
+                entity_entry.entity_id,
+                new_unique_id=f"{entry_id}_{new_uid}",
+            )
+
+    # Update device registry identifiers.
+    # Sensors use a shared device identifier: sensor_{sensor_id} (no type
+    # suffix).  Temperature + humidity entities share one HA device.
+    dev_reg = dr.async_get(hass)
+    if old_uid.startswith("sensor_"):
+        old_parts = old_uid.split("_")
+        new_parts = new_uid.split("_")
+        old_dev_key = f"sensor_{old_parts[1]}" if len(old_parts) >= 2 else old_uid
+        new_dev_key = f"sensor_{new_parts[1]}" if len(new_parts) >= 2 else new_uid
+    else:
+        old_dev_key = old_uid
+        new_dev_key = new_uid
+
+    device_entry = dev_reg.async_get_device(
+        identifiers={(DOMAIN, f"{entry_id}_{old_dev_key}")}
+    )
+    if device_entry:
+        dev_reg.async_update_device(
+            device_entry.id,
+            new_identifiers={(DOMAIN, f"{entry_id}_{new_dev_key}")},
+        )
+
+    # Update runtime maps
+    entry_data = hass.data.get(DOMAIN, {}).get(entry_id, {})
+    device_id_map: dict[str, int] = entry_data.get(ENTRY_DEVICE_ID_MAP, {})
+    if old_uid in device_id_map:
+        device_id_map[new_uid] = device_id_map.pop(old_uid)
+    discovered: set[str] = entry_data.get("_discovered_uids", set())
+    discovered.discard(old_uid)
+    discovered.add(new_uid)
+
+    # Build updated options
+    devices = dict(entry.options.get(CONF_DEVICES, {}))
+    devices.pop(old_uid, None)
+    devices[new_uid] = new_cfg
+    new_options = dict(entry.options)
+    new_options[CONF_DEVICES] = devices
+    return new_options
+
+
+@callback
+def _migrate_sensor_companion(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    old_sensor_id: str,
+    new_sensor_id: str,
+    primary_suffix: str,
+    new_options: dict[str, Any],
+) -> dict[str, Any]:
+    """Migrate the companion sensor entity (temp↔hum) for a sensor pair.
+
+    When a temperature sensor is migrated, this also migrates the
+    corresponding humidity entity (and vice versa), so both entities
+    move atomically to the new sensor_id.
+
+    ``new_options`` must already contain the primary migration's changes
+    (from ``_migrate_device_uid``).  Returns the further-updated options.
+    """
+    entry_id = entry.entry_id
+    devices = new_options.get(CONF_DEVICES, {})
+
+    # Find companion suffixes that have stored entries
+    companions = [
+        s for s in ("temperature", "humidity")
+        if s != primary_suffix and f"sensor_{old_sensor_id}_{s}" in devices
+    ]
+    if not companions:
+        return new_options
+
+    ent_reg = er.async_get(hass)
+    entry_data = hass.data.get(DOMAIN, {}).get(entry_id, {})
+    discovered: set[str] = entry_data.get("_discovered_uids", set())
+
+    for comp_suffix in companions:
+        comp_old_uid = f"sensor_{old_sensor_id}_{comp_suffix}"
+        comp_new_uid = f"sensor_{new_sensor_id}_{comp_suffix}"
+
+        # Update companion entity unique_id in the entity registry.
+        # If the update fails (e.g. new unique_id already exists),
+        # remove the orphaned old entity to prevent "unavailable" ghosts.
+        for ent in er.async_entries_for_config_entry(ent_reg, entry_id):
+            if ent.unique_id == f"{entry_id}_{comp_old_uid}":
+                try:
+                    ent_reg.async_update_entity(
+                        ent.entity_id,
+                        new_unique_id=f"{entry_id}_{comp_new_uid}",
+                    )
+                except ValueError:
+                    _LOGGER.warning(
+                        "Companion entity %s: unique_id conflict, removing orphan",
+                        ent.entity_id,
+                    )
+                    ent_reg.async_remove(ent.entity_id)
+                break
+        else:
+            _LOGGER.debug(
+                "Companion entity for %s not found in entity registry",
+                comp_old_uid,
+            )
+
+        # Update companion in options (read from current new_options each time)
+        cur_devices = new_options.get(CONF_DEVICES, {})
+        comp_cfg = dict(cur_devices[comp_old_uid])
+        comp_cfg["sensor_id"] = int(new_sensor_id)
+        devs = dict(cur_devices)
+        devs.pop(comp_old_uid, None)
+        devs[comp_new_uid] = comp_cfg
+        new_options = dict(new_options)
+        new_options[CONF_DEVICES] = devs
+
+        # Update discovered set — mark both old and new as handled so
+        # pending discovery flows for the companion are suppressed.
+        discovered.discard(comp_old_uid)
+        discovered.add(comp_new_uid)
+        # Also mark the sensor_id-level dedup key
+        discovered.add(f"sensor_{new_sensor_id}")
+
+    return new_options
+
+
 async def _validate_connection(host: str, command_port: int, event_port: int) -> None:
     """Raise if we cannot reach the telldusd sockets."""
     ctrl = TellStickController(
@@ -138,12 +355,11 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         await self.async_set_unique_id(discovery_info.uuid)
         self._abort_if_unique_id_configured()
 
-        self._host = discovery_info.config.get("host", DEFAULT_HOST)
-        self._command_port = discovery_info.config.get(
-            "port", DEFAULT_COMMAND_PORT
-        )
-        # Event port is always command port + 1
-        self._event_port = self._command_port + 1
+        # discovery_info.slug is the HAOS Supervisor internal hostname
+        # (e.g. "e9305338-tellsticklive" for custom-repo apps).
+        self._host = discovery_info.slug
+        self._command_port = DEFAULT_COMMAND_PORT
+        self._event_port = DEFAULT_EVENT_PORT
         self._hassio_discovery = True
 
         return await self.async_step_hassio_confirm()
@@ -247,9 +463,11 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._rf_discovery = discovery_info
         device_uid = discovery_info["device_uid"]
 
-        # Deduplicate: one discovery flow per device UID
+        # Deduplicate: async_set_unique_id aborts if another flow with the
+        # same unique_id is already in progress, and _abort_if_unique_id_configured
+        # aborts if a config entry (including "ignored" entries) already has it.
         await self.async_set_unique_id(f"rf_{device_uid}")
-        self._abort_if_unique_id_in_progress()
+        self._abort_if_unique_id_configured()
 
         # Abort if the device was already added while this flow was pending
         for existing_entry in self._async_current_entries():
@@ -268,12 +486,12 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             title = f"{protocol}/{model} (house: {house}, unit: {unit})"
         self.context["title_placeholders"] = {"name": title}
 
-        return await self.async_step_confirm_rf_device()
+        return await self.async_step_add_rf_device()
 
-    async def async_step_confirm_rf_device(
+    async def async_step_add_rf_device(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Show confirmation form for a discovered 433 MHz device."""
+        """Show form to name and add a discovered 433 MHz device."""
         info = self._rf_discovery
         dev_type = info.get("type", "device")
 
@@ -294,16 +512,151 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return self.async_abort(reason="entry_not_found")
 
             device_uid = info["device_uid"]
-            name = user_input.get("name", default_name)
 
-            # Register RF device with telldusd so on/off commands work
+            # Re-check: if the device was already stored (e.g. companion
+            # migration added it while this flow was pending), abort.
+            if device_uid in entry.options.get(CONF_DEVICES, {}):
+                return self.async_abort(reason="already_added")
+
+            # Handle ignore checkbox
+            if user_input.get("ignore", False):
+                ignored = dict(entry.options.get(CONF_IGNORED_UIDS, {}))
+                ignored[device_uid] = (
+                    f"{info.get('protocol', '')}/{info.get('model', '')} "
+                    f"{device_uid}"
+                )
+                new_options = dict(entry.options)
+                new_options[CONF_IGNORED_UIDS] = ignored
+                self.hass.config_entries.async_update_entry(
+                    entry, options=new_options
+                )
+                return self.async_abort(reason="device_ignored")
+            name = user_input.get("name", default_name)
+            replace_uid = user_input.get("replace_device", "")
+
+            if replace_uid:
+                # Replace existing device — migrate UID + preserve history
+                replace_cfg = dict(
+                    entry.options.get(CONF_DEVICES, {}).get(replace_uid, {})
+                )
+
+                if dev_type == "sensor":
+                    # Sensor replacement: the replace dropdown groups by
+                    # sensor_id, so replace_uid may point to ANY data_type
+                    # entry (temperature or humidity).  We must match old
+                    # entries by data type to avoid cross-wiring entities.
+                    # Issue #33.
+                    old_sid = str(replace_cfg.get("sensor_id", ""))
+                    new_sid = str(info.get("sensor_id", ""))
+                    disc_suffix = _extract_sensor_suffix(device_uid)
+
+                    # Find the old entry that matches the discovery data type
+                    all_devices = entry.options.get(CONF_DEVICES, {})
+                    correct_old_uid = (
+                        f"sensor_{old_sid}_{disc_suffix}"
+                        if old_sid and disc_suffix
+                        else replace_uid
+                    )
+                    if correct_old_uid in all_devices:
+                        matched_cfg = dict(all_devices[correct_old_uid])
+                        matched_name = matched_cfg.get(
+                            CONF_DEVICE_NAME, correct_old_uid
+                        )
+                    else:
+                        correct_old_uid = replace_uid
+                        matched_name = replace_cfg.get(
+                            CONF_DEVICE_NAME, replace_uid
+                        )
+
+                    if name == default_name:
+                        name = matched_name
+
+                    new_cfg = {
+                        CONF_DEVICE_NAME: name,
+                        CONF_DEVICE_PROTOCOL: info.get("protocol", ""),
+                        CONF_DEVICE_MODEL: info.get("model", ""),
+                        "sensor_id": info.get("sensor_id"),
+                        "data_type": info.get("data_type"),
+                    }
+
+                    new_options = _migrate_device_uid(
+                        self.hass, entry, correct_old_uid, device_uid,
+                        new_cfg,
+                    )
+
+                    # No ignored-list entry for sensors — the old sensor_id
+                    # is gone after battery replacement and won't re-appear.
+
+                    # Migrate companion (temp↔hum) so the user doesn't have
+                    # to merge twice.
+                    if old_sid and new_sid and old_sid != new_sid:
+                        new_options = _migrate_sensor_companion(
+                            self.hass, entry,
+                            old_sid, new_sid,
+                            disc_suffix, new_options,
+                        )
+                else:
+                    old_name = replace_cfg.get(
+                        CONF_DEVICE_NAME, replace_uid
+                    )
+                    if name == default_name:
+                        name = old_name
+
+                    new_cfg = {
+                        CONF_DEVICE_NAME: name,
+                        CONF_DEVICE_PROTOCOL: info.get("protocol", ""),
+                        CONF_DEVICE_MODEL: info.get("model", ""),
+                        CONF_DEVICE_HOUSE: info.get("house", ""),
+                        CONF_DEVICE_UNIT: info.get("unit", ""),
+                    }
+
+                    new_options = _migrate_device_uid(
+                        self.hass, entry, replace_uid, device_uid, new_cfg
+                    )
+                    # Ignore old UID to prevent re-detection
+                    ignored = dict(
+                        new_options.get(CONF_IGNORED_UIDS, {})
+                    )
+                    ignored[replace_uid] = old_name
+                    new_options[CONF_IGNORED_UIDS] = ignored
+
+                self.hass.config_entries.async_update_entry(
+                    entry, options=new_options
+                )
+                # Reload so running entities are recreated with the new ID.
+                self.hass.async_create_task(
+                    self.hass.config_entries.async_reload(entry.entry_id)
+                )
+
+                # Register with telldusd if needed
+                entry_data = self.hass.data.get(DOMAIN, {}).get(entry_id, {})
+                controller: TellStickController | None = entry_data.get(
+                    ENTRY_TELLSTICK_CONTROLLER
+                )
+                device_id_map: dict[str, int] = entry_data.get(
+                    ENTRY_DEVICE_ID_MAP, {}
+                )
+                if controller and dev_type != "sensor":
+                    try:
+                        telldusd_id = await controller.find_or_add_device(
+                            name,
+                            info.get("protocol", ""),
+                            info.get("model", ""),
+                            info.get("house", ""),
+                            info.get("unit", ""),
+                        )
+                        device_id_map[device_uid] = telldusd_id
+                    except Exception:  # noqa: BLE001
+                        _LOGGER.warning(
+                            "Could not register replaced device %s", device_uid
+                        )
+
+                return self.async_abort(reason="device_replaced")
+
+            # Standard add-as-new flow (unchanged)
             entry_data = self.hass.data.get(DOMAIN, {}).get(entry_id, {})
-            controller: TellStickController | None = entry_data.get(
-                ENTRY_TELLSTICK_CONTROLLER
-            )
-            device_id_map: dict[str, int] = entry_data.get(
-                ENTRY_DEVICE_ID_MAP, {}
-            )
+            controller = entry_data.get(ENTRY_TELLSTICK_CONTROLLER)
+            device_id_map = entry_data.get(ENTRY_DEVICE_ID_MAP, {})
 
             # Store the device in entry.options
             existing_devices = dict(entry.options.get(CONF_DEVICES, {}))
@@ -374,13 +727,58 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             return self.async_abort(reason="device_added")
 
-        return self.async_show_form(
-            step_id="confirm_rf_device",
-            data_schema=vol.Schema(
-                {
-                    vol.Required("name", default=default_name): str,
+        # Build form schema
+        schema_dict: dict[Any, Any] = {
+            vol.Required("name", default=default_name): str,
+        }
+
+        # Add "replace existing device" dropdown if compatible devices exist
+        entry_id = info.get("entry_id")
+        entry = (
+            self.hass.config_entries.async_get_entry(entry_id)
+            if entry_id
+            else None
+        )
+        if entry:
+            devices = entry.options.get(CONF_DEVICES, {})
+            is_sensor = dev_type == "sensor"
+            if is_sensor:
+                # Group sensors by sensor_id for the replace dropdown.
+                # Temp+hum entities share one physical sensor; show one
+                # entry per sensor_id so the user picks once and the
+                # companion migration handles both.  Issue #33.
+                seen_ids: set[int] = set()
+                compatible: dict[str, dict[str, Any]] = {}
+                for uid, cfg in devices.items():
+                    if not uid.startswith("sensor_"):
+                        continue
+                    sid = cfg.get("sensor_id")
+                    if sid is None or sid in seen_ids:
+                        continue
+                    seen_ids.add(sid)
+                    compatible[uid] = cfg
+            else:
+                compatible = {
+                    uid: cfg
+                    for uid, cfg in devices.items()
+                    if not uid.startswith("sensor_")
                 }
-            ),
+            if compatible:
+                replace_options = {"": "— Add as new device —"}
+                for uid, cfg in compatible.items():
+                    replace_options[uid] = _build_device_label(
+                        uid, cfg, sensor_grouped=is_sensor
+                    )
+                schema_dict[
+                    vol.Optional("replace_device", default="")
+                ] = vol.In(replace_options)
+
+        # Ignore checkbox — at the bottom so add is the primary action
+        schema_dict[vol.Optional("ignore", default=False)] = bool
+
+        return self.async_show_form(
+            step_id="add_rf_device",
+            data_schema=vol.Schema(schema_dict),
             description_placeholders={
                 "protocol": info.get("protocol", ""),
                 "model": info.get("model", ""),
@@ -419,9 +817,13 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
     ) -> FlowResult:
         """Show options menu."""
         devices = self.config_entry.options.get(CONF_DEVICES, {})
+        ignored = self.config_entry.options.get(CONF_IGNORED_UIDS, {})
         menu_options = ["settings"]
         if devices:
-            menu_options.append("edit_device")
+            menu_options.append("manage_device")
+            menu_options.append("remove_devices")
+        if ignored:
+            menu_options.append("manage_ignored")
         return self.async_show_menu(step_id="init", menu_options=menu_options)
 
     async def async_step_settings(
@@ -431,49 +833,59 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             new_options = dict(self.config_entry.options)
             new_options[CONF_AUTOMATIC_ADD] = user_input[CONF_AUTOMATIC_ADD]
+            new_options[CONF_DETECT_SARTANO] = user_input[CONF_DETECT_SARTANO]
             return self.async_create_entry(title="", data=new_options)
 
-        current = self.config_entry.options.get(
+        current_auto = self.config_entry.options.get(
             CONF_AUTOMATIC_ADD, DEFAULT_AUTOMATIC_ADD
+        )
+        current_sartano = self.config_entry.options.get(
+            CONF_DETECT_SARTANO, DEFAULT_DETECT_SARTANO
         )
         return self.async_show_form(
             step_id="settings",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_AUTOMATIC_ADD, default=current): bool,
+                    vol.Required(CONF_AUTOMATIC_ADD, default=current_auto): bool,
+                    vol.Required(CONF_DETECT_SARTANO, default=current_sartano): bool,
                 }
             ),
         )
 
-    async def async_step_edit_device(
+    # -----------------------------------------------------------------
+    # Manage a device (picker → action sub-menu → edit/teach/delete)
+    # -----------------------------------------------------------------
+
+    async def async_step_manage_device(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Select a device to view/edit."""
+        """Select a device to manage."""
         devices = self.config_entry.options.get(CONF_DEVICES, {})
         if not devices:
             return self.async_abort(reason="no_devices")
 
         if user_input is not None:
             self._edit_uid = user_input["device"]
-            return await self.async_step_device_detail()
+            return await self.async_step_device_actions()
 
-        # Build device selector: "name (protocol/model house:X unit:Y)"
+        # Group sensors by sensor_id so one physical sensor shows once.
         labels: dict[str, str] = {}
+        seen_sensor_ids: set[int] = set()
         for uid, cfg in devices.items():
-            name = cfg.get(CONF_DEVICE_NAME, uid)
-            protocol = cfg.get(CONF_DEVICE_PROTOCOL, "")
-            model = cfg.get(CONF_DEVICE_MODEL, "")
-            house = cfg.get(CONF_DEVICE_HOUSE, "")
-            unit = cfg.get(CONF_DEVICE_UNIT, "")
-            detail = f"{protocol}/{model}" if model else protocol
-            if house:
-                detail += f" house:{house}"
-            if unit:
-                detail += f" unit:{unit}"
-            labels[uid] = f"{name} ({detail})" if detail else name
+            if uid.startswith("sensor_"):
+                sid = cfg.get("sensor_id")
+                if sid is not None and sid in seen_sensor_ids:
+                    continue
+                if sid is not None:
+                    seen_sensor_ids.add(sid)
+                labels[uid] = _build_device_label(
+                    uid, cfg, sensor_grouped=True
+                )
+            else:
+                labels[uid] = _build_device_label(uid, cfg)
 
         return self.async_show_form(
-            step_id="edit_device",
+            step_id="manage_device",
             data_schema=vol.Schema(
                 {
                     vol.Required("device"): vol.In(labels),
@@ -481,47 +893,150 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
             ),
         )
 
+    async def async_step_device_actions(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Show device action sub-menu."""
+        uid = self._edit_uid
+        devices = self.config_entry.options.get(CONF_DEVICES, {})
+        cfg = devices.get(uid, {})
+        name = cfg.get(CONF_DEVICE_NAME, uid)
+
+        # Show base name for grouped sensors
+        if uid.startswith("sensor_"):
+            name = _strip_sensor_suffix(name)
+
+        menu_options = ["device_detail"]
+        menu_options.append("delete_device")
+
+        return self.async_show_menu(
+            step_id="device_actions",
+            menu_options=menu_options,
+            description_placeholders={"name": name},
+        )
+
     async def async_step_device_detail(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """View and edit device house/unit codes."""
+        """View and edit device parameters (name, house/unit, or sensor_id)."""
         uid = self._edit_uid
         devices = dict(self.config_entry.options.get(CONF_DEVICES, {}))
         cfg = dict(devices.get(uid, {}))
 
         if user_input is not None:
-            # Update the device config
-            cfg[CONF_DEVICE_NAME] = user_input["name"]
-            if "house" in user_input:
-                cfg[CONF_DEVICE_HOUSE] = str(user_input["house"])
-            if "unit" in user_input:
-                cfg[CONF_DEVICE_UNIT] = str(user_input["unit"])
-            # Update params dict if present
-            if "params" in cfg:
-                params = dict(cfg["params"])
+            if uid.startswith("sensor_"):
+                base_name = user_input["name"]
+                old_sensor_id = cfg.get("sensor_id", 0)
+                new_sensor_id = user_input.get("sensor_id", old_sensor_id)
+                try:
+                    old_id_int = int(old_sensor_id)
+                    new_id_int = int(new_sensor_id)
+                except (ValueError, TypeError):
+                    old_id_int = 0
+                    new_id_int = 0
+
+                # Update name for ALL entries of this sensor_id.
+                # base_name is the device name without type suffix; each
+                # entry gets "base_name temperature" / "base_name humidity".
+                for e_uid, e_cfg in list(devices.items()):
+                    if not e_uid.startswith("sensor_"):
+                        continue
+                    if e_cfg.get("sensor_id") != old_id_int:
+                        continue
+                    e_suffix = _extract_sensor_suffix(e_uid)
+                    e_cfg = dict(e_cfg)
+                    e_cfg[CONF_DEVICE_NAME] = f"{base_name} {e_suffix}"
+                    devices[e_uid] = e_cfg
+
+                # Re-read cfg after name update
+                cfg = dict(devices.get(uid, cfg))
+
+                if new_id_int != old_id_int:
+                    cfg["sensor_id"] = new_id_int
+                    suffix = _extract_sensor_suffix(uid)
+                    new_uid = f"sensor_{new_id_int}_{suffix}"
+                    # Write name-updated devices back before migration
+                    temp_options = dict(self.config_entry.options)
+                    temp_options[CONF_DEVICES] = devices
+                    self.hass.config_entries.async_update_entry(
+                        self.config_entry, options=temp_options
+                    )
+                    new_options = _migrate_device_uid(
+                        self.hass, self.config_entry, uid, new_uid, cfg
+                    )
+                    # Also migrate companion entity (temp↔hum) so both
+                    # entities move atomically (issue #33).
+                    new_options = _migrate_sensor_companion(
+                        self.hass, self.config_entry,
+                        str(old_id_int), str(new_id_int),
+                        suffix, new_options,
+                    )
+                    # Reload so the running entity picks up the new sensor_id.
+                    self.hass.async_create_task(
+                        self.hass.config_entries.async_reload(
+                            self.config_entry.entry_id
+                        )
+                    )
+                    return self.async_create_entry(title="", data=new_options)
+            else:
+                cfg[CONF_DEVICE_NAME] = user_input["name"]
+                # Device: check if house/unit changed → UID migration
                 if "house" in user_input:
-                    params["house"] = str(user_input["house"])
+                    cfg[CONF_DEVICE_HOUSE] = str(user_input["house"])
                 if "unit" in user_input:
-                    params["unit"] = str(user_input["unit"])
-                cfg["params"] = params
+                    cfg[CONF_DEVICE_UNIT] = str(user_input["unit"])
+                # Update params dict if present
+                if "params" in cfg:
+                    params = dict(cfg["params"])
+                    if "house" in user_input:
+                        params["house"] = str(user_input["house"])
+                    if "unit" in user_input:
+                        params["unit"] = str(user_input["unit"])
+                    cfg["params"] = params
+                new_uid = build_device_uid(
+                    cfg.get(CONF_DEVICE_PROTOCOL, ""),
+                    cfg.get(CONF_DEVICE_MODEL, ""),
+                    cfg.get(CONF_DEVICE_HOUSE, ""),
+                    cfg.get(CONF_DEVICE_UNIT, ""),
+                )
+                if new_uid != uid:
+                    new_options = _migrate_device_uid(
+                        self.hass, self.config_entry, uid, new_uid, cfg
+                    )
+                    # Reload so the running entity picks up the new house/unit.
+                    self.hass.async_create_task(
+                        self.hass.config_entries.async_reload(
+                            self.config_entry.entry_id
+                        )
+                    )
+                    return self.async_create_entry(title="", data=new_options)
+
+            # No UID change — just update in place
             devices[uid] = cfg
             new_options = dict(self.config_entry.options)
             new_options[CONF_DEVICES] = devices
             return self.async_create_entry(title="", data=new_options)
 
         name = cfg.get(CONF_DEVICE_NAME, uid)
-        house = cfg.get(CONF_DEVICE_HOUSE, "")
-        unit = cfg.get(CONF_DEVICE_UNIT, "")
         protocol = cfg.get(CONF_DEVICE_PROTOCOL, "")
         model = cfg.get(CONF_DEVICE_MODEL, "")
 
-        schema_dict: dict[Any, Any] = {
-            vol.Required("name", default=name): str,
-        }
-        # Only show house/unit for non-sensor devices
-        if not uid.startswith("sensor_"):
-            schema_dict[vol.Optional("house", default=house)] = str
-            schema_dict[vol.Optional("unit", default=unit)] = str
+        if uid.startswith("sensor_"):
+            # Show base name (without type suffix) for grouped display
+            name = _strip_sensor_suffix(name)
+            sensor_id = cfg.get("sensor_id", 0)
+            schema_dict: dict[Any, Any] = {
+                vol.Required("name", default=name): str,
+                vol.Required("sensor_id", default=sensor_id): int,
+            }
+        else:
+            house = cfg.get(CONF_DEVICE_HOUSE, "")
+            unit = cfg.get(CONF_DEVICE_UNIT, "")
+            schema_dict = {
+                vol.Required("name", default=name): str,
+                vol.Optional("house", default=house): str,
+                vol.Optional("unit", default=unit): str,
+            }
 
         return self.async_show_form(
             step_id="device_detail",
@@ -531,6 +1046,320 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                 "protocol": protocol,
                 "model": model,
             },
+        )
+
+    async def async_step_teach_device(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Send a learn/teach signal for a self-learning device."""
+        uid = self._edit_uid
+        devices = self.config_entry.options.get(CONF_DEVICES, {})
+        cfg = devices.get(uid, {})
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            entry_data = self.hass.data.get(DOMAIN, {}).get(
+                self.config_entry.entry_id, {}
+            )
+            controller: TellStickController | None = entry_data.get(
+                ENTRY_TELLSTICK_CONTROLLER
+            )
+            device_id_map: dict[str, int] = entry_data.get(
+                ENTRY_DEVICE_ID_MAP, {}
+            )
+            telldusd_id = device_id_map.get(uid)
+
+            if controller and telldusd_id is not None:
+                try:
+                    await controller.learn(telldusd_id)
+                except Exception:  # noqa: BLE001
+                    _LOGGER.exception("Failed to send learn signal for %s", uid)
+                    errors["base"] = "teach_failed"
+                else:
+                    return self.async_abort(reason="teach_sent")
+            else:
+                errors["base"] = "teach_failed"
+
+        return self.async_show_form(
+            step_id="teach_device",
+            description_placeholders={
+                "name": cfg.get(CONF_DEVICE_NAME, uid),
+                "protocol": cfg.get(CONF_DEVICE_PROTOCOL, ""),
+                "model": cfg.get(CONF_DEVICE_MODEL, ""),
+            },
+            errors=errors,
+        )
+
+    async def async_step_delete_device(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Delete a device with optional ignore."""
+        uid = self._edit_uid
+        devices = self.config_entry.options.get(CONF_DEVICES, {})
+        cfg = devices.get(uid, {})
+
+        if user_input is not None:
+            ignore = user_input.get("ignore", True)
+
+            entry_data = self.hass.data.get(DOMAIN, {}).get(
+                self.config_entry.entry_id, {}
+            )
+            controller: TellStickController | None = entry_data.get(
+                ENTRY_TELLSTICK_CONTROLLER
+            )
+            device_id_map: dict[str, int] = entry_data.get(
+                ENTRY_DEVICE_ID_MAP, {}
+            )
+            discovered: set[str] = entry_data.get("_discovered_uids", set())
+            dev_reg = dr.async_get(self.hass)
+
+            # For sensors: collect all entries for the same sensor_id
+            # (temp + hum share one physical device).
+            uids_to_remove = [uid]
+            if uid.startswith("sensor_"):
+                sensor_id = cfg.get("sensor_id")
+                if sensor_id is not None:
+                    for other_uid, other_cfg in devices.items():
+                        if (
+                            other_uid != uid
+                            and other_uid.startswith("sensor_")
+                            and other_cfg.get("sensor_id") == sensor_id
+                        ):
+                            uids_to_remove.append(other_uid)
+
+            new_devices = dict(devices)
+            ignored = dict(
+                self.config_entry.options.get(CONF_IGNORED_UIDS, {})
+            )
+
+            for remove_uid in uids_to_remove:
+                remove_cfg = new_devices.pop(remove_uid, {})
+
+                # Remove from telldusd
+                if controller and remove_uid in device_id_map:
+                    try:
+                        await controller.remove_device(
+                            device_id_map[remove_uid]
+                        )
+                    except Exception:  # noqa: BLE001
+                        _LOGGER.warning(
+                            "Could not remove %s from telldusd", remove_uid
+                        )
+                    device_id_map.pop(remove_uid, None)
+
+                if ignore:
+                    ignored[remove_uid] = remove_cfg.get(
+                        CONF_DEVICE_NAME, remove_uid
+                    )
+
+                discovered.discard(remove_uid)
+
+            # Remove from device registry.  Sensors use a shared device
+            # identifier: sensor_{sensor_id} (no type suffix).
+            if uid.startswith("sensor_"):
+                sensor_id = cfg.get("sensor_id")
+                dev_key = f"sensor_{sensor_id}" if sensor_id else uid
+            else:
+                dev_key = uid
+            device_entry = dev_reg.async_get_device(
+                identifiers={
+                    (DOMAIN, f"{self.config_entry.entry_id}_{dev_key}")
+                }
+            )
+            if device_entry:
+                dev_reg.async_remove_device(device_entry.id)
+
+            new_options = dict(self.config_entry.options)
+            new_options[CONF_DEVICES] = new_devices
+            if ignore:
+                new_options[CONF_IGNORED_UIDS] = ignored
+
+            return self.async_create_entry(title="", data=new_options)
+
+        # Show base name for grouped sensors
+        name = cfg.get(CONF_DEVICE_NAME, uid)
+        if uid.startswith("sensor_"):
+            name = _strip_sensor_suffix(name)
+
+        return self.async_show_form(
+            step_id="delete_device",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("ignore", default=True): bool,
+                }
+            ),
+            description_placeholders={
+                "name": name,
+            },
+        )
+
+    # -----------------------------------------------------------------
+    # Remove multiple devices
+    # -----------------------------------------------------------------
+
+    async def async_step_remove_devices(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Multi-select removal of devices."""
+        devices = self.config_entry.options.get(CONF_DEVICES, {})
+        if not devices:
+            return self.async_abort(reason="no_devices")
+
+        if user_input is not None:
+            selected = user_input.get("devices", [])
+            ignore = user_input.get("ignore", True)
+
+            if not selected:
+                return self.async_create_entry(
+                    title="", data=dict(self.config_entry.options)
+                )
+
+            entry_data = self.hass.data.get(DOMAIN, {}).get(
+                self.config_entry.entry_id, {}
+            )
+            controller: TellStickController | None = entry_data.get(
+                ENTRY_TELLSTICK_CONTROLLER
+            )
+            device_id_map: dict[str, int] = entry_data.get(
+                ENTRY_DEVICE_ID_MAP, {}
+            )
+            dev_reg = dr.async_get(self.hass)
+            discovered: set[str] = entry_data.get("_discovered_uids", set())
+
+            new_devices = dict(devices)
+            ignored = dict(
+                self.config_entry.options.get(CONF_IGNORED_UIDS, {})
+            )
+
+            # Expand selection to include companion sensor entries
+            all_uids: list[str] = []
+            for uid in selected:
+                all_uids.append(uid)
+                if uid.startswith("sensor_"):
+                    sel_cfg = new_devices.get(uid, {})
+                    sid = sel_cfg.get("sensor_id")
+                    if sid is not None:
+                        for o_uid, o_cfg in new_devices.items():
+                            if (
+                                o_uid != uid
+                                and o_uid.startswith("sensor_")
+                                and o_cfg.get("sensor_id") == sid
+                                and o_uid not in all_uids
+                            ):
+                                all_uids.append(o_uid)
+
+            for uid in all_uids:
+                cfg = new_devices.pop(uid, {})
+
+                # Remove from telldusd
+                if controller and uid in device_id_map:
+                    try:
+                        await controller.remove_device(device_id_map[uid])
+                    except Exception:  # noqa: BLE001
+                        pass
+                    device_id_map.pop(uid, None)
+
+                # Remove from device registry.  Sensors use shared device
+                # identifier: sensor_{sensor_id} (no type suffix).
+                if uid.startswith("sensor_"):
+                    sensor_id = cfg.get("sensor_id")
+                    dev_key = f"sensor_{sensor_id}" if sensor_id else uid
+                else:
+                    dev_key = uid
+                device_entry = dev_reg.async_get_device(
+                    identifiers={
+                        (DOMAIN, f"{self.config_entry.entry_id}_{dev_key}")
+                    }
+                )
+                if device_entry:
+                    dev_reg.async_remove_device(device_entry.id)
+
+                if ignore:
+                    ignored[uid] = cfg.get(CONF_DEVICE_NAME, uid)
+
+                discovered.discard(uid)
+
+            new_options = dict(self.config_entry.options)
+            new_options[CONF_DEVICES] = new_devices
+            if ignore:
+                new_options[CONF_IGNORED_UIDS] = ignored
+            return self.async_create_entry(title="", data=new_options)
+
+        # Group sensors by sensor_id in the multi-select
+        labels: dict[str, str] = {}
+        seen_sensor_ids: set[int] = set()
+        for uid, cfg in devices.items():
+            if uid.startswith("sensor_"):
+                sid = cfg.get("sensor_id")
+                if sid is not None and sid in seen_sensor_ids:
+                    continue
+                if sid is not None:
+                    seen_sensor_ids.add(sid)
+                labels[uid] = _build_device_label(
+                    uid, cfg, sensor_grouped=True
+                )
+            else:
+                labels[uid] = _build_device_label(uid, cfg)
+
+        return self.async_show_form(
+            step_id="remove_devices",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("devices"): cv.multi_select(labels),
+                    vol.Required("ignore", default=True): bool,
+                }
+            ),
+        )
+
+    # -----------------------------------------------------------------
+    # Manage ignored devices (un-ignore)
+    # -----------------------------------------------------------------
+
+    async def async_step_manage_ignored(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Un-ignore previously ignored devices so they can be re-detected."""
+        ignored = dict(self.config_entry.options.get(CONF_IGNORED_UIDS, {}))
+        if not ignored:
+            return self.async_abort(reason="no_ignored")
+
+        if user_input is not None:
+            to_unignore = user_input.get("devices", [])
+            for uid in to_unignore:
+                ignored.pop(uid, None)
+
+            new_options = dict(self.config_entry.options)
+            new_options[CONF_IGNORED_UIDS] = ignored
+
+            # Allow re-discovery for un-ignored UIDs
+            entry_data = self.hass.data.get(DOMAIN, {}).get(
+                self.config_entry.entry_id, {}
+            )
+            discovered: set[str] = entry_data.get("_discovered_uids", set())
+            seen_proto_models: set[str] = entry_data.get(
+                "_discovered_protocol_models", set()
+            )
+            for uid in to_unignore:
+                discovered.discard(uid)
+                # Clear protocol+model deduplication so re-discovery can fire.
+                # UID format: "{protocol}_{model}_{house}_{unit}".
+                # proto_model_key used in _fire_device_discovery is "{protocol}_{model}".
+                if not uid.startswith("sensor_"):
+                    parts = uid.split("_", 2)
+                    if len(parts) >= 2:
+                        seen_proto_models.discard(f"{parts[0]}_{parts[1]}")
+
+            return self.async_create_entry(title="", data=new_options)
+
+        labels: dict[str, str] = {uid: name for uid, name in ignored.items()}
+
+        return self.async_show_form(
+            step_id="manage_ignored",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("devices"): cv.multi_select(labels),
+                }
+            ),
         )
 
 

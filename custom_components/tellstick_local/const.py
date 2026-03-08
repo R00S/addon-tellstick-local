@@ -19,12 +19,13 @@ DOMAIN = "tellstick_local"
 #   A new agent context window on the SAME branch is still a W bump.
 #   Run `git branch --show-current` — if the branch matches the memory,
 #   bump W.  If it's a different branch, bump Z.
-INTEGRATION_VERSION = "2.1.11.4"
+INTEGRATION_VERSION = "2.1.11.5"
 
 # Config keys (CONF_HOST from homeassistant.const is used for host)
 CONF_COMMAND_PORT = "command_port"
 CONF_EVENT_PORT = "event_port"
 CONF_AUTOMATIC_ADD = "automatic_add"
+CONF_DETECT_SARTANO = "detect_sartano"
 # Device storage keys (in entry.options["devices"])
 CONF_DEVICES = "devices"
 CONF_DEVICE_PROTOCOL = "protocol"
@@ -39,6 +40,7 @@ DEFAULT_HOST = "tellsticklive"  # fallback for manual setup; actual hostname sho
 DEFAULT_COMMAND_PORT = 50800
 DEFAULT_EVENT_PORT = 50801
 DEFAULT_AUTOMATIC_ADD = True
+DEFAULT_DETECT_SARTANO = False
 
 # telldusd event types
 TELLDUSD_DEVICE_EVENT = 1
