@@ -126,6 +126,16 @@ _KNOWN_DEVICE_SHADOW_SECS = 1.0
 # two different buttons in quick succession.
 _CROSS_DECODE_WINDOW_SECS = 0.5
 
+# Seconds to defer processing of unknown-device events.  When a door
+# sensor fires, telldusd decodes the RF signal as BOTH the real device
+# (arctech/selflearning) AND a phantom (sartano/codeswitch).  Previous
+# timing-only suppression assumed arctech events always arrived first,
+# but event ordering through socat/TCP is not guaranteed.  By deferring
+# unknown-event processing, we ensure the known-device event has time
+# to set _last_known_event_time before the phantom is evaluated.
+# 300 ms is invisible to the user but 3× the ~100 ms cross-decode window.
+_PHANTOM_DEFER_SECS = 0.3
+
 # Sensor data-type → suffix (mirrors sensor.py _SENSOR_META keys)
 _SENSOR_SUFFIX: dict[int, str] = {1: "temperature", 2: "humidity"}
 
@@ -524,13 +534,39 @@ def _handle_raw_event(
         async_dispatcher_send(
             hass, SIGNAL_NEW_DEVICE.format(entry.entry_id), event
         )
-    elif automatic_add:
-        # Auto-add mode: immediately add the device and fire signal
+    else:
+        # Unknown device — defer processing to allow known-device events
+        # from the same RF signal to arrive first and set the timestamp.
+        # Without deferral, phantoms like sartano/codeswitch slip through
+        # when they arrive before the real arctech event.  Issue #33.
+        hass.loop.call_later(
+            _PHANTOM_DEFER_SECS,
+            _process_unknown_event,
+            hass, entry, device_uid, params, event, automatic_add,
+        )
+
+
+def _process_unknown_event(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    device_uid: str,
+    params: dict[str, str],
+    event: RawDeviceEvent,
+    automatic_add: bool,
+) -> None:
+    """Process an unknown-device event after a short deferral.
+
+    Called by ``loop.call_later`` so that known-device events from the
+    same RF signal have time to set ``_last_known_event_time``.
+    """
+    # Guard: integration may have been unloaded during the delay.
+    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    if entry_data is None:
+        return
+
+    if automatic_add:
         _auto_add_device(hass, entry, device_uid, params, event)
     else:
-        # Discovery mode: fire a discovery config flow.  The device will
-        # appear in the "Discovered" section of Settings → Devices & Services.
-        # The user clicks Configure → names it → it becomes a stored device.
         _fire_device_discovery(hass, entry, device_uid, params)
 
 

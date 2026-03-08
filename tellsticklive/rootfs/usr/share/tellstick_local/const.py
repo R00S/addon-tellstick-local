@@ -3,6 +3,24 @@ from __future__ import annotations
 
 DOMAIN = "tellstick_local"
 
+# Must match manifest.json "version".  Frozen at import time so the
+# integration can detect when on-disk files were updated behind a
+# running HA instance (i.e. the app copied a newer version but HA
+# hasn't restarted yet).
+#
+# VERSION BUMP RULES — ALWAYS run `git branch --show-current` first:
+#   X.Y.Z.W
+#   W → bump for each prompt on the SAME branch (same feature branch)
+#   Z → bump ONLY when working on a NEW branch (different branch name)
+#   Y → minor feature release
+#   X → major release
+#
+#   Trigger for Z: the git branch name changes.  That's it.
+#   A new agent context window on the SAME branch is still a W bump.
+#   Run `git branch --show-current` — if the branch matches the memory,
+#   bump W.  If it's a different branch, bump Z.
+INTEGRATION_VERSION = "2.1.11.2"
+
 # Config keys (CONF_HOST from homeassistant.const is used for host)
 CONF_COMMAND_PORT = "command_port"
 CONF_EVENT_PORT = "event_port"
@@ -14,9 +32,10 @@ CONF_DEVICE_MODEL = "model"
 CONF_DEVICE_HOUSE = "house"
 CONF_DEVICE_UNIT = "unit"
 CONF_DEVICE_NAME = "name"
+CONF_IGNORED_UIDS = "ignored_uids"
 
 # Defaults
-DEFAULT_HOST = "tellsticklive"  # add-on slug = hostname on the Supervisor network
+DEFAULT_HOST = "tellsticklive"  # fallback for manual setup; actual hostname shown in app log
 DEFAULT_COMMAND_PORT = 50800
 DEFAULT_EVENT_PORT = 50801
 DEFAULT_AUTOMATIC_ADD = True
@@ -45,8 +64,14 @@ TELLSTICK_WINDDIRECTION = 16
 TELLSTICK_WINDAVERAGE = 32
 TELLSTICK_WINDGUST = 64
 
+# Human-readable names for the sensor data types above
+SENSOR_TYPE_NAMES: dict[int, str] = {
+    TELLSTICK_TEMPERATURE: "temperature",
+    TELLSTICK_HUMIDITY: "humidity",
+}
+
 # HA platforms
-PLATFORMS = ["switch", "light", "sensor"]
+PLATFORMS = ["button", "cover", "switch", "light", "sensor"]
 
 # Entry data keys
 ENTRY_TELLSTICK_CONTROLLER = "controller"
@@ -57,6 +82,12 @@ SIGNAL_NEW_DEVICE = DOMAIN + "_new_device_{}"
 SIGNAL_EVENT = DOMAIN + "_event_{}"
 
 # TX-capable protocols (can send commands and teach self-learning devices)
+# Source: telldus-core Protocol.cpp::getProtocolInstance() — only protocols
+# listed there can be instantiated to send RF commands.
+# NOTE: "mandolyn" is intentionally absent — it is RX-only (temperature/
+# humidity sensors).  ProtocolMandolyn has no methods() or getStringForMethod()
+# and is not registered in getProtocolInstance().
+# NOTE: "fineoffset" and "oregon" are also RX-only sensor protocols.
 TX_PROTOCOLS = [
     "arctech",
     "brateck",
@@ -65,7 +96,6 @@ TX_PROTOCOLS = [
     "fuhaote",
     "hasta",
     "ikea",
-    "mandolyn",
     "risingsun",
     "sartano",
     "silvanchip",
@@ -84,7 +114,6 @@ PROTOCOL_DEFAULT_MODELS: dict[str, str] = {
     "fuhaote": "",
     "hasta": "",
     "ikea": "",
-    "mandolyn": "",
     "risingsun": "",
     "sartano": "",
     "silvanchip": "",
@@ -234,12 +263,16 @@ DEVICE_CATALOG: list[tuple[str, str, str, int]] = [
     ("KlikAanKlikUit — Code switch", "arctech", "codeswitch:klikaanklikuit", 1),
     ("KlikAanKlikUit — Self-learning dimmer", "arctech", "selflearning-dimmer:klikaanklikuit", 8),
     ("KlikAanKlikUit — Self-learning on/off", "arctech", "selflearning-switch:klikaanklikuit", 8),
+    # Lidl/Silvercrest 433 MHz sockets use arctech selflearning protocol
+    ("Lidl (Silvercrest) — Self-learning on/off", "arctech", "selflearning-switch:silvercrest", 8),
     ("Luxorparts / Cleverio — Self-learning on/off", "arctech", "selflearning-switch:luxorparts", 8),
     ("Nexa — Bell", "arctech", "bell:nexa", 4),
     ("Nexa — Code switch", "arctech", "codeswitch:nexa", 1),
     ("Nexa — Self-learning dimmer", "arctech", "selflearning-dimmer:nexa", 8),
     ("Nexa — Self-learning on/off", "arctech", "selflearning-switch:nexa", 8),
     ("Otio — Self-learning", "risingsun", "selflearning:otio", 12),
+    # Profile is a Nordic/Norwegian brand using arctech selflearning
+    ("Profile — Self-learning on/off", "arctech", "selflearning-switch:profile", 8),
     ("Proove — Bell", "arctech", "bell:proove", 4),
     ("Proove — Code switch", "arctech", "codeswitch:proove", 1),
     ("Proove — Self-learning dimmer", "arctech", "selflearning-dimmer:proove", 8),
@@ -248,7 +281,14 @@ DEVICE_CATALOG: list[tuple[str, str, str, int]] = [
     ("Roxcore — Projector screen", "brateck", "codeswitch:roxcore", 6),
     ("Rusta — Code switch", "sartano", "codeswitch:rusta", 2),
     ("Rusta — Self-learning dimmer", "arctech", "selflearning-dimmer:rusta", 8),
+    ("Rusta — Self-learning on/off", "arctech", "selflearning-switch:rusta", 8),
     ("Sartano — Code switch", "sartano", "codeswitch:sartano", 2),
+    # Telldus own-branded devices use arctech selflearning protocol
+    ("Telldus — Self-learning dimmer", "arctech", "selflearning-dimmer:telldus", 8),
+    ("Telldus — Self-learning on/off", "arctech", "selflearning-switch:telldus", 8),
+    # Trust Smart Home (Netherlands) uses arctech selflearning
+    ("Trust Smart Home — Self-learning dimmer", "arctech", "selflearning-dimmer:trust", 8),
+    ("Trust Smart Home — Self-learning on/off", "arctech", "selflearning-switch:trust", 8),
     ("UPM — Self-learning", "upm", "selflearning:upm", 9),
     ("Waveman — Code switch", "waveman", "codeswitch:waveman", 1),
     ("X10 — Code switch", "x10", "codeswitch:x10", 1),
@@ -295,3 +335,4 @@ def normalize_rf_model(model: str) -> str:
     """
     base = model.split(":")[0] if ":" in model else model
     return _UID_MODEL_NORMALIZE.get(base, base)
+
