@@ -619,6 +619,9 @@ def _fire_device_discovery(
     seen_proto_models: set[str] = entry_data["_discovered_protocol_models"]
     if proto_model_key in seen_proto_models:
         discovered.add(device_uid)
+        # Still update fire time so cross-decode phantoms from this RF
+        # signal are suppressed (e.g. sartano from an arctech signal).
+        entry_data["_last_discovery_fire_time"] = now
         return
     seen_proto_models.add(proto_model_key)
 
@@ -681,6 +684,9 @@ def _auto_add_device(
     proto_model_key = f"{protocol}_{model}"
     seen_proto_models: set[str] = entry_data["_discovered_protocol_models"]
     if proto_model_key in seen_proto_models:
+        # Still update fire time so cross-decode phantoms from this RF
+        # signal are suppressed (e.g. sartano from an arctech signal).
+        entry_data["_last_discovery_fire_time"] = now
         return
     seen_proto_models.add(proto_model_key)
 
