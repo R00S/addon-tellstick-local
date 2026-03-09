@@ -1169,6 +1169,12 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                 if ent.unique_id in remove_unique_ids:
                     try:
                         ent_reg.async_remove(ent.entity_id)
+                        # Clear the DeletedRegistryEntry tombstone so that if
+                        # the same device is re-added later, HA creates a fresh
+                        # entity_id instead of restoring the old one.  Issue #33.
+                        ent_reg.deleted_entities.pop(
+                            (ent.domain, ent.platform, ent.unique_id), None
+                        )
                     except Exception:  # noqa: BLE001
                         _LOGGER.warning(
                             "Could not remove entity %s from registry",
@@ -1313,6 +1319,12 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                 if ent.unique_id in remove_unique_ids:
                     try:
                         ent_reg.async_remove(ent.entity_id)
+                        # Clear the DeletedRegistryEntry tombstone so that if
+                        # the same device is re-added later, HA creates a fresh
+                        # entity_id instead of restoring the old one.  Issue #33.
+                        ent_reg.deleted_entities.pop(
+                            (ent.domain, ent.platform, ent.unique_id), None
+                        )
                     except Exception:  # noqa: BLE001
                         _LOGGER.warning(
                             "Could not remove entity %s from registry",

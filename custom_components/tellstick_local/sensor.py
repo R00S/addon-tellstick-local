@@ -157,6 +157,14 @@ class TellStickSensor(TellStickEntity, SensorEntity):
             model=model,
         )
 
+        # Explicitly set the entity name and the suggested object_id so HA
+        # generates a clean entity_id like "sensor.living_room_temperature"
+        # rather than inheriting a mangled or doubled name.  With
+        # _attr_has_entity_name=True the frontend displays "{device} {type}",
+        # but the entity_id comes from suggested_object_id.  Issue #33.
+        self._attr_name = type_name
+        self._attr_suggested_object_id = f"{device_name} {type_name}".lower()
+
         # Group temperature + humidity from the same physical sensor under one
         # HA device.  Use sensor_{sensor_id} (without the type suffix) as the
         # shared device identifier so both entities appear under one device.
