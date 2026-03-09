@@ -788,14 +788,13 @@ def _handle_sensor_event(
     is_known = any(uid.startswith(sensor_prefix) for uid in stored_devices)
 
     if is_known:
-        # Known sensor — revive entity after restart
-        async_dispatcher_send(
-            hass, SIGNAL_NEW_DEVICE.format(entry.entry_id), event
-        )
         # Auto-persist this data_type if not already stored.  After a
         # migration or add-as-new for one data_type, the companion
         # (temp↔hum) arrives later and must also be persisted so it
         # survives restarts.  Issue #33.
+        # IMPORTANT: do this BEFORE dispatching SIGNAL_NEW_DEVICE so that
+        # when sensor.py._async_new_device runs it can read the correct
+        # user-provided name from entry.options (not the default fallback).
         if suffix:
             sensor_uid = f"sensor_{event.sensor_id}_{suffix}"
             if sensor_uid not in stored_devices:
@@ -824,6 +823,10 @@ def _handle_sensor_event(
                 hass.config_entries.async_update_entry(
                     entry, options=new_options
                 )
+        # Known sensor — revive entity after restart
+        async_dispatcher_send(
+            hass, SIGNAL_NEW_DEVICE.format(entry.entry_id), event
+        )
     elif suffix and automatic_add:
         # Auto-add: persist sensor and fire signal
         sensor_uid = f"sensor_{event.sensor_id}_{suffix}"

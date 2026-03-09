@@ -1112,6 +1112,8 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
             )
             discovered: set[str] = entry_data.get("_discovered_uids", set())
             dev_reg = dr.async_get(self.hass)
+            ent_reg = er.async_get(self.hass)
+            entry_id = self.config_entry.entry_id
 
             # For sensors: collect all entries for the same sensor_id
             # (temp + hum share one physical device).
@@ -1153,6 +1155,19 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                     )
 
                 discovered.discard(remove_uid)
+
+            # Remove entity registry entries so that if the same device is
+            # later re-added with a new name it gets fresh entity_ids instead
+            # of inheriting the old ones.  Single pass for all removed UIDs.
+            # Issue #33.
+            remove_unique_ids = {
+                f"{entry_id}_{r}" for r in uids_to_remove
+            }
+            for ent in list(
+                er.async_entries_for_config_entry(ent_reg, entry_id)
+            ):
+                if ent.unique_id in remove_unique_ids:
+                    ent_reg.async_remove(ent.entity_id)
 
             # Remove from device registry.  Sensors use a shared device
             # identifier: sensor_{sensor_id} (no type suffix).
@@ -1224,6 +1239,8 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                 ENTRY_DEVICE_ID_MAP, {}
             )
             dev_reg = dr.async_get(self.hass)
+            ent_reg = er.async_get(self.hass)
+            entry_id = self.config_entry.entry_id
             discovered: set[str] = entry_data.get("_discovered_uids", set())
 
             new_devices = dict(devices)
@@ -1278,6 +1295,17 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                     ignored[uid] = cfg.get(CONF_DEVICE_NAME, uid)
 
                 discovered.discard(uid)
+
+            # Remove entity registry entries so that if the same device is
+            # later re-added with a new name it gets fresh entity_ids instead
+            # of inheriting the old ones.  Single pass for all removed UIDs.
+            # Issue #33.
+            remove_unique_ids = {f"{entry_id}_{u}" for u in all_uids}
+            for ent in list(
+                er.async_entries_for_config_entry(ent_reg, entry_id)
+            ):
+                if ent.unique_id in remove_unique_ids:
+                    ent_reg.async_remove(ent.entity_id)
 
             new_options = dict(self.config_entry.options)
             new_options[CONF_DEVICES] = new_devices
