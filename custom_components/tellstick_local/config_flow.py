@@ -1167,7 +1167,13 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                 er.async_entries_for_config_entry(ent_reg, entry_id)
             ):
                 if ent.unique_id in remove_unique_ids:
-                    ent_reg.async_remove(ent.entity_id)
+                    try:
+                        ent_reg.async_remove(ent.entity_id)
+                    except Exception:  # noqa: BLE001
+                        _LOGGER.warning(
+                            "Could not remove entity %s from registry",
+                            ent.entity_id,
+                        )
 
             # Remove from device registry.  Sensors use a shared device
             # identifier: sensor_{sensor_id} (no type suffix).
@@ -1305,7 +1311,13 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                 er.async_entries_for_config_entry(ent_reg, entry_id)
             ):
                 if ent.unique_id in remove_unique_ids:
-                    ent_reg.async_remove(ent.entity_id)
+                    try:
+                        ent_reg.async_remove(ent.entity_id)
+                    except Exception:  # noqa: BLE001
+                        _LOGGER.warning(
+                            "Could not remove entity %s from registry",
+                            ent.entity_id,
+                        )
 
             new_options = dict(self.config_entry.options)
             new_options[CONF_DEVICES] = new_devices

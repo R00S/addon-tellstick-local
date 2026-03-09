@@ -20,7 +20,7 @@ from homeassistant.helpers.issue_registry import (
 from homeassistant.config_entries import SOURCE_IGNORE, ConfigEntry
 from homeassistant.const import CONF_HOST, EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .client import (
@@ -419,11 +419,13 @@ async def async_remove_config_entry_device(
     # Find and remove ALL matching entries.
     stored_devices: dict[str, Any] = dict(entry.options.get(CONF_DEVICES, {}))
     removed_any = False
+    removed_uids: list[str] = []
 
     if device_uid.startswith("sensor_") and device_uid in stored_devices:
         # Exact match (unlikely — sensors use sensor_{id} without suffix)
         del stored_devices[device_uid]
         removed_any = True
+        removed_uids.append(device_uid)
         discovered.discard(device_uid)
     elif device_uid.startswith("sensor_"):
         # Shared identifier format: sensor_{sensor_id}
@@ -433,6 +435,7 @@ async def async_remove_config_entry_device(
             if uid.startswith(sensor_prefix):
                 del stored_devices[uid]
                 removed_any = True
+                removed_uids.append(uid)
                 discovered.discard(uid)
                 # Remove from telldusd map
                 if controller and uid in device_id_map:
@@ -447,6 +450,7 @@ async def async_remove_config_entry_device(
         # Non-sensor device: exact UID match
         del stored_devices[device_uid]
         removed_any = True
+        removed_uids.append(device_uid)
         discovered.discard(device_uid)
         if controller and device_uid in device_id_map:
             try:
@@ -461,6 +465,21 @@ async def async_remove_config_entry_device(
         new_options = dict(entry.options)
         new_options[CONF_DEVICES] = stored_devices
         hass.config_entries.async_update_entry(entry, options=new_options)
+
+        # Remove entity registry entries so that if the same device is later
+        # re-added with a new name it gets fresh entity_ids instead of
+        # inheriting the old ones.  Issue #33.
+        ent_reg = er.async_get(hass)
+        remove_unique_ids = {f"{entry.entry_id}_{u}" for u in removed_uids}
+        for ent in list(er.async_entries_for_config_entry(ent_reg, entry.entry_id)):
+            if ent.unique_id in remove_unique_ids:
+                try:
+                    ent_reg.async_remove(ent.entity_id)
+                except Exception:  # noqa: BLE001
+                    _LOGGER.warning(
+                        "Could not remove entity %s from registry",
+                        ent.entity_id,
+                    )
 
     return True
 
