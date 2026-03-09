@@ -1,6 +1,6 @@
 ---
 name: TellStick Local
-version: 2.1.12.1.20260309122512
+version: 2.1.12.2.20260309211820
 slug: tellsticklive
 image: ghcr.io/r00s/tellsticklive/{arch}
 description: TellStick and TellStick Duo local service (no cloud)
