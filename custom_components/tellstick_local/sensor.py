@@ -15,6 +15,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers import entity_registry as er
 
 from .client import SensorEvent
 from .const import (
@@ -84,7 +85,14 @@ async def async_setup_entry(
         suffix, _, _ = _SENSOR_META[event.data_type]
         uid = f"sensor_{event.sensor_id}_{suffix}"
         if uid in known:
-            return
+            # Guard: if the entity was deleted in this session without a
+            # reload (delete + re-add same session), `uid` stays in `known`
+            # but the entity is gone from the registry.  Check and allow
+            # re-creation.  Issue #33.
+            unique_id = f"{entry.entry_id}_{uid}"
+            if er.async_get(hass).async_get_entity_id("sensor", DOMAIN, unique_id) is not None:
+                return  # entity still active — skip duplicate
+            known.discard(uid)  # entity was deleted — fall through to create
         known.add(uid)
         protocol = event.protocol or ""
         model = event.model or ""

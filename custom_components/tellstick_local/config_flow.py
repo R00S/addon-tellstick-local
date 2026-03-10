@@ -1221,11 +1221,10 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
             if device_entry:
                 dev_id = device_entry.id
                 dev_reg.async_remove_device(dev_id)
-                # Clear the device registry tombstone so the old device UUID
-                # is not silently reused when the same device is re-added.
-                # Without this, stale automations or dashboard cards that
-                # reference the old UUID would unexpectedly re-attach to the
-                # new device.  Issue #33.
+                # Clear the device tombstone so the old area, labels, and
+                # name_by_user are not resurrected when the device is re-added.
+                # HA 2025.6+ stores these in DeletedDeviceEntry and
+                # to_device_entry() restores them on re-add.  Issue #33.
                 dev_reg.deleted_devices.pop(dev_id, None)
 
             new_options = dict(self.config_entry.options)
@@ -1335,7 +1334,8 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                 if device_entry:
                     dev_id = device_entry.id
                     dev_reg.async_remove_device(dev_id)
-                    # Clear the device registry tombstone.  Issue #33.
+                    # Clear tombstone so area/labels/name_by_user are not
+                    # resurrected on re-add (HA 2025.6+).  Issue #33.
                     dev_reg.deleted_devices.pop(dev_id, None)
 
                 if ignore:

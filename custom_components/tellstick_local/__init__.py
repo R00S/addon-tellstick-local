@@ -222,11 +222,13 @@ def _clear_orphaned_tombstones(hass: HomeAssistant, entry: ConfigEntry) -> None:
       tombstone — so entity_id inheritance is unaffected.  The risk is that the
       new entity silently reuses the old UUID, which links it to the old
       entity's recorder history.
-    - Device tombstone (DeletedDeviceEntry): stores only config_entries,
-      connections, identifiers, and the device UUID — NOT area_id, labels, or
-      name_by_user.  On re-add the device UUID is restored, which could cause
-      stale automations or dashboard cards referencing the old UUID to
-      unexpectedly re-attach to the new device.
+    - Device tombstone (DeletedDeviceEntry): since HA 2025.6 this stores
+      ``area_id``, ``labels``, AND ``name_by_user`` in addition to
+      ``config_entries``, ``connections``, ``identifiers``, and the device UUID.
+      ``to_device_entry()`` restores all of them on re-add.  This is the direct
+      cause of area/label inheritance when a device is deleted and re-added
+      (Issue #33, jet001se report).  Clearing the tombstone prevents the old
+      area, labels, and name from being resurrected on re-add.
 
     Clearing both tombstones at startup ensures every re-added device starts
     truly fresh.  Issue #33.
@@ -563,8 +565,9 @@ async def async_remove_config_entry_device(
     # async_update_device(device.id, remove_config_entry_id=entry.entry_id)
     # which (since we have only one config entry per device) calls
     # async_remove_device() — moving the device to deleted_devices.
-    # We schedule a task to pop the tombstone so the old device UUID is not
-    # silently reused if the same device is re-added.
+    # We schedule a task to pop the tombstone so the old area, labels, and
+    # name_by_user are not resurrected on re-add (HA 2025.6+ stores these in
+    # DeletedDeviceEntry and to_device_entry() restores them).
     #
     # No race condition: async_create_task schedules a new asyncio Task that
     # cannot start until the current coroutine returns and the caller's
