@@ -1015,6 +1015,31 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
             devices[uid] = cfg
             new_options = dict(self.config_entry.options)
             new_options[CONF_DEVICES] = devices
+
+            # Immediately reflect the new name in HA's device registry so
+            # the Devices & Services list updates without requiring a reload.
+            # We set name_by_user (user-controlled override) because this
+            # rename is an explicit user action.  Issue #33.
+            dev_reg_local = dr.async_get(self.hass)
+            if uid.startswith("sensor_"):
+                sensor_id_val = cfg.get("sensor_id", 0)
+                dev_key_local = f"sensor_{sensor_id_val}"
+                # For sensors, user_input["name"] is the base name (without
+                # the temperature/humidity suffix).
+                display_name = user_input["name"]
+            else:
+                dev_key_local = uid
+                display_name = cfg.get(CONF_DEVICE_NAME, uid)
+            dev_entry_local = dev_reg_local.async_get_device(
+                identifiers={
+                    (DOMAIN, f"{self.config_entry.entry_id}_{dev_key_local}")
+                }
+            )
+            if dev_entry_local:
+                dev_reg_local.async_update_device(
+                    dev_entry_local.id, name_by_user=display_name
+                )
+
             return self.async_create_entry(title="", data=new_options)
 
         name = cfg.get(CONF_DEVICE_NAME, uid)
@@ -1194,7 +1219,14 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                 }
             )
             if device_entry:
-                dev_reg.async_remove_device(device_entry.id)
+                dev_id = device_entry.id
+                dev_reg.async_remove_device(dev_id)
+                # Clear the device registry tombstone so the old device UUID
+                # is not silently reused when the same device is re-added.
+                # Without this, stale automations or dashboard cards that
+                # reference the old UUID would unexpectedly re-attach to the
+                # new device.  Issue #33.
+                dev_reg.deleted_devices.pop(dev_id, None)
 
             new_options = dict(self.config_entry.options)
             new_options[CONF_DEVICES] = new_devices
@@ -1301,7 +1333,10 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                     }
                 )
                 if device_entry:
-                    dev_reg.async_remove_device(device_entry.id)
+                    dev_id = device_entry.id
+                    dev_reg.async_remove_device(dev_id)
+                    # Clear the device registry tombstone.  Issue #33.
+                    dev_reg.deleted_devices.pop(dev_id, None)
 
                 if ignore:
                     ignored[uid] = cfg.get(CONF_DEVICE_NAME, uid)
