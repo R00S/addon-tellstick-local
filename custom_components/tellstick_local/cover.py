@@ -27,6 +27,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers import entity_registry as er
 
 from .client import RawDeviceEvent, TellStickController
 from .const import (
@@ -102,8 +103,17 @@ async def async_setup_entry(
         protocol = params.get("protocol", "")
         model = params.get("model", "")
         uid = event.device_id
-        if not uid or uid in known:
+        if not uid:
             return
+        if uid in known:
+            # Guard: if the entity was deleted in this session without a
+            # reload (delete + re-add same session), `uid` stays in `known`
+            # but the entity is gone from the registry.  Check and allow
+            # re-creation.  Issue #33.
+            unique_id = f"{entry.entry_id}_{uid}"
+            if er.async_get(hass).async_get_entity_id("cover", DOMAIN, unique_id) is not None:
+                return  # entity still active — skip duplicate
+            known.discard(uid)  # entity was deleted — fall through to create
         if not _is_cover(protocol):
             return
         known.add(uid)

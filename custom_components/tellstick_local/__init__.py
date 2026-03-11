@@ -20,7 +20,7 @@ from homeassistant.helpers.issue_registry import (
 from homeassistant.config_entries import SOURCE_IGNORE, ConfigEntry
 from homeassistant.const import CONF_HOST, EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .client import (
@@ -206,6 +206,72 @@ async def _check_version_mismatch(hass: HomeAssistant) -> None:
     )
 
 
+@callback
+def _clear_orphaned_tombstones(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove stale entity and device registry tombstones at startup.
+
+    Before v2.1.12.2 the options-flow delete paths did not pop tombstones
+    after calling async_remove / async_remove_device.  If a user deleted a
+    device using those paths on an older version, the tombstone was written to
+    disk and survives upgrades.
+
+    What tombstones actually do (verified from HA source):
+    - Entity tombstone (DeletedRegistryEntry): on re-add, HA restores the old
+      *internal HA UUID* (the ``id`` field) and ``created_at``.  The entity_id
+      is always regenerated from ``suggested_object_id`` — not from the
+      tombstone — so entity_id inheritance is unaffected.  The risk is that the
+      new entity silently reuses the old UUID, which links it to the old
+      entity's recorder history.
+    - Device tombstone (DeletedDeviceEntry): since HA 2025.6 this stores
+      ``area_id``, ``labels``, AND ``name_by_user`` in addition to
+      ``config_entries``, ``connections``, ``identifiers``, and the device UUID.
+      ``to_device_entry()`` restores all of them on re-add.  This is the direct
+      cause of area/label inheritance when a device is deleted and re-added
+      (Issue #33, jet001se report).  Clearing the tombstone prevents the old
+      area, labels, and name from being resurrected on re-add.
+
+    Clearing both tombstones at startup ensures every re-added device starts
+    truly fresh.  Issue #33.
+    """
+    # --- Entity registry tombstones ---
+    ent_reg = er.async_get(hass)
+    valid_unique_ids: set[str] = {
+        f"{entry.entry_id}_{uid}"
+        for uid in entry.options.get(CONF_DEVICES, {})
+    }
+    orphan_ent_keys = [
+        key
+        for key, deleted_ent in list(ent_reg.deleted_entities.items())
+        if key[1] == DOMAIN  # platform == tellstick_local
+        and deleted_ent.config_entry_id == entry.entry_id
+        and deleted_ent.unique_id not in valid_unique_ids
+    ]
+    for key in orphan_ent_keys:
+        ent_reg.deleted_entities.pop(key, None)
+    if orphan_ent_keys:
+        _LOGGER.debug(
+            "Cleared %d orphaned entity tombstone(s) for entry %s (Issue #33)",
+            len(orphan_ent_keys),
+            entry.entry_id,
+        )
+
+    # --- Device registry tombstones ---
+    dev_reg = dr.async_get(hass)
+    orphan_dev_ids = [
+        dev_id
+        for dev_id, deleted_dev in list(dev_reg.deleted_devices.items())
+        if entry.entry_id in deleted_dev.config_entries
+    ]
+    for dev_id in orphan_dev_ids:
+        dev_reg.deleted_devices.pop(dev_id, None)
+    if orphan_dev_ids:
+        _LOGGER.debug(
+            "Cleared %d orphaned device tombstone(s) for entry %s (Issue #33)",
+            len(orphan_dev_ids),
+            entry.entry_id,
+        )
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up TellStick Local from a config entry."""
 
@@ -216,6 +282,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # In that case we fire a persistent notification so the user knows
     # a restart is needed.
     await _check_version_mismatch(hass)
+
+    # --- One-time tombstone cleanup (Issue #33) ---
+    # Clear orphaned entity/device registry tombstones left by deletions
+    # performed on versions older than 2.1.12.3 (before tombstone clearing
+    # was added to all delete paths).  This is a no-op on clean installs.
+    _clear_orphaned_tombstones(hass, entry)
 
     host = entry.data[CONF_HOST]
     cmd_port = entry.data[CONF_COMMAND_PORT]
@@ -419,11 +491,13 @@ async def async_remove_config_entry_device(
     # Find and remove ALL matching entries.
     stored_devices: dict[str, Any] = dict(entry.options.get(CONF_DEVICES, {}))
     removed_any = False
+    removed_uids: list[str] = []
 
     if device_uid.startswith("sensor_") and device_uid in stored_devices:
         # Exact match (unlikely — sensors use sensor_{id} without suffix)
         del stored_devices[device_uid]
         removed_any = True
+        removed_uids.append(device_uid)
         discovered.discard(device_uid)
     elif device_uid.startswith("sensor_"):
         # Shared identifier format: sensor_{sensor_id}
@@ -433,6 +507,7 @@ async def async_remove_config_entry_device(
             if uid.startswith(sensor_prefix):
                 del stored_devices[uid]
                 removed_any = True
+                removed_uids.append(uid)
                 discovered.discard(uid)
                 # Remove from telldusd map
                 if controller and uid in device_id_map:
@@ -447,6 +522,7 @@ async def async_remove_config_entry_device(
         # Non-sensor device: exact UID match
         del stored_devices[device_uid]
         removed_any = True
+        removed_uids.append(device_uid)
         discovered.discard(device_uid)
         if controller and device_uid in device_id_map:
             try:
@@ -461,6 +537,50 @@ async def async_remove_config_entry_device(
         new_options = dict(entry.options)
         new_options[CONF_DEVICES] = stored_devices
         hass.config_entries.async_update_entry(entry, options=new_options)
+
+        # Remove entity registry entries so that if the same device is later
+        # re-added with a new name it gets fresh entity_ids instead of
+        # inheriting the old ones.  Issue #33.
+        ent_reg = er.async_get(hass)
+        remove_unique_ids = {f"{entry.entry_id}_{u}" for u in removed_uids}
+        for ent in list(er.async_entries_for_config_entry(ent_reg, entry.entry_id)):
+            if ent.unique_id in remove_unique_ids:
+                try:
+                    ent_reg.async_remove(ent.entity_id)
+                    # Clear the DeletedRegistryEntry tombstone so that the old
+                    # entity UUID is not silently reused when the device is
+                    # re-added, which would link the new entity to the old
+                    # entity's recorder history.  Issue #33.
+                    ent_reg.deleted_entities.pop(
+                        (ent.domain, ent.platform, ent.unique_id), None
+                    )
+                except Exception:  # noqa: BLE001
+                    _LOGGER.warning(
+                        "Could not remove entity %s from registry",
+                        ent.entity_id,
+                    )
+
+    # Schedule device registry tombstone clearing AFTER HA removes the device.
+    # When this function returns True, HA calls
+    # async_update_device(device.id, remove_config_entry_id=entry.entry_id)
+    # which (since we have only one config entry per device) calls
+    # async_remove_device() — moving the device to deleted_devices.
+    # We schedule a task to pop the tombstone so the old area, labels, and
+    # name_by_user are not resurrected on re-add (HA 2025.6+ stores these in
+    # DeletedDeviceEntry and to_device_entry() restores them).
+    #
+    # No race condition: async_create_task schedules a new asyncio Task that
+    # cannot start until the current coroutine returns and the caller's
+    # synchronous @callback (async_update_device → async_remove_device) has
+    # already completed.  The tombstone is guaranteed to exist by the time the
+    # task runs.  Issue #33.
+    _dev_entry_id = device_entry.id
+
+    async def _clear_device_tombstone() -> None:
+        dev_reg = dr.async_get(hass)
+        dev_reg.deleted_devices.pop(_dev_entry_id, None)
+
+    hass.async_create_task(_clear_device_tombstone())
 
     return True
 
@@ -788,14 +908,13 @@ def _handle_sensor_event(
     is_known = any(uid.startswith(sensor_prefix) for uid in stored_devices)
 
     if is_known:
-        # Known sensor — revive entity after restart
-        async_dispatcher_send(
-            hass, SIGNAL_NEW_DEVICE.format(entry.entry_id), event
-        )
         # Auto-persist this data_type if not already stored.  After a
         # migration or add-as-new for one data_type, the companion
         # (temp↔hum) arrives later and must also be persisted so it
         # survives restarts.  Issue #33.
+        # IMPORTANT: do this BEFORE dispatching SIGNAL_NEW_DEVICE so that
+        # when sensor.py._async_new_device runs it can read the correct
+        # user-provided name from entry.options (not the default fallback).
         if suffix:
             sensor_uid = f"sensor_{event.sensor_id}_{suffix}"
             if sensor_uid not in stored_devices:
@@ -824,6 +943,10 @@ def _handle_sensor_event(
                 hass.config_entries.async_update_entry(
                     entry, options=new_options
                 )
+        # Known sensor — revive entity after restart
+        async_dispatcher_send(
+            hass, SIGNAL_NEW_DEVICE.format(entry.entry_id), event
+        )
     elif suffix and automatic_add:
         # Auto-add: persist sensor and fire signal
         sensor_uid = f"sensor_{event.sensor_id}_{suffix}"

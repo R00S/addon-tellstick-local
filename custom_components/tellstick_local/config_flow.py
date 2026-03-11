@@ -1015,6 +1015,31 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
             devices[uid] = cfg
             new_options = dict(self.config_entry.options)
             new_options[CONF_DEVICES] = devices
+
+            # Immediately reflect the new name in HA's device registry so
+            # the Devices & Services list updates without requiring a reload.
+            # We set name_by_user (user-controlled override) because this
+            # rename is an explicit user action.  Issue #33.
+            dev_reg_local = dr.async_get(self.hass)
+            if uid.startswith("sensor_"):
+                sensor_id_val = cfg.get("sensor_id", 0)
+                dev_key_local = f"sensor_{sensor_id_val}"
+                # For sensors, user_input["name"] is the base name (without
+                # the temperature/humidity suffix).
+                display_name = user_input["name"]
+            else:
+                dev_key_local = uid
+                display_name = cfg.get(CONF_DEVICE_NAME, uid)
+            dev_entry_local = dev_reg_local.async_get_device(
+                identifiers={
+                    (DOMAIN, f"{self.config_entry.entry_id}_{dev_key_local}")
+                }
+            )
+            if dev_entry_local:
+                dev_reg_local.async_update_device(
+                    dev_entry_local.id, name_by_user=display_name
+                )
+
             return self.async_create_entry(title="", data=new_options)
 
         name = cfg.get(CONF_DEVICE_NAME, uid)
@@ -1112,6 +1137,8 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
             )
             discovered: set[str] = entry_data.get("_discovered_uids", set())
             dev_reg = dr.async_get(self.hass)
+            ent_reg = er.async_get(self.hass)
+            entry_id = self.config_entry.entry_id
 
             # For sensors: collect all entries for the same sensor_id
             # (temp + hum share one physical device).
@@ -1154,6 +1181,31 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
 
                 discovered.discard(remove_uid)
 
+            # Remove entity registry entries so that if the same device is
+            # later re-added with a new name it gets fresh entity_ids instead
+            # of inheriting the old ones.  Single pass for all removed UIDs.
+            # Issue #33.
+            remove_unique_ids = {
+                f"{entry_id}_{r}" for r in uids_to_remove
+            }
+            for ent in list(
+                er.async_entries_for_config_entry(ent_reg, entry_id)
+            ):
+                if ent.unique_id in remove_unique_ids:
+                    try:
+                        ent_reg.async_remove(ent.entity_id)
+                        # Clear the DeletedRegistryEntry tombstone so that if
+                        # the same device is re-added later, HA creates a fresh
+                        # entity_id instead of restoring the old one.  Issue #33.
+                        ent_reg.deleted_entities.pop(
+                            (ent.domain, ent.platform, ent.unique_id), None
+                        )
+                    except Exception:  # noqa: BLE001
+                        _LOGGER.warning(
+                            "Could not remove entity %s from registry",
+                            ent.entity_id,
+                        )
+
             # Remove from device registry.  Sensors use a shared device
             # identifier: sensor_{sensor_id} (no type suffix).
             if uid.startswith("sensor_"):
@@ -1167,7 +1219,13 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                 }
             )
             if device_entry:
-                dev_reg.async_remove_device(device_entry.id)
+                dev_id = device_entry.id
+                dev_reg.async_remove_device(dev_id)
+                # Clear the device tombstone so the old area, labels, and
+                # name_by_user are not resurrected when the device is re-added.
+                # HA 2025.6+ stores these in DeletedDeviceEntry and
+                # to_device_entry() restores them on re-add.  Issue #33.
+                dev_reg.deleted_devices.pop(dev_id, None)
 
             new_options = dict(self.config_entry.options)
             new_options[CONF_DEVICES] = new_devices
@@ -1224,6 +1282,8 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                 ENTRY_DEVICE_ID_MAP, {}
             )
             dev_reg = dr.async_get(self.hass)
+            ent_reg = er.async_get(self.hass)
+            entry_id = self.config_entry.entry_id
             discovered: set[str] = entry_data.get("_discovered_uids", set())
 
             new_devices = dict(devices)
@@ -1272,12 +1332,39 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                     }
                 )
                 if device_entry:
-                    dev_reg.async_remove_device(device_entry.id)
+                    dev_id = device_entry.id
+                    dev_reg.async_remove_device(dev_id)
+                    # Clear tombstone so area/labels/name_by_user are not
+                    # resurrected on re-add (HA 2025.6+).  Issue #33.
+                    dev_reg.deleted_devices.pop(dev_id, None)
 
                 if ignore:
                     ignored[uid] = cfg.get(CONF_DEVICE_NAME, uid)
 
                 discovered.discard(uid)
+
+            # Remove entity registry entries so that if the same device is
+            # later re-added with a new name it gets fresh entity_ids instead
+            # of inheriting the old ones.  Single pass for all removed UIDs.
+            # Issue #33.
+            remove_unique_ids = {f"{entry_id}_{u}" for u in all_uids}
+            for ent in list(
+                er.async_entries_for_config_entry(ent_reg, entry_id)
+            ):
+                if ent.unique_id in remove_unique_ids:
+                    try:
+                        ent_reg.async_remove(ent.entity_id)
+                        # Clear the DeletedRegistryEntry tombstone so that if
+                        # the same device is re-added later, HA creates a fresh
+                        # entity_id instead of restoring the old one.  Issue #33.
+                        ent_reg.deleted_entities.pop(
+                            (ent.domain, ent.platform, ent.unique_id), None
+                        )
+                    except Exception:  # noqa: BLE001
+                        _LOGGER.warning(
+                            "Could not remove entity %s from registry",
+                            ent.entity_id,
+                        )
 
             new_options = dict(self.config_entry.options)
             new_options[CONF_DEVICES] = new_devices
