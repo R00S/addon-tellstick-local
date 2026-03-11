@@ -12,9 +12,9 @@
 █   Y = minor feature release                                                 █
 █   X = major release                                                          █
 █                                                                              █
-█   CURRENT VERSION: 2.1.0.11                                                  █
-█   (bump W → 2.1.0.12, 2.1.0.13, etc. for next prompt in this session)      █
-█   (new agent → 2.1.1.0)                                                     █
+█   CURRENT VERSION: 2.1.13.0                                                  █
+█   (bump W → 2.1.13.1, 2.1.13.2, etc. for next prompt in this session)      █
+█   (new agent → 2.1.14.0)                                                    █
 █                                                                              █
 █   config.yaml version MUST ALWAYS be 'dev' on branches (linter-enforced)    █
 █                                                                              █
@@ -899,7 +899,7 @@ You have access to the ha-dev-platform orchestrator via MCP. Use these tools for
 
 - **`create_test_release(repo, branch, version_bump)`** — Create a pre-release for HACS testing.
 - **`deploy_to_ha(repo, version)`** — Install via HACS, restart HA, verify integration loads.
-- **`run_tests(scenarios_yaml)`** — Execute test scenarios (pass YAML from `tests/ha-tests-integration.yaml`).
+- **`run_tests(scenarios_yaml)`** — Execute test scenarios (pass YAML from `tests/ha-tests-integration.yaml`). The file exists at `tests/ha-tests-integration.yaml`.
 - **`get_ha_logs(domain, since_minutes)`** — Get filtered error logs when debugging failures.
 - **`reset_ha_environment(domain)`** — Remove integration and restart to clean state.
 

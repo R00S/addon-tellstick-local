@@ -1,0 +1,70 @@
+# tests/ha-tests-integration.yaml
+# Test scenarios for ha-dev-platform MCP run_tests tool
+# These are executed against a live HA dev instance with the integration installed
+
+domain: tellstick_local
+
+scenarios:
+  - name: "Integration loads"
+    description: "Verify tellstick_local integration is recognized by HA"
+    steps:
+      - action: check_integration_loaded
+        domain: tellstick_local
+    expected: integration_found
+
+  - name: "Config flow available"
+    description: "Verify the user config flow can be initiated"
+    steps:
+      - action: init_config_flow
+        domain: tellstick_local
+        source: user
+    expected:
+      step_id: user
+      type: form
+
+  - name: "Hassio discovery flow"
+    description: "Verify hassio discovery triggers the confirm step"
+    steps:
+      - action: init_config_flow
+        domain: tellstick_local
+        source: hassio
+        data:
+          host: "localhost"
+          port: 50800
+          name: "TellStick Local"
+          slug: "tellsticklive"
+    expected:
+      step_id: hassio_confirm
+      type: form
+
+  - name: "Options flow instantiates"
+    description: "Verify OptionsFlow works without deprecated config_entry param"
+    steps:
+      - action: check_options_flow
+        domain: tellstick_local
+    expected: options_flow_ok
+
+  - name: "All platform modules import"
+    description: "Verify all integration modules load without ImportError"
+    steps:
+      - action: import_module
+        modules:
+          - tellstick_local.client
+          - tellstick_local.const
+          - tellstick_local.entity
+          - tellstick_local.switch
+          - tellstick_local.light
+          - tellstick_local.sensor
+          - tellstick_local.device_trigger
+          - tellstick_local.cover
+          - tellstick_local.config_flow
+    expected: all_imports_ok
+
+  - name: "No errors in HA log after load"
+    description: "Check that loading the integration produces no ERROR-level log entries"
+    steps:
+      - action: check_logs
+        domain: tellstick_local
+        level: error
+        since_minutes: 5
+    expected: no_errors
