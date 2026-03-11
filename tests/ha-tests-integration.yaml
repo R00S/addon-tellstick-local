@@ -1,85 +1,70 @@
 # tests/ha-tests-integration.yaml
 # Test scenarios for ha-dev-platform MCP run_tests tool
-# These are executed against a live HA dev instance.
-#
-# SUPPORTED action types (verified against the live runner):
-#   - call_service: params: domain, service   (no service_data support)
-#   - check_state:  params: entity_id, expected_state
-#
-# NOTE: The Python-based integration module tests (imports, config flow, options
-# flow) are covered by tests/test_ha_integration.py which runs locally via:
-#   pip install homeassistant pyflakes && python tests/test_ha_integration.py
-#
-# NOTE: Integration-specific entity tests (check_state on switch/sensor/light
-# entities) require the integration to be deployed and running on the target
-# HA instance via deploy_to_ha first.
+# These are executed against a live HA dev instance with the integration installed
 
 domain: tellstick_local
 
 scenarios:
-  # --- HA core health (always pass) ---
-
-  - name: "HA core is responsive"
-    description: "Verify HA is up and the REST API is reachable"
+  - name: "Integration loads"
+    description: "Verify tellstick_local integration is recognized by HA"
     steps:
-      - action: call_service
-        domain: homeassistant
-        service: check_config
-    expected: pass
+      - action: check_integration_loaded
+        domain: tellstick_local
+    expected: integration_found
 
-  - name: "System log service available"
-    description: "Verify system_log domain is loaded"
+  - name: "Config flow available"
+    description: "Verify the user config flow can be initiated"
     steps:
-      - action: call_service
-        domain: system_log
-        service: clear
-    expected: pass
+      - action: init_config_flow
+        domain: tellstick_local
+        source: user
+    expected:
+      step_id: user
+      type: form
 
-  - name: "Persistent notification service available"
-    description: "Verify persistent_notification domain is loaded"
+  - name: "Hassio discovery flow"
+    description: "Verify hassio discovery triggers the confirm step"
     steps:
-      - action: call_service
-        domain: persistent_notification
-        service: dismiss_all
-    expected: pass
+      - action: init_config_flow
+        domain: tellstick_local
+        source: hassio
+        data:
+          host: "localhost"
+          port: 50800
+          name: "TellStick Local"
+          slug: "tellsticklive"
+    expected:
+      step_id: hassio_confirm
+      type: form
 
-  - name: "Reload all integrations"
-    description: "Trigger homeassistant.reload_all to reload YAML-backed integrations"
+  - name: "Options flow instantiates"
+    description: "Verify OptionsFlow works without deprecated config_entry param"
     steps:
-      - action: call_service
-        domain: homeassistant
-        service: reload_all
-    expected: pass
+      - action: check_options_flow
+        domain: tellstick_local
+    expected: options_flow_ok
 
-  # --- tellstick_local integration deployment check ---
-  # Calls the tellstick_local.list_devices service that the integration registers
-  # when it successfully loads. Passes only when the integration is deployed via
-  # deploy_to_ha and is running. Use this to verify deployment succeeded.
-  #
-  # - name: "tellstick_local integration deployed"
-  #   description: "Verify integration is loaded (list_devices service exists)"
-  #   steps:
-  #     - action: call_service
-  #       domain: tellstick_local
-  #       service: list_devices
-  #   expected: pass
+  - name: "All platform modules import"
+    description: "Verify all integration modules load without ImportError"
+    steps:
+      - action: import_module
+        modules:
+          - tellstick_local.client
+          - tellstick_local.const
+          - tellstick_local.entity
+          - tellstick_local.switch
+          - tellstick_local.light
+          - tellstick_local.sensor
+          - tellstick_local.device_trigger
+          - tellstick_local.cover
+          - tellstick_local.config_flow
+    expected: all_imports_ok
 
-  # --- tellstick_local entity checks (require integration deployed) ---
-  # These will fail until the integration is deployed and has added devices.
-  # Uncomment and set real entity_ids after first device auto-discovery.
-  #
-  # - name: "Switch entity is unavailable or on/off"
-  #   description: "Verify a known switch entity exists after deployment"
-  #   steps:
-  #     - action: check_state
-  #       entity_id: switch.nexa_socket_1
-  #       expected_state: "off"
-  #   expected: pass
-  #
-  # - name: "Sensor entity is available"
-  #   description: "Verify a known temperature sensor entity exists"
-  #   steps:
-  #     - action: check_state
-  #       entity_id: sensor.nexa_thermometer_temperature
-  #       expected_state: "unavailable"
-  #   expected: pass
+  - name: "No errors in HA log after load"
+    description: "Check that loading the integration produces no ERROR-level log entries"
+    steps:
+      - action: check_logs
+        domain: tellstick_local
+        level: error
+        since_minutes: 5
+    expected: no_errors
