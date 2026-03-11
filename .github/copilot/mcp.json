@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "ha-dev-platform": {
+      "type": "streamable-http",
+      "url": "https://haos-dev.svenskamuskler.com/mcp",
+      "headers": {
+        "X-Bridge-Key": "${BRIDGE_API_KEY}"
+      }
+    }
+  }
+}

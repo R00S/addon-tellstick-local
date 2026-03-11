@@ -890,3 +890,29 @@ Apache 2.0 license. Update `NOTICE`.
 - `tellsticklive/config.yaml` version stays `dev` on all branches (linter rule)
 - Use **Create Test Release** workflow for prerelease HACS testing
 - CI: yamllint, shellcheck, hadolint, pyflakes, Prettier, zizmor on every push
+
+---
+
+## MCP Tools Available
+
+You have access to the ha-dev-platform orchestrator via MCP. Use these tools for testing:
+
+- **`create_test_release(repo, branch, version_bump)`** — Create a pre-release for HACS testing.
+- **`deploy_to_ha(repo, version)`** — Install via HACS, restart HA, verify integration loads.
+- **`run_tests(scenarios_yaml)`** — Execute test scenarios (pass YAML from `tests/ha-tests-integration.yaml`).
+- **`get_ha_logs(domain, since_minutes)`** — Get filtered error logs when debugging failures.
+- **`reset_ha_environment(domain)`** — Remove integration and restart to clean state.
+
+## Testing Workflow
+
+When asked to test or when you need to verify changes:
+
+1. Create a test release from the current branch.
+2. Deploy to the dev HA instance via HACS.
+3. Run the test scenarios.
+4. If tests fail, check logs and fix the code.
+5. Repeat until all tests pass.
+
+## Test Scenario Format
+
+Test scenarios use the YAML format defined in the ha-dev-platform. See `tests/ha-tests-integration.yaml` for this project's test definitions.
