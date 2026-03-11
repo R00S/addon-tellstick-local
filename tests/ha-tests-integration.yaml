@@ -51,6 +51,19 @@ scenarios:
         service: reload_all
     expected: pass
 
+  # --- tellstick_local integration deployment check ---
+  # Calls the tellstick_local.list_devices service that the integration registers
+  # when it successfully loads. Passes only when the integration is deployed via
+  # deploy_to_ha and is running. Use this to verify deployment succeeded.
+  #
+  # - name: "tellstick_local integration deployed"
+  #   description: "Verify integration is loaded (list_devices service exists)"
+  #   steps:
+  #     - action: call_service
+  #       domain: tellstick_local
+  #       service: list_devices
+  #   expected: pass
+
   # --- tellstick_local entity checks (require integration deployed) ---
   # These will fail until the integration is deployed and has added devices.
   # Uncomment and set real entity_ids after first device auto-discovery.
