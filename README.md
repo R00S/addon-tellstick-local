@@ -1,9 +1,8 @@
 # Home Assistant: TellStick Local
 
 > [!NOTE]
-> **🧪 Beta – looking for testers!** If you have a TellStick Duo USB stick and
-> run Home Assistant OS, please install, test, and [open an issue][issue] if
-> anything doesn't work.
+> **🚀 Release Candidate** – All known bugs are fixed. If you hit any issue,
+> please [open an issue][issue] so it can be addressed before the stable release.
 
 ![Project Stage][project-stage-shield]
 
@@ -205,7 +204,7 @@ each protocol supports.
 | `arctech`      | Switch / Light | Nexa, Proove, KlikAanKlikUit, Intertechno, HomeEasy, Chacon, CoCo, Luxorparts, Cleverio, Kappa, Bye Bye Standby, Elro |
 | `everflourish` | Switch         | GAO, Everflourish, Rusta                                                                                              |
 | `hasta`        | Cover          | Hasta, Rollertrol motorised blinds                                                                                    |
-| `mandolyn`     | Switch         | Mandolyn / Summerbird                                                                                                 |
+| `mandolyn`     | Sensor         | Mandolyn / Summerbird (temperature/humidity)                                                                          |
 | `sartano`      | Switch         | Sartano, Brennenstuhl, Rusta, Elro (**opt-in** — see note below)                                                      |
 | `waveman`      | Switch         | Waveman                                                                                                               |
 | `x10`          | Switch         | X10                                                                                                                   |
@@ -340,4 +339,4 @@ See [LICENSE.md](LICENSE.md) and [NOTICE](NOTICE) for full details.
 [github-actions]: https://github.com/R00S/addon-tellsticklive-roosfork/actions
 [issue]: https://github.com/R00S/addon-tellsticklive-roosfork/issues
 [maintenance-shield]: https://img.shields.io/maintenance/yes/2026.svg
-[project-stage-shield]: https://img.shields.io/badge/project%20stage-beta-orange.svg
+[project-stage-shield]: https://img.shields.io/badge/project%20stage-release%20candidate-brightgreen.svg

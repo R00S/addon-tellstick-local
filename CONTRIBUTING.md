@@ -21,9 +21,9 @@ Even better: You could submit a pull request with a fix / new feature!
 1. Search our repository for open or closed [pull requests][prs] that relates
    to your submission. You don't want to duplicate effort.
 
-1. You may merge the pull request in once you have the sign-off of two other
-   developers, or if you do not have permission to do that, you may request
-   the second reviewer to merge it for you.
+1. You may merge the pull request in once you have the sign-off of the
+   maintainer, or if you do not have permission to do that, you may request
+   the maintainer to merge it for you.
 
-[github]: https://github.com/hassio-addons/addon-chrony/issues
-[prs]: https://github.com/hassio-addons/addon-chrony/pulls
+[github]: https://github.com/R00S/addon-tellsticklive-roosfork/issues
+[prs]: https://github.com/R00S/addon-tellsticklive-roosfork/pulls
