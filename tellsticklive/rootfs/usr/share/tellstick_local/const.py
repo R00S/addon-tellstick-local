@@ -19,6 +19,12 @@ DOMAIN = "tellstick_local"
 #   A new agent context window on the SAME branch is still a W bump.
 #   Run `git branch --show-current` — if the branch matches the memory,
 #   bump W.  If it's a different branch, bump Z.
+#
+#   BUMP ALL FOUR FILES — they must always be identical:
+#     1. custom_components/tellstick_local/manifest.json          ("version")
+#     2. custom_components/tellstick_local/const.py               (INTEGRATION_VERSION)
+#     3. tellsticklive/rootfs/usr/share/tellstick_local/manifest.json  ("version")
+#     4. tellsticklive/rootfs/usr/share/tellstick_local/const.py  (INTEGRATION_VERSION)
 INTEGRATION_VERSION = "2.3.0.0"
 
 # Config keys (CONF_HOST from homeassistant.const is used for host)
