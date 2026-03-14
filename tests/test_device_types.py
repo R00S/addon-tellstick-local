@@ -246,9 +246,15 @@ def test_switch_unique_id_matches_device_identifier():
 
 
 def test_switch_entity_name_is_full_name():
-    """Switch entity keeps the full user-configured name (no suffix stripping)."""
+    """Switch entity name is None (main device feature) — device_info carries the name.
+
+    With _attr_has_entity_name=True and _attr_name=None the entity IS the main
+    feature of the device: HA shows just the device name ("Living Room Lamp")
+    with no duplication ("Living Room Lamp Living Room Lamp").
+    """
     sw = _make_switch("eid", "arctech_selflearning_99_1", name="Living Room Lamp")
-    assert sw._attr_name == "Living Room Lamp"
+    assert sw._attr_name is None
+    assert sw._attr_device_info["name"] == "Living Room Lamp"
 
 
 def test_two_switches_get_separate_devices():
@@ -277,9 +283,10 @@ def test_light_unique_id_correct():
 
 
 def test_light_entity_name_unchanged():
-    """Light entity keeps the full configured name."""
+    """Light entity name is None (main device feature) — device_info carries the name."""
     lt = _make_light("eid", "arctech_selflearning-dimmer_5_1", name="Hallway Dimmer")
-    assert lt._attr_name == "Hallway Dimmer"
+    assert lt._attr_name is None
+    assert lt._attr_device_info["name"] == "Hallway Dimmer"
 
 
 # ---------------------------------------------------------------------------
@@ -301,9 +308,10 @@ def test_cover_unique_id_correct():
 
 
 def test_cover_entity_name_unchanged():
-    """Cover entity keeps the full configured name."""
+    """Cover entity name is None (main device feature) — device_info carries the name."""
     cv = _make_cover("eid", "hasta_selflearning_C_2", name="Bedroom Blind")
-    assert cv._attr_name == "Bedroom Blind"
+    assert cv._attr_name is None
+    assert cv._attr_device_info["name"] == "Bedroom Blind"
 
 
 # ---------------------------------------------------------------------------
