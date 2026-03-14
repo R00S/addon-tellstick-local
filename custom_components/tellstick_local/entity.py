@@ -34,7 +34,12 @@ class TellStickEntity(RestoreEntity):
         self._unit = unit
 
         self._attr_unique_id = f"{entry_id}_{device_uid}"
-        self._attr_name = name
+        # Set name to None so HA treats this entity as the "main feature" of
+        # the device.  With _attr_has_entity_name=True and name=None, the
+        # friendly name is just the device name (e.g. "Boxarna"), rather than
+        # the duplicated "{device} {entity}" form (e.g. "Boxarna Boxarna").
+        # Sensor subclasses override this to set a type suffix ("Temperature").
+        self._attr_name = None
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, f"{entry_id}_{device_uid}")},
             name=name,
