@@ -42,7 +42,7 @@ CONF_DEVICE_NAME = "name"
 CONF_IGNORED_UIDS = "ignored_uids"
 
 # Defaults
-DEFAULT_HOST = "tellsticklive"  # fallback for manual setup; actual hostname shown in app log
+DEFAULT_HOST = ""  # empty by design — actual hostname is shown in the app log ("use host: …")
 DEFAULT_COMMAND_PORT = 50800
 DEFAULT_EVENT_PORT = 50801
 DEFAULT_AUTOMATIC_ADD = True
