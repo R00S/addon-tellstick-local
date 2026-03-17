@@ -147,12 +147,12 @@
         "user": {
           "title": "Add a device",
           "menu_options": {
-            "by_brand": "Search by brand",
-            "by_protocol": "Search by protocol"
+            "by_brand": "Add by brand",
+            "by_protocol": "Add by protocol"
           }
         },
         "by_brand": {
-          "title": "Add a device — by brand",
+          "title": "Add by brand",
           "description": "Pick your device type and give it a name.",
           "data": {
             "name": "Device name",
@@ -160,7 +160,7 @@
           }
         },
         "by_protocol": {
-          "title": "Add a device — by protocol",
+          "title": "Add by protocol",
           "description": "Pick the protocol and model, then give it a name.",
           "data": {
             "name": "Device name",
