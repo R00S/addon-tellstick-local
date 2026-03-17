@@ -146,10 +146,25 @@
       "step": {
         "user": {
           "title": "Add a device",
+          "menu_options": {
+            "by_brand": "Add by brand",
+            "by_protocol": "Add by protocol"
+          }
+        },
+        "by_brand": {
+          "title": "Add by brand",
           "description": "Pick your device type and give it a name.",
           "data": {
             "name": "Device name",
             "device_type": "Device type"
+          }
+        },
+        "by_protocol": {
+          "title": "Add by protocol",
+          "description": "Pick the protocol and model, then give it a name.",
+          "data": {
+            "name": "Device name",
+            "device_type": "Protocol and model"
           }
         },
         "params": {

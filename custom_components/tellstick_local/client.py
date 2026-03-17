@@ -382,6 +382,20 @@ class TellStickController:
                 continue
         return devices
 
+    async def get_device_name_model(self, device_id: int) -> tuple[str, str]:
+        """Return (name, model) for a telldusd device ID.
+
+        Used only by the app-config import path — not called during normal
+        operation so it does not affect the existing startup or command flows.
+        Returns empty strings on any error.
+        """
+        try:
+            name = await self._call_str("tdGetName", [_encode_int(device_id)]) or ""
+            model = await self._call_str("tdGetModel", [_encode_int(device_id)]) or ""
+        except Exception:  # noqa: BLE001
+            return "", ""
+        return name, model
+
     async def find_or_add_device(
         self,
         name: str,

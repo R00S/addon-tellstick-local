@@ -37,6 +37,8 @@ Click it and then **Submit** — no host or port entry is needed.
 
 If the notification does not appear, go to **Settings → Devices & Services →
 Add Integration**, search for **TellStick Local**, and run the manual setup.
+If the host field is empty, check the app log for the line
+`use host: …  ports: 50800 / 50801` and enter that hostname.
 
 ---
 
@@ -54,8 +56,9 @@ All device management happens in the integration under **Settings → Devices & 
   because arctech signals are often falsely decoded as sartano. Enable the
   **"Detect sartano/codeswitch devices"** toggle in **Configure → Settings** if
   you have real sartano hardware
-- **Add device button** — click **Add device** on the integration card to manually
-  pair a self-learning receiver (pick type, send pairing signal)
+- **Add device button** — click **Add device** on the integration card, then choose
+  **Add by brand** (browse by brand name, e.g. "Nexa — Self-learning on/off") or
+  **Add by protocol** (pick by protocol name, e.g. "arctech — Self-learning on/off")
 - **Ignore unwanted devices** — check "Ignore this device" on the discovery form to
   permanently hide false-positive detections
 - **Learn button** — each switch/light device has a "Send learn signal" button on
@@ -85,6 +88,24 @@ RF signals itself) and want it available before any RF event arrives.
 
 For all other devices (Nexa remotes, KAKU switches, Oregon sensors, etc.) just
 use **automatic add** in the integration — no configuration here is needed.
+
+### What happens when you add devices here?
+
+When the app starts, the integration **automatically imports** any device in this
+list that it does not already manage. Imported devices appear in
+**Settings → Devices & Services → TellStick Local** exactly like any device added
+through the GUI — you can rename, edit, or delete them from the integration's
+Configure flow without touching YAML again.
+
+> **One-way, one-time import.** After a device has been imported, the integration
+> owns it. Changes you make to that device in this YAML list later are **not**
+> reflected automatically in the integration — use the integration GUI to edit it
+> instead. If you remove a device from this list, the integration entity is **not**
+> deleted automatically; delete it via the integration.
+
+> **Sensor protocols excluded.** Devices with `fineoffset`, `oregon`, or `mandolyn`
+> protocol are never imported from this list — they appear automatically in HA when
+> the sensor transmits its first RF signal.
 
 ```yaml
 devices:

@@ -1,8 +1,8 @@
 # Home Assistant: TellStick Local
 
 > [!NOTE]
-> **🚀 Release Candidate** – All known bugs are fixed. If you hit any issue,
-> please [open an issue][issue] so it can be addressed before the stable release.
+> **✅ Stable release** – All known bugs are fixed and the feature set is complete.
+> If you hit any issue, please [open an issue][issue].
 
 ![Project Stage][project-stage-shield]
 
@@ -37,7 +37,7 @@ YAML file editing.
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | **Auto install prompt**     | Install the app → HA automatically offers "Set up TellStick Local?"                                                 |
 | **Press-to-discover**       | Press any 433 MHz remote → device appears in HA (auto-add or discovery prompt)                                      |
-| **Add device button**       | Click "Add device" on the integration card → pick protocol → send pairing signal                                    |
+| **Add device button**       | Click "Add device" → choose "Add by brand" or "Add by protocol" → send pairing signal                              |
 | **Ignore unwanted devices** | Check "Ignore" on the discovery form to permanently hide false-positive detections                                  |
 | **Learn button per device** | Each switch/light device has a "Send learn signal" button on its device page                                        |
 | **Edit existing devices**   | Change name, house/unit codes, or sensor ID — with full entity history preserved                                    |
@@ -115,6 +115,10 @@ automatically — no host or port entry needed.
 If the notification does not appear, go to **Settings → Devices & Services →
 Add Integration**, search for **TellStick Local**, and click through the setup.
 
+> **Manual setup hostname:** If the host field is empty, check the app log for
+> a line like `use host: e9305338-tellsticklive  ports: 50800 / 50801` and enter
+> that hostname. Apps installed from a custom repository include a hex prefix.
+
 ---
 
 ## Pairing devices
@@ -144,11 +148,14 @@ that need to be taught a code before they respond.
 
 1. Go to **Settings → Devices & Services → TellStick Local**
 2. Click **Add device** (the button on the integration card)
-3. Pick your **device type** from the dropdown (e.g. "Nexa — Self-learning on/off")
-4. A house code and unit code are generated automatically — click **Submit**
-5. Put the receiver in **learn mode** (hold its button until it blinks)
-6. HA sends the pairing signal — the receiver learns the code
-7. The device appears in HA and can now be controlled
+3. Choose how to find your device:
+   - **Add by brand** — browse a list of supported brands (e.g. "Nexa — Self-learning on/off", "KlikAanKlikUit — Self-learning on/off")
+   - **Add by protocol** — pick directly by protocol name (e.g. "arctech — Self-learning on/off") — useful if your brand is not listed
+4. Pick your device type and enter a name, then click **Submit**
+5. A house code and unit code are generated automatically — click **Submit** again
+6. Put the receiver in **learn mode** (hold its button until it blinks)
+7. HA sends the pairing signal — the receiver learns the code
+8. The device appears in HA and can now be controlled
 
 > **Re-teaching a device:** Each switch/light device has a **"Send learn signal"**
 > button on its device page. Use it to re-pair a receiver without deleting and
@@ -171,6 +178,37 @@ View and change parameters for any existing device:
 > **Alternatively**, when the new sensor is discovered, the discovery form shows a
 > **"Replace existing device"** dropdown. Select the old device to migrate its
 > entity ID and history to the new sensor ID in one step.
+
+### Pre-configuring devices in the app YAML
+
+If you need a TX-only device available immediately (e.g. a Brateck projector
+screen or a Comen switch that can only receive commands, never send RF), you can
+add it directly to the app's **Configuration** tab in the HAOS Supervisor before
+pressing any buttons.
+
+**What happens when you add devices to the app YAML?**
+
+At each startup, the integration automatically imports any device listed in the
+app configuration that it does not already manage. They appear in
+**Settings → Devices & Services → TellStick Local** exactly like any device added
+through the GUI, and can be renamed, edited, or deleted from the integration's
+Configure flow — no further YAML editing required.
+
+> **One-way, one-time import.** The import runs once per unknown device. After a
+> device is imported, the integration owns it. Changes you make to that device in
+> the app YAML later are **not** automatically reflected in the integration — use
+> the integration GUI to edit it instead. If you remove a device from the app YAML,
+> the integration entity is **not** deleted automatically; delete it via the
+> integration.
+
+> **Sensor protocols are excluded.** Devices with `fineoffset`, `oregon`, or
+> `mandolyn` protocol are never imported this way — they appear automatically when
+> the sensor transmits.
+
+See the [app documentation](tellsticklive/DOCS.md) for the full YAML schema and
+learn-signal options.
+
+---
 
 ### Removing devices
 
@@ -222,12 +260,13 @@ each protocol supports.
 
 > **Self-learning receivers (Luxorparts 50969/50970, Nexa, etc.):** These receivers
 > are dual-protocol — they learn whatever code is sent during pairing. Use
-> Method B (Add device → pick brand → send teach signal) to pair them. The TellStick
-> Duo includes a firmware-level repeat patch for reliable pairing with picky receivers.
+> Method B (Add device → Add by brand → pick your brand → send teach signal) to pair
+> them. The TellStick Duo includes a firmware-level repeat patch for reliable pairing
+> with picky receivers.
 
 ### TX only (can be controlled but not auto-discovered)
 
-These devices must be added via Method B (self-learning teach).
+These devices must be added via **Method B** (Add device → Add by brand or Add by protocol).
 
 | Protocol     | Entity type | Brands                             |
 | ------------ | ----------- | ---------------------------------- |
@@ -339,4 +378,4 @@ See [LICENSE.md](LICENSE.md) and [NOTICE](NOTICE) for full details.
 [github-actions]: https://github.com/R00S/addon-tellsticklive-roosfork/actions
 [issue]: https://github.com/R00S/addon-tellsticklive-roosfork/issues
 [maintenance-shield]: https://img.shields.io/maintenance/yes/2026.svg
-[project-stage-shield]: https://img.shields.io/badge/project%20stage-release%20candidate-brightgreen.svg
+[project-stage-shield]: https://img.shields.io/badge/project%20stage-production-brightgreen.svg

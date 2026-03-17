@@ -50,6 +50,7 @@ from .const import (
     PLATFORMS,
     SIGNAL_EVENT,
     SIGNAL_NEW_DEVICE,
+    build_device_uid,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -142,6 +143,12 @@ _PHANTOM_DEFER_SECS = 0.3
 _SENSOR_SUFFIX: dict[int, str] = {1: "temperature", 2: "humidity"}
 
 _ISSUE_RESTART = "restart_required"
+
+# Protocols that are receive-only sensors — telldusd emits TDSensorEvent for
+# these (not controllable devices).  Pre-configured app-config entries for these
+# protocols are skipped during startup import because they have no house/unit and
+# are auto-discovered from RF events instead.
+_APP_SENSOR_PROTOCOLS = frozenset({"fineoffset", "oregon", "mandolyn"})
 
 
 async def _check_version_mismatch(hass: HomeAssistant) -> None:
@@ -272,6 +279,107 @@ def _clear_orphaned_tombstones(hass: HomeAssistant, entry: ConfigEntry) -> None:
         )
 
 
+async def _import_app_configured_devices(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    controller: TellStickController,
+    device_id_map: dict[str, Any],
+) -> None:
+    """Import devices pre-configured in the app config but not yet in CONF_DEVICES.
+
+    When a user pastes their device YAML into the app's Configuration tab (HAOS
+    YAML mode), those devices are registered with telldusd via ``tellstick.conf``
+    but are unknown to the integration.  This function detects such "unmanaged"
+    telldusd devices and adds them to CONF_DEVICES before platform setup, so that
+    each platform (switch/light/cover) creates the correct entity type based on
+    the original model string from the app config.
+
+    Sensor-only protocols (fineoffset, oregon, mandolyn) are skipped — they have
+    no house/unit and are auto-discovered from TDSensorEvent instead.
+
+    This restores the "paste YAML → devices appear in HA" workflow from the
+    parent repo (erik73/addon-tellsticklive) after migrating to this fork.
+    """
+    all_devices = await controller.list_devices()
+
+    existing_devices: dict[str, Any] = dict(entry.options.get(CONF_DEVICES, {}))
+    ignored_uids: set[str] = set(entry.options.get(CONF_IGNORED_UIDS, {}).keys())
+
+    # Build a lookup of already-managed (protocol, house, unit) tuples so we
+    # can skip devices that are managed via the old house/unit format (where
+    # the UID key might differ from build_device_uid when models differ).
+    managed_params: set[tuple[str, str, str]] = {
+        (
+            cfg.get(CONF_DEVICE_PROTOCOL, ""),
+            cfg.get(CONF_DEVICE_HOUSE, ""),
+            cfg.get(CONF_DEVICE_UNIT, ""),
+        )
+        for cfg in existing_devices.values()
+    }
+
+    new_devices: dict[str, dict[str, Any]] = {}
+    for dev in all_devices:
+        protocol = dev["protocol"]
+        house = dev["house"]
+        unit = dev["unit"]
+        telldusd_id = dev["id"]
+
+        if not protocol:
+            continue
+
+        # Sensor-only protocols: auto-discovered from TDSensorEvent, not here.
+        if protocol in _APP_SENSOR_PROTOCOLS:
+            continue
+
+        # Skip if already managed by protocol+house+unit (covers both UID
+        # formats and avoids fetching name/model for known devices).
+        if (protocol, house, unit) in managed_params:
+            continue
+
+        # Fetch name and model only for candidates to minimise TCP round-trips.
+        name, model = await controller.get_device_name_model(telldusd_id)
+
+        uid = build_device_uid(protocol, model, house, unit)
+
+        # Skip if already managed by UID or user-ignored.
+        if uid in existing_devices or uid in ignored_uids:
+            continue
+
+        # Avoid duplicates when list_devices() returns two entries with the
+        # same effective UID (can happen when app config and integration both
+        # previously registered the same device).
+        if uid in new_devices:
+            continue
+
+        new_devices[uid] = {
+            CONF_DEVICE_NAME: name or f"TellStick {uid}",
+            CONF_DEVICE_PROTOCOL: protocol,
+            CONF_DEVICE_MODEL: model,
+            CONF_DEVICE_HOUSE: house,
+            CONF_DEVICE_UNIT: unit,
+            "_telldusd_id": telldusd_id,
+        }
+
+    if not new_devices:
+        return
+
+    _LOGGER.info(
+        "Importing %d device(s) pre-configured in app config: %s",
+        len(new_devices),
+        list(new_devices.keys()),
+    )
+
+    for uid, dev_cfg in new_devices.items():
+        existing_devices[uid] = {
+            k: v for k, v in dev_cfg.items() if not k.startswith("_")
+        }
+        device_id_map[uid] = dev_cfg["_telldusd_id"]
+
+    new_options = dict(entry.options)
+    new_options[CONF_DEVICES] = existing_devices
+    hass.config_entries.async_update_entry(entry, options=new_options)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up TellStick Local from a config entry."""
 
@@ -390,6 +498,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Listen for options changes (reload only when automatic_add changes)
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
+
+    # Import devices pre-configured in the app's YAML config (Configuration tab)
+    # that are not yet known to the integration.  Must run BEFORE platform setup
+    # so platforms see the imported devices in CONF_DEVICES and create entities
+    # with the correct type (switch/light/cover) from the original model string.
+    # Wrapped in a broad try/except — this is a bonus hook-on and must never
+    # interfere with the existing setup flow.
+    try:
+        await _import_app_configured_devices(hass, entry, controller, device_id_map)
+    except Exception as _import_err:  # noqa: BLE001
+        _LOGGER.warning(
+            "App-config device import skipped due to error (setup continues): %s",
+            _import_err,
+        )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
