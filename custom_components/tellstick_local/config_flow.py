@@ -53,6 +53,8 @@ from .const import (
     DOMAIN,
     ENTRY_DEVICE_ID_MAP,
     ENTRY_TELLSTICK_CONTROLLER,
+    PROTOCOL_MODEL_LABELS,
+    PROTOCOL_MODEL_MAP,
     SENSOR_TYPE_NAMES,
     SIGNAL_NEW_DEVICE,
     WIDGET_PARAMS,
@@ -1458,14 +1460,25 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
 
     _device_type: str = ""
     _new_device: dict[str, Any] = {}
+    _widget_id: int = 8  # populated by by_brand / by_protocol step
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
-        """Step 1: Pick device type and name."""
+        """Step 0: Choose how to find the device — by brand or by protocol."""
+        return self.async_show_menu(
+            step_id="user",
+            menu_options=["by_brand", "by_protocol"],
+        )
+
+    async def async_step_by_brand(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Search by brand name (existing catalog)."""
         if user_input is not None:
             self._device_type = user_input["device_type"]
-            protocol, model, _widget = DEVICE_CATALOG_MAP[self._device_type]
+            protocol, model, widget = DEVICE_CATALOG_MAP[self._device_type]
+            self._widget_id = widget
             self._new_device = {
                 CONF_DEVICE_NAME: user_input["name"],
                 CONF_DEVICE_PROTOCOL: protocol,
@@ -1474,7 +1487,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             return await self.async_step_params()
 
         return self.async_show_form(
-            step_id="user",
+            step_id="by_brand",
             data_schema=vol.Schema(
                 {
                     vol.Required("name"): str,
@@ -1486,12 +1499,40 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             ),
         )
 
+    async def async_step_by_protocol(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Search by protocol name."""
+        if user_input is not None:
+            self._device_type = user_input["device_type"]
+            protocol, model, widget = PROTOCOL_MODEL_MAP[self._device_type]
+            self._widget_id = widget
+            self._new_device = {
+                CONF_DEVICE_NAME: user_input["name"],
+                CONF_DEVICE_PROTOCOL: protocol,
+                CONF_DEVICE_MODEL: model,
+            }
+            return await self.async_step_params()
+
+        return self.async_show_form(
+            step_id="by_protocol",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("name"): str,
+                    vol.Required(
+                        "device_type",
+                        default=PROTOCOL_MODEL_LABELS[0],
+                    ): vol.In(PROTOCOL_MODEL_LABELS),
+                }
+            ),
+        )
+
     async def async_step_params(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
         """Step 2: Enter device-specific parameters with correct ranges."""
         errors: dict[str, str] = {}
-        _protocol, _model, widget = DEVICE_CATALOG_MAP[self._device_type]
+        widget = self._widget_id
 
         if user_input is not None:
             # Validate non-empty string fields

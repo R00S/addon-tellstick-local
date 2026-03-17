@@ -25,7 +25,7 @@ DOMAIN = "tellstick_local"
 #     2. custom_components/tellstick_local/const.py               (INTEGRATION_VERSION)
 #     3. tellsticklive/rootfs/usr/share/tellstick_local/manifest.json  ("version")
 #     4. tellsticklive/rootfs/usr/share/tellstick_local/const.py  (INTEGRATION_VERSION)
-INTEGRATION_VERSION = "2.3.1.1"
+INTEGRATION_VERSION = "2.3.2.0"
 
 # Config keys (CONF_HOST from homeassistant.const is used for host)
 CONF_COMMAND_PORT = "command_port"
@@ -310,6 +310,61 @@ DEVICE_CATALOG_MAP: dict[str, tuple[str, str, int]] = {
 
 # Ordered list of labels for the dropdown
 DEVICE_CATALOG_LABELS: list[str] = [label for label, _, _, _ in DEVICE_CATALOG]
+
+# ---------------------------------------------------------------------------
+# Protocol catalog — same structure as DEVICE_CATALOG but organised by
+# protocol name rather than brand name.  One entry per distinct
+# (protocol, model) combination; the vendor suffix is omitted so the model
+# field matches what telldusd receives after stripping.
+# Users who know their RF protocol can use this list instead of searching
+# through dozens of brand names.
+# ---------------------------------------------------------------------------
+PROTOCOL_MODEL_CATALOG: list[tuple[str, str, str, int]] = [
+    # arctech — most common EU/Nordic 433 MHz protocol (TX+RX)
+    ("arctech — Bell", "arctech", "bell", 4),
+    ("arctech — Code switch", "arctech", "codeswitch", 1),
+    ("arctech — Self-learning dimmer", "arctech", "selflearning-dimmer", 8),
+    ("arctech — Self-learning on/off", "arctech", "selflearning-switch", 8),
+    # brateck — projector screens / blinds (TX only)
+    ("brateck — Blinds / projector screen", "brateck", "codeswitch", 6),
+    # comen — Anslut / Jula brand (TX only)
+    ("comen — Self-learning on/off", "comen", "selflearning-switch", 17),
+    # everflourish — GAO selflearning (TX+RX)
+    ("everflourish — Self-learning on/off", "everflourish", "selflearning-switch", 11),
+    # fuhaote — HQ brand code switch (TX only)
+    ("fuhaote — Code switch", "fuhaote", "codeswitch", 2),
+    # hasta — motorised blinds / Rollertrol (TX+RX)
+    ("hasta — Blinds (v1 / older motors)", "hasta", "selflearning", 16),
+    ("hasta — Blinds (v2 / newer motors, Rollertrol)", "hasta", "selflearningv2", 16),
+    # ikea — Koppla 433 MHz (TX only)
+    ("ikea — Koppla dimmer", "ikea", "selflearning", 3),
+    ("ikea — Koppla on/off", "ikea", "selflearning-switch", 3),
+    # risingsun — Kjell & Company, Conrad, Otio (TX+RX)
+    ("risingsun — Code switch", "risingsun", "codeswitch", 5),
+    ("risingsun — Self-learning on/off", "risingsun", "selflearning", 12),
+    # sartano — Brennenstuhl, Elro, Rusta code switch (TX+RX)
+    ("sartano — Code switch", "sartano", "codeswitch", 2),
+    # silvanchip — Ecosavers, KingPin KP100 (TX only)
+    ("silvanchip — Ecosavers", "silvanchip", "ecosavers", 14),
+    ("silvanchip — KP100", "silvanchip", "kp100", 15),
+    # upm — UPM selflearning (TX only)
+    ("upm — Self-learning on/off", "upm", "selflearning", 9),
+    # waveman — old arctech family (TX+RX)
+    ("waveman — Code switch", "waveman", "codeswitch", 1),
+    # x10 — X10 protocol (TX+RX)
+    ("x10 — Code switch", "x10", "codeswitch", 1),
+    # yidong — Goobay remotes (TX only)
+    ("yidong — Code switch", "yidong", "goobay", 13),
+]
+
+# Build a lookup dict: label → (protocol, model, widget)
+PROTOCOL_MODEL_MAP: dict[str, tuple[str, str, int]] = {
+    label: (proto, model, widget)
+    for label, proto, model, widget in PROTOCOL_MODEL_CATALOG
+}
+
+# Ordered list of labels for the protocol dropdown
+PROTOCOL_MODEL_LABELS: list[str] = [label for label, _, _, _ in PROTOCOL_MODEL_CATALOG]
 
 # Model normalization: arctech selflearning devices always report "selflearning" in
 # raw RF events regardless of whether they were configured as -switch or -dimmer.
