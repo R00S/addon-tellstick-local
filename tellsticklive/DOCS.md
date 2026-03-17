@@ -86,6 +86,24 @@ RF signals itself) and want it available before any RF event arrives.
 For all other devices (Nexa remotes, KAKU switches, Oregon sensors, etc.) just
 use **automatic add** in the integration — no configuration here is needed.
 
+### What happens when you add devices here?
+
+When the app starts, the integration **automatically imports** any device in this
+list that it does not already manage. Imported devices appear in
+**Settings → Devices & Services → TellStick Local** exactly like any device added
+through the GUI — you can rename, edit, or delete them from the integration's
+Configure flow without touching YAML again.
+
+> **One-way, one-time import.** After a device has been imported, the integration
+> owns it. Changes you make to that device in this YAML list later are **not**
+> reflected automatically in the integration — use the integration GUI to edit it
+> instead. If you remove a device from this list, the integration entity is **not**
+> deleted automatically; delete it via the integration.
+
+> **Sensor protocols excluded.** Devices with `fineoffset`, `oregon`, or `mandolyn`
+> protocol are never imported from this list — they appear automatically in HA when
+> the sensor transmits its first RF signal.
+
 ```yaml
 devices:
   - id: 1

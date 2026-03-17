@@ -172,6 +172,37 @@ View and change parameters for any existing device:
 > **"Replace existing device"** dropdown. Select the old device to migrate its
 > entity ID and history to the new sensor ID in one step.
 
+### Pre-configuring devices in the app YAML
+
+If you need a TX-only device available immediately (e.g. a Brateck projector
+screen or a Comen switch that can only receive commands, never send RF), you can
+add it directly to the app's **Configuration** tab in the HAOS Supervisor before
+pressing any buttons.
+
+**What happens when you add devices to the app YAML?**
+
+At each startup, the integration automatically imports any device listed in the
+app configuration that it does not already manage. They appear in
+**Settings → Devices & Services → TellStick Local** exactly like any device added
+through the GUI, and can be renamed, edited, or deleted from the integration's
+Configure flow — no further YAML editing required.
+
+> **One-way, one-time import.** The import runs once per unknown device. After a
+> device is imported, the integration owns it. Changes you make to that device in
+> the app YAML later are **not** automatically reflected in the integration — use
+> the integration GUI to edit it instead. If you remove a device from the app YAML,
+> the integration entity is **not** deleted automatically; delete it via the
+> integration.
+
+> **Sensor protocols are excluded.** Devices with `fineoffset`, `oregon`, or
+> `mandolyn` protocol are never imported this way — they appear automatically when
+> the sensor transmits.
+
+See the [app documentation](tellsticklive/DOCS.md) for the full YAML schema and
+learn-signal options.
+
+---
+
 ### Removing devices
 
 - **Single device:** Go to the device page, click the **⋮ menu** (three dots),
