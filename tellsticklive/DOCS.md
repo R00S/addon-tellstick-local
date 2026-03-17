@@ -37,6 +37,8 @@ Click it and then **Submit** — no host or port entry is needed.
 
 If the notification does not appear, go to **Settings → Devices & Services →
 Add Integration**, search for **TellStick Local**, and run the manual setup.
+If the host field is empty, check the app log for the line
+`use host: …  ports: 50800 / 50801` and enter that hostname.
 
 ---
 
@@ -54,8 +56,9 @@ All device management happens in the integration under **Settings → Devices & 
   because arctech signals are often falsely decoded as sartano. Enable the
   **"Detect sartano/codeswitch devices"** toggle in **Configure → Settings** if
   you have real sartano hardware
-- **Add device button** — click **Add device** on the integration card to manually
-  pair a self-learning receiver (pick type, send pairing signal)
+- **Add device button** — click **Add device** on the integration card, then choose
+  **Add by brand** (browse by brand name, e.g. "Nexa — Self-learning on/off") or
+  **Add by protocol** (pick by protocol name, e.g. "arctech — Self-learning on/off")
 - **Ignore unwanted devices** — check "Ignore this device" on the discovery form to
   permanently hide false-positive detections
 - **Learn button** — each switch/light device has a "Send learn signal" button on
