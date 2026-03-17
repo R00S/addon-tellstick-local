@@ -35,7 +35,7 @@ schema:
   devices:
     - id: int(1,)
       name: str
-      protocol: match(arctech|brateck|comen|everflourish|fineoffset|fuhaote|hasta|ikea|mandolyn|oregon|risingsun|sartano|silvanchip|upm|waveman|x10|yidong)
+      protocol: match(arctech|brateck|comen|everflourish|fineoffset|fuhaote|hasta|ikea|kangtai|mandolyn|oregon|risingsun|sartano|silvanchip|upm|waveman|x10|yidong)
       model: str?
       house: str?
       code: str?
