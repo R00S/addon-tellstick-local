@@ -37,7 +37,7 @@ YAML file editing.
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | **Auto install prompt**     | Install the app → HA automatically offers "Set up TellStick Local?"                                                 |
 | **Press-to-discover**       | Press any 433 MHz remote → device appears in HA (auto-add or discovery prompt)                                      |
-| **Add device button**       | Click "Add device" → choose "Add by brand" or "Add by protocol" → send pairing signal                              |
+| **Add device button**       | Click "Add device" → choose "Add by brand" or "Add by protocol" → send pairing signal                               |
 | **Ignore unwanted devices** | Check "Ignore" on the discovery form to permanently hide false-positive detections                                  |
 | **Learn button per device** | Each switch/light device has a "Send learn signal" button on its device page                                        |
 | **Edit existing devices**   | Change name, house/unit codes, or sensor ID — with full entity history preserved                                    |
