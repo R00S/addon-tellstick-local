@@ -1280,6 +1280,15 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                     ignored[uid] = cfg.get(CONF_DEVICE_NAME, uid)
 
                 discovered.discard(uid)
+                # Also clear the per-sensor-id dedup key so re-discovery fires
+                # on the next event.  The discovery flow (automatic_add=False)
+                # adds "sensor_{id}" to _discovered_uids; only discarding the
+                # specific "sensor_{id}_{suffix}" leaves that key blocking
+                # future discovery.  UID format: sensor_{sensor_id}_{suffix}.
+                if uid.startswith("sensor_"):
+                    parts = uid.split("_", 2)
+                    if len(parts) >= 2:
+                        discovered.discard(f"sensor_{parts[1]}")
 
             new_options = dict(self.config_entry.options)
             new_options[CONF_DEVICES] = new_devices
@@ -1343,10 +1352,20 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
             )
             for uid in to_unignore:
                 discovered.discard(uid)
-                # Clear protocol+model deduplication so re-discovery can fire.
-                # UID format: "{protocol}_{model}_{house}_{unit}".
-                # proto_model_key used in _fire_device_discovery is "{protocol}_{model}".
-                if not uid.startswith("sensor_"):
+                if uid.startswith("sensor_"):
+                    # Also clear the per-sensor-id dedup key so re-discovery
+                    # fires when automatic_add is off.  The discovery flow adds
+                    # "sensor_{id}" (no suffix) to _discovered_uids; discarding
+                    # only the specific "sensor_{id}_{suffix}" UID leaves that
+                    # key in place and silently blocks the next event.
+                    # UID format: sensor_{sensor_id}_{suffix}.
+                    parts = uid.split("_", 2)
+                    if len(parts) >= 2:
+                        discovered.discard(f"sensor_{parts[1]}")
+                else:
+                    # Clear protocol+model deduplication so re-discovery can fire.
+                    # UID format: "{protocol}_{model}_{house}_{unit}".
+                    # proto_model_key used in _fire_device_discovery is "{protocol}_{model}".
                     parts = uid.split("_", 2)
                     if len(parts) >= 2:
                         seen_proto_models.discard(f"{parts[0]}_{parts[1]}")

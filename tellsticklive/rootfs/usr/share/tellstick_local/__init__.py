@@ -139,7 +139,15 @@ _CROSS_DECODE_WINDOW_SECS = 0.5
 _PHANTOM_DEFER_SECS = 0.3
 
 # Sensor data-type → suffix (mirrors sensor.py _SENSOR_META keys)
-_SENSOR_SUFFIX: dict[int, str] = {1: "temperature", 2: "humidity"}
+_SENSOR_SUFFIX: dict[int, str] = {
+    1: "temperature",
+    2: "humidity",
+    4: "rain_rate",
+    8: "rain_total",
+    16: "wind_direction",
+    32: "wind_speed",
+    64: "wind_gust",
+}
 
 _ISSUE_RESTART = "restart_required"
 
@@ -427,7 +435,7 @@ async def async_remove_config_entry_device(
         discovered.discard(device_uid)
     elif device_uid.startswith("sensor_"):
         # Shared identifier format: sensor_{sensor_id}
-        # Remove all entries: sensor_{id}_temperature, sensor_{id}_humidity
+        # Remove all entries: sensor_{id}_temperature, sensor_{id}_humidity, etc.
         sensor_prefix = f"{device_uid}_"
         for uid in list(stored_devices.keys()):
             if uid.startswith(sensor_prefix):
@@ -443,6 +451,9 @@ async def async_remove_config_entry_device(
                             "Could not remove %s from telldusd", uid
                         )
                     device_id_map.pop(uid, None)
+        # Also clear the per-sensor-id dedup key so re-discovery can fire
+        # if automatic_add is off.  UID format for dedup key: sensor_{id}.
+        discovered.discard(device_uid)
     elif device_uid in stored_devices:
         # Non-sensor device: exact UID match
         del stored_devices[device_uid]
@@ -805,7 +816,7 @@ def _handle_sensor_event(
                     if uid.startswith(sensor_prefix):
                         base_name = cfg.get(CONF_DEVICE_NAME, "")
                         break
-                for s in ("temperature", "humidity"):
+                for s in _SENSOR_SUFFIX.values():
                     if base_name.lower().endswith(f" {s}"):
                         base_name = base_name[: -(len(s) + 1)]
                         break

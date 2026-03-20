@@ -10,7 +10,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import PERCENTAGE, UnitOfTemperature
+from homeassistant.const import DEGREE, PERCENTAGE, UnitOfLength, UnitOfSpeed, UnitOfTemperature, UnitOfVolumetricFlux
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import DeviceInfo
@@ -27,7 +27,12 @@ from .const import (
     SIGNAL_EVENT,
     SIGNAL_NEW_DEVICE,
     TELLSTICK_HUMIDITY,
+    TELLSTICK_RAINRATE,
+    TELLSTICK_RAINTOTAL,
     TELLSTICK_TEMPERATURE,
+    TELLSTICK_WINDDIRECTION,
+    TELLSTICK_WINDAVERAGE,
+    TELLSTICK_WINDGUST,
 )
 from .entity import TellStickEntity
 
@@ -36,6 +41,11 @@ _LOGGER = logging.getLogger(__name__)
 _SENSOR_META: dict[int, tuple[str, SensorDeviceClass | None, str]] = {
     TELLSTICK_TEMPERATURE: ("temperature", SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS),
     TELLSTICK_HUMIDITY: ("humidity", SensorDeviceClass.HUMIDITY, PERCENTAGE),
+    TELLSTICK_RAINRATE: ("rain_rate", SensorDeviceClass.PRECIPITATION_INTENSITY, UnitOfVolumetricFlux.MILLIMETERS_PER_HOUR),
+    TELLSTICK_RAINTOTAL: ("rain_total", SensorDeviceClass.PRECIPITATION, UnitOfLength.MILLIMETERS),
+    TELLSTICK_WINDDIRECTION: ("wind_direction", None, DEGREE),
+    TELLSTICK_WINDAVERAGE: ("wind_speed", SensorDeviceClass.WIND_SPEED, UnitOfSpeed.METERS_PER_SECOND),
+    TELLSTICK_WINDGUST: ("wind_gust", SensorDeviceClass.WIND_SPEED, UnitOfSpeed.METERS_PER_SECOND),
 }
 
 
