@@ -115,7 +115,7 @@
         }
       },
       "device_actions": {
-        "title": "Manage: {name}",
+        "title": "Manage device",
         "description": "Choose an action for **{name}**.",
         "menu_options": {
           "device_detail": "Edit device",
