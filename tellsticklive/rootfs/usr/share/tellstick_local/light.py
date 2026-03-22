@@ -13,6 +13,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers import entity_registry as er
 
 from .client import DeviceEvent, RawDeviceEvent, TellStickController
 from .const import (
@@ -54,7 +55,7 @@ async def async_setup_entry(
     """Set up TellStick light (dimmer) entities."""
     entry_data = hass.data[DOMAIN][entry.entry_id]
     controller: TellStickController = entry_data[ENTRY_TELLSTICK_CONTROLLER]
-    device_id_map: dict[str, int] = entry_data.get(ENTRY_DEVICE_ID_MAP, {})
+    device_id_map: dict[str, Any] = entry_data.get(ENTRY_DEVICE_ID_MAP, {})
     new_device_signal = SIGNAL_NEW_DEVICE.format(entry.entry_id)
 
     known: set[str] = set()
@@ -91,8 +92,17 @@ async def async_setup_entry(
         protocol = params.get("protocol", "")
         model = params.get("model", "")
         uid = event.device_id
-        if not uid or uid in known:
+        if not uid:
             return
+        if uid in known:
+            # Guard: if the entity was deleted in this session without a
+            # reload (delete + re-add same session), `uid` stays in `known`
+            # but the entity is gone from the registry.  Check and allow
+            # re-creation.  Issue #33.
+            unique_id = f"{entry.entry_id}_{uid}"
+            if er.async_get(hass).async_get_entity_id("light", DOMAIN, unique_id) is not None:
+                return  # entity still active — skip duplicate
+            known.discard(uid)  # entity was deleted — fall through to create
         if not _is_dimmer(protocol, model):
             return
         known.add(uid)
@@ -134,7 +144,7 @@ class TellStickLight(TellStickEntity, LightEntity):
         protocol: str,
         model: str,
         controller: TellStickController,
-        device_id: int | None = None,
+        device_id: Any = None,
         house: str = "",
         unit: str = "",
     ) -> None:

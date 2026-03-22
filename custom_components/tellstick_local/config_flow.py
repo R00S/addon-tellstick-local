@@ -508,16 +508,16 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         try:
             from .net_client import discover  # noqa: PLC0415
 
-            async for ip, mac, _raw in discover(timeout=2.0):
-                self._net_discovered.append((ip, mac, _raw))
+            async for ip, mac, product in discover(timeout=2.0):
+                self._net_discovered.append((ip, mac, product))
         except Exception as err:  # noqa: BLE001
             _LOGGER.debug("Net discovery error (non-fatal): %s", err)
 
         # Build schema — add a dropdown when devices were found
         if self._net_discovered:
             device_options: dict[str, str] = {}
-            for ip, mac, _raw in self._net_discovered:
-                label = f"{ip}" + (f" [{mac}]" if mac else "")
+            for ip, mac, product in self._net_discovered:
+                label = f"{product} — {ip}" + (f" [{mac}]" if mac else "")
                 device_options[ip] = label
             device_options[""] = "— Enter IP address manually —"
             schema = vol.Schema(
@@ -1777,11 +1777,21 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
     async def async_step_confirm(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
-        """Send the RF teach/pairing signal after user puts device in learn mode."""
+        """Send the RF teach/pairing signal after user puts device in learn mode.
+
+        Works for both backends:
+        - **Duo**: registers the device with telldusd (``add_device`` → int ID),
+          sends a LEARN signal via that ID, stores the int in ``device_id_map``.
+        - **Net/ZNet**: no telldusd registry; builds a device dict from the
+          stored parameters and sends a LEARN RF command directly via UDP.
+          Stores the device dict in ``device_id_map`` so all subsequent
+          turn_on / turn_off / dim calls work.
+        """
         errors: dict[str, str] = {}
 
         if user_input is not None:
             entry = self._get_entry()
+            backend = entry.data.get(CONF_BACKEND, BACKEND_DUO)
             try:
                 entry_data = self.hass.data[DOMAIN].get(entry.entry_id, {})
                 controller: Any = entry_data.get(
@@ -1790,22 +1800,36 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 if controller is None:
                     raise RuntimeError("Controller not available")
 
-                # Use actual telldusd parameter names from the widget
-                params = dict(self._new_device.get("params", {}))
-                if not params:
-                    if house := self._new_device.get(CONF_DEVICE_HOUSE):
-                        params["house"] = house
-                    if unit := self._new_device.get(CONF_DEVICE_UNIT):
-                        params["unit"] = unit
+                if backend == BACKEND_NET:
+                    # Net backend: no device registry.  Build the device dict
+                    # and send the learn/teach RF command directly.
+                    device_dict: dict[str, Any] = {
+                        CONF_DEVICE_PROTOCOL: self._new_device[CONF_DEVICE_PROTOCOL],
+                        CONF_DEVICE_MODEL: self._new_device.get(CONF_DEVICE_MODEL, ""),
+                        CONF_DEVICE_HOUSE: self._new_device.get(CONF_DEVICE_HOUSE, ""),
+                        CONF_DEVICE_UNIT: self._new_device.get(CONF_DEVICE_UNIT, ""),
+                    }
+                    await controller.learn(device_dict)
+                    device_id_map_entry: Any = device_dict
+                else:
+                    # Duo backend: register with telldusd, then send LEARN.
+                    params = dict(self._new_device.get("params", {}))
+                    if not params:
+                        if house := self._new_device.get(CONF_DEVICE_HOUSE):
+                            params["house"] = house
+                        if unit := self._new_device.get(CONF_DEVICE_UNIT):
+                            params["unit"] = unit
 
-                telldusd_id = await controller.add_device(
-                    self._new_device[CONF_DEVICE_NAME],
-                    self._new_device[CONF_DEVICE_PROTOCOL],
-                    self._new_device.get(CONF_DEVICE_MODEL, ""),
-                    params,
-                )
-                # Send the RF teach signal – receiver must already be in learn mode
-                await controller.learn(telldusd_id)
+                    telldusd_id = await controller.add_device(
+                        self._new_device[CONF_DEVICE_NAME],
+                        self._new_device[CONF_DEVICE_PROTOCOL],
+                        self._new_device.get(CONF_DEVICE_MODEL, ""),
+                        params,
+                    )
+                    # Send the RF teach signal – receiver must already be in learn mode
+                    await controller.learn(telldusd_id)
+                    device_id_map_entry = telldusd_id
+
             except Exception:  # noqa: BLE001
                 _LOGGER.exception("Failed to teach device")
                 errors["base"] = "teach_failed"
@@ -1817,14 +1841,14 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                     self._new_device.get(CONF_DEVICE_UNIT, ""),
                 )
 
-                # Store telldusd_id in runtime map so the entity can
-                # send commands immediately (without a restart)
-                device_id_map: dict[str, int] = entry_data.get(
+                # Store device ID / dict in runtime map so the entity can
+                # send commands immediately (without a restart).
+                device_id_map: dict[str, Any] = entry_data.get(
                     ENTRY_DEVICE_ID_MAP, {}
                 )
-                device_id_map[device_uid] = telldusd_id
+                device_id_map[device_uid] = device_id_map_entry
 
-                # Store in entry.options[CONF_DEVICES]
+                # Persist in entry.options[CONF_DEVICES]
                 existing_devices = dict(entry.options.get(CONF_DEVICES, {}))
                 existing_devices[device_uid] = {
                     CONF_DEVICE_NAME: self._new_device[CONF_DEVICE_NAME],
@@ -1840,9 +1864,9 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                     entry, options=new_options
                 )
 
-                # Dispatch a synthetic event so platforms create the entity.
-                # Use the RF-normalized model name so that the UID computed
-                # from the event matches the one stored in device_id_map.
+                # Dispatch a synthetic RawDeviceEvent so platforms create the
+                # entity immediately.  Use the RF-normalized model name so
+                # the UID built from the event matches the one in device_id_map.
                 protocol = self._new_device[CONF_DEVICE_PROTOCOL]
                 rf_model = normalize_rf_model(
                     self._new_device.get(CONF_DEVICE_MODEL, "")

@@ -520,6 +520,9 @@ async def discover(timeout: float = 3.0) -> AsyncGenerator[tuple[str, str, str],
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             sock.setblocking(False)
+            # Bind to all interfaces (ephemeral port) to receive the UDP unicast
+            # reply from the ZNet; the ZNet sends its discovery reply to the
+            # source address of the broadcast — binding to "" is required here.
             sock.bind(("", 0))
         except OSError as err:
             _LOGGER.debug("Could not set up discovery socket: %s", err)
@@ -546,8 +549,12 @@ async def discover(timeout: float = 3.0) -> AsyncGenerator[tuple[str, str, str],
                     continue
                 parsed = _parse_discovery_packet(data)
                 if parsed:
-                    mac, product, _fw = parsed
+                    mac, product, firmware = parsed
                     seen.add(ip)
+                    _LOGGER.info(
+                        "Discovered %s at %s (MAC: %s, firmware: %s)",
+                        product, ip, mac, firmware,
+                    )
                     yield ip, mac, product
             except asyncio.TimeoutError:
                 break
@@ -604,12 +611,19 @@ class TellStickNetController:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.setblocking(False)
         try:
+            # Bind to all interfaces on port 42314 (SO_REUSEADDR).
+            # The ZNet firmware broadcasts RF events to port 42314 on the local
+            # network — binding to a single interface would miss them.
+            # This matches the molobrakos/tellsticknet reference implementation.
             sock.bind(("", NET_COMMAND_PORT))
         except OSError:
             _LOGGER.warning(
                 "Port %d already bound; using ephemeral port for %s",
                 NET_COMMAND_PORT, self.host,
             )
+            # Fall back to an ephemeral port if 42314 is in use (e.g. a second
+            # Net entry is already bound).  The reglistener packet we send will
+            # tell the ZNet to direct future events to our ephemeral port.
             sock.bind(("", 0))
         self._sock = sock
         await self._send_raw(encode_packet("reglistener"))
@@ -709,7 +723,7 @@ class TellStickNetController:
     ) -> int:
         if not isinstance(device, dict):
             _LOGGER.warning(
-                "Net: expected device dict, got %r", type(device)
+                "Net: expected device dict, got %r (%r)", type(device), device
             )
             return -1
 

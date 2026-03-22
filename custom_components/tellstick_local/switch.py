@@ -62,7 +62,7 @@ async def async_setup_entry(
     """Set up TellStick switch entities."""
     entry_data = hass.data[DOMAIN][entry.entry_id]
     controller: TellStickController = entry_data[ENTRY_TELLSTICK_CONTROLLER]
-    device_id_map: dict[str, int] = entry_data.get(ENTRY_DEVICE_ID_MAP, {})
+    device_id_map: dict[str, Any] = entry_data.get(ENTRY_DEVICE_ID_MAP, {})
     new_device_signal = SIGNAL_NEW_DEVICE.format(entry.entry_id)
 
     known: set[str] = set()
@@ -148,7 +148,7 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
         protocol: str,
         model: str,
         controller: TellStickController,
-        device_id: int | None = None,
+        device_id: Any = None,
         house: str = "",
         unit: str = "",
     ) -> None:
