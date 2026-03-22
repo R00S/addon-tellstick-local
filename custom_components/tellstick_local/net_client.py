@@ -465,6 +465,83 @@ def _encode_arctech_command(
     return None
 
 
+# ---------------------------------------------------------------------------
+# Everflourish TX encoding
+# Port of telldus/tellstick-server rf433/src/rf433/ProtocolEverflourish.py
+# which is the Python implementation that actually runs on the ZNet firmware.
+# Note: timing constants differ from the C++ telldus-core version (Duo only).
+# ---------------------------------------------------------------------------
+
+_EF_S = bytes([60])   # short pulse  ≈ 600 µs  (s = chr(60))
+_EF_L = bytes([114])  # long pulse   ≈ 1140 µs (l = chr(114))
+_EF_BIT0 = _EF_S * 3 + _EF_L           # sssl – encodes bit 0
+_EF_BIT1 = _EF_S + _EF_L + _EF_S * 2   # slss – encodes bit 1
+_EF_SYNC = _EF_S * 4                    # ssss – sync burst
+_EF_BITS = [_EF_BIT0, _EF_BIT1]
+
+_EF_METHOD_ACTION: dict[str, int] = {"turnon": 15, "turnoff": 0, "learn": 10}
+
+
+def _everflourish_checksum(x: int) -> int:
+    """Port of ProtocolEverflourish.calculateChecksum() from telldus-core."""
+    lut = [0xf, 0xa, 0x7, 0xe, 0xf, 0xd, 0x9, 0x1,
+           0x1, 0x2, 0x4, 0x8, 0x3, 0x6, 0xc, 0xb]
+    if (x & 0x3) == 3:
+        lo, hi = x & 0x00ff, x & 0xff00
+        lo += 4
+        if lo > 0x100:
+            lo = 0x12
+        x = lo | hi
+    res, bit = 0x5, 1
+    for i in range(16):
+        if x & bit:
+            res ^= lut[i]
+        bit <<= 1
+    return res
+
+
+def _encode_everflourish_command(
+    house: Any, unit: Any, method_name: str
+) -> bytes | None:
+    """Encode an everflourish RF command as raw pulse bytes (S=...).
+
+    Direct port of ProtocolEverflourish.stringForMethod() from
+    telldus/tellstick-server (rf433/src/rf433/ProtocolEverflourish.py).
+    Returns raw bytes for the S= field of the UDP 'send' command, or None
+    if the method is not supported.
+    """
+    action = _EF_METHOD_ACTION.get(method_name)
+    if action is None:
+        return None
+    try:
+        house_int = int(house) & 0x3FFF  # clamp to 14 bits (0-16383)
+    except (TypeError, ValueError):
+        _LOGGER.warning("Everflourish: non-integer house %r", house)
+        return None
+    try:
+        unit0 = max(0, min(3, int(unit) - 1))  # 1-indexed → 0-indexed (0-3)
+    except (TypeError, ValueError):
+        unit0 = 0
+
+    device_code = (house_int << 2) | unit0
+    check = _everflourish_checksum(device_code)
+
+    # Preamble: 8 short pulses (sync burst)
+    code = _EF_S * 8
+    # 16 data bits (house<<2 | unit0), MSB first
+    for i in range(15, -1, -1):
+        code += _EF_BITS[(device_code >> i) & 0x01]
+    # 4 checksum bits, MSB first
+    for i in range(3, -1, -1):
+        code += _EF_BITS[(check >> i) & 0x01]
+    # 4 action bits, MSB first
+    for i in range(3, -1, -1):
+        code += _EF_BITS[(action >> i) & 0x01]
+    # End sync burst
+    code += _EF_SYNC
+    return code
+
+
 def _encode_generic_command(
     protocol: str, model: str, house: Any, unit: Any, method_name: str
 ) -> dict:
@@ -743,6 +820,14 @@ class TellStickNetController:
             send_kwargs: dict[str, Any] = (
                 dict(S=rf_packet) if isinstance(rf_packet, bytes) else dict(rf_packet)
             )
+        elif protocol == "everflourish":
+            rf_packet = _encode_everflourish_command(house, unit, method_name)
+            if rf_packet is None:
+                _LOGGER.warning(
+                    "Net everflourish: unsupported method=%s", method_name
+                )
+                return -1
+            send_kwargs = dict(S=rf_packet)
         else:
             send_kwargs = dict(
                 _encode_generic_command(protocol, model, house, unit, method_name)
