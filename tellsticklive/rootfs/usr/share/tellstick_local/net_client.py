@@ -68,7 +68,7 @@ _MIN_TELLSTICKNET_FIRMWARE = 17
 # ---------------------------------------------------------------------------
 
 def _encode_bytes_value(s: bytes) -> bytes:
-    return b"%X%c%s" % (len(s), _TAG_SEP, s)
+    return b"%x%c%s" % (len(s), _TAG_SEP, s)
 
 
 def _encode_string(s: str) -> bytes:
@@ -434,11 +434,13 @@ def _encode_arctech_command(
     if method_int is None:
         return None
 
+    # codeswitch uses alphabetic house codes (A-P); selflearning uses integers.
+    # Try integer conversion first; fall back to passing the value as-is (string)
+    # so the ZNet firmware can handle it natively (e.g. house="K" for codeswitch).
     try:
-        house_int = int(house)
+        house_val: Any = int(house)
     except (TypeError, ValueError):
-        _LOGGER.warning("Arctech: non-integer house %r", house)
-        return None
+        house_val = str(house)
 
     try:
         unit0 = max(0, int(unit) - 1)   # 1-indexed -> 0-indexed
@@ -453,15 +455,21 @@ def _encode_arctech_command(
         method_int = _TURNOFF
 
     if method_int in (_TURNON, _TURNOFF, _LEARN):
+        # For selflearning, model must be "selflearning" (not "selflearning-switch").
+        # For codeswitch, bell, kp100 pass the model through as received.
+        send_model = "selflearning" if model in ("selflearning", "selflearning-switch", "selflearning-dimmer") else model
         return OrderedDict(
             protocol="arctech",
-            model="selflearning",
-            house=house_int,
+            model=send_model,
+            house=house_val,
             unit=unit0,
             method=method_name,
         )
     if method_int == _DIM:
-        return _arctech_dim_pulse_train(house_int, unit0, int(param or 128))
+        if not isinstance(house_val, int):
+            _LOGGER.warning("Arctech dim: non-integer house %r (codeswitch cannot dim)", house)
+            return None
+        return _arctech_dim_pulse_train(house_val, unit0, int(param or 128))
     return None
 
 
