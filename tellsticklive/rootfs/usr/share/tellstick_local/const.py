@@ -25,7 +25,7 @@ DOMAIN = "tellstick_local"
 #     2. custom_components/tellstick_local/const.py               (INTEGRATION_VERSION)
 #     3. tellsticklive/rootfs/usr/share/tellstick_local/manifest.json  ("version")
 #     4. tellsticklive/rootfs/usr/share/tellstick_local/const.py  (INTEGRATION_VERSION)
-INTEGRATION_VERSION = "2.3.2.2"
+INTEGRATION_VERSION = "2.3.3.0"
 
 # Config keys (CONF_HOST from homeassistant.const is used for host)
 CONF_COMMAND_PORT = "command_port"
@@ -76,6 +76,11 @@ TELLSTICK_WINDGUST = 64
 SENSOR_TYPE_NAMES: dict[int, str] = {
     TELLSTICK_TEMPERATURE: "temperature",
     TELLSTICK_HUMIDITY: "humidity",
+    TELLSTICK_RAINRATE: "rain_rate",
+    TELLSTICK_RAINTOTAL: "rain_total",
+    TELLSTICK_WINDDIRECTION: "wind_direction",
+    TELLSTICK_WINDAVERAGE: "wind_speed",
+    TELLSTICK_WINDGUST: "wind_gust",
 }
 
 # HA platforms
