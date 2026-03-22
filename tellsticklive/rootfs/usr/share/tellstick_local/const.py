@@ -25,13 +25,22 @@ DOMAIN = "tellstick_local"
 #     2. custom_components/tellstick_local/const.py               (INTEGRATION_VERSION)
 #     3. tellsticklive/rootfs/usr/share/tellstick_local/manifest.json  ("version")
 #     4. tellsticklive/rootfs/usr/share/tellstick_local/const.py  (INTEGRATION_VERSION)
-INTEGRATION_VERSION = "2.3.4.0"
+INTEGRATION_VERSION = "2.3.4.1"
 
 # Config keys (CONF_HOST from homeassistant.const is used for host)
 CONF_COMMAND_PORT = "command_port"
 CONF_EVENT_PORT = "event_port"
 CONF_AUTOMATIC_ADD = "automatic_add"
 CONF_DETECT_SARTANO = "detect_sartano"
+
+# Hardware type selector — stored in entry.data["hardware_type"].
+# Absent on pre-2.3.4.1 entries; treated as HARDWARE_TYPE_DUO for
+# backwards compatibility.
+CONF_HARDWARE_TYPE = "hardware_type"
+HARDWARE_TYPE_DUO = "duo"    # USB Duo via the HAOS app / telldusd TCP
+HARDWARE_TYPE_NET = "net"    # TellStick Net (LAN / UDP)
+HARDWARE_TYPE_ZNET = "znet"  # TellStick ZNet (LAN / UDP)
+DEFAULT_HARDWARE_TYPE = HARDWARE_TYPE_DUO
 # Device storage keys (in entry.options["devices"])
 CONF_DEVICES = "devices"
 CONF_DEVICE_PROTOCOL = "protocol"

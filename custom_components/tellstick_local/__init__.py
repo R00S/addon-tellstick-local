@@ -40,12 +40,16 @@ from .const import (
     CONF_DEVICE_UNIT,
     CONF_DEVICES,
     CONF_EVENT_PORT,
+    CONF_HARDWARE_TYPE,
     CONF_IGNORED_UIDS,
     DEFAULT_AUTOMATIC_ADD,
     DEFAULT_DETECT_SARTANO,
+    DEFAULT_HARDWARE_TYPE,
     DOMAIN,
     ENTRY_DEVICE_ID_MAP,
     ENTRY_TELLSTICK_CONTROLLER,
+    HARDWARE_TYPE_NET,
+    HARDWARE_TYPE_ZNET,
     INTEGRATION_VERSION,
     PLATFORMS,
     SIGNAL_EVENT,
@@ -406,12 +410,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _clear_orphaned_tombstones(hass, entry)
 
     host = entry.data[CONF_HOST]
-    cmd_port = entry.data[CONF_COMMAND_PORT]
-    evt_port = entry.data[CONF_EVENT_PORT]
+    hardware_type = entry.data.get(CONF_HARDWARE_TYPE, DEFAULT_HARDWARE_TYPE)
 
-    controller = TellStickController(
-        host=host, command_port=cmd_port, event_port=evt_port
-    )
+    if hardware_type in (HARDWARE_TYPE_NET, HARDWARE_TYPE_ZNET):
+        from .client_net import TellStickNetController  # noqa: PLC0415
+
+        controller: TellStickController | TellStickNetController = (
+            TellStickNetController(host=host)
+        )
+    else:
+        cmd_port = entry.data[CONF_COMMAND_PORT]
+        evt_port = entry.data[CONF_EVENT_PORT]
+        controller = TellStickController(
+            host=host, command_port=cmd_port, event_port=evt_port
+        )
 
     try:
         await asyncio.wait_for(controller.connect(), timeout=10)

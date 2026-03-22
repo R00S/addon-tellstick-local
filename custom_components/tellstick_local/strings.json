@@ -20,6 +20,16 @@
         "description": "The **{addon}** app is running and ready.\n\nIt will connect on **{host}** (command port **{command_port}**, event port **{event_port}**).\n\nClick **Submit** to set up TellStick Local."
       },
       "user": {
+        "title": "Select hardware type",
+        "description": "Choose which TellStick hardware you have.",
+        "data": {
+          "hardware_type": "Hardware type"
+        },
+        "data_description": {
+          "hardware_type": "**Duo** — USB stick connected to this machine via the TellStick Local app.\n**Net / ZNet** — LAN-connected hardware (enter its IP address on the next screen)."
+        }
+      },
+      "user_duo": {
         "title": "Connect to TellStick daemon",
         "description": "Enter the host and ports of the TellStick Local app.\n\nFind the correct hostname in the **app log** — look for the line `use host: …`. For apps installed from a custom repository the hostname includes a prefix (e.g. `e9305338-tellsticklive`).",
         "data": {
@@ -31,6 +41,16 @@
           "host": "Hostname of the TellStick Local app. Check the app log for the `use host:` line to find the correct value.",
           "command_port": "TCP port for TellStick commands (default: 50800).",
           "event_port": "TCP port for TellStick events (default: 50801)."
+        }
+      },
+      "user_net": {
+        "title": "Connect to {hardware_type}",
+        "description": "Enter the IP address of your TellStick Net or ZNet device.\n\nMake sure the device is powered on and reachable on your local network.",
+        "data": {
+          "host": "IP address"
+        },
+        "data_description": {
+          "host": "Local IP address of the TellStick Net/ZNet device (e.g. 192.168.1.42)."
         }
       },
       "add_rf_device": {
@@ -47,7 +67,7 @@
       }
     },
     "error": {
-      "cannot_connect": "Cannot connect to the TellStick daemon. Check that the app is running and the host/ports are correct.",
+      "cannot_connect": "Cannot connect to the TellStick device. For Duo: check that the app is running and the host/ports are correct. For Net/ZNet: check the IP address and that the device is reachable on your network.",
       "unknown": "Unexpected error. See logs for details."
     },
     "abort": {

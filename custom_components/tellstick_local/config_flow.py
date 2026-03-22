@@ -42,17 +42,22 @@ from .const import (
     CONF_DEVICE_UNIT,
     CONF_DEVICES,
     CONF_EVENT_PORT,
+    CONF_HARDWARE_TYPE,
     CONF_IGNORED_UIDS,
     DEFAULT_AUTOMATIC_ADD,
     DEFAULT_COMMAND_PORT,
     DEFAULT_DETECT_SARTANO,
     DEFAULT_EVENT_PORT,
     DEFAULT_HOST,
+    DEFAULT_HARDWARE_TYPE,
     DEVICE_CATALOG_LABELS,
     DEVICE_CATALOG_MAP,
     DOMAIN,
     ENTRY_DEVICE_ID_MAP,
     ENTRY_TELLSTICK_CONTROLLER,
+    HARDWARE_TYPE_DUO,
+    HARDWARE_TYPE_NET,
+    HARDWARE_TYPE_ZNET,
     PROTOCOL_MODEL_LABELS,
     PROTOCOL_MODEL_MAP,
     SENSOR_TYPE_NAMES,
@@ -66,6 +71,16 @@ SUBENTRY_TYPE_DEVICE = "device"
 
 _LOGGER = logging.getLogger(__name__)
 
+# Step 1: choose hardware type
+STEP_HARDWARE_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_HARDWARE_TYPE, default=DEFAULT_HARDWARE_TYPE): vol.In(
+            [HARDWARE_TYPE_DUO, HARDWARE_TYPE_NET, HARDWARE_TYPE_ZNET]
+        ),
+    }
+)
+
+# Step 2a (Duo): host + TCP ports
 STEP_USER_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_HOST, default=DEFAULT_HOST): str,
@@ -75,6 +90,13 @@ STEP_USER_SCHEMA = vol.Schema(
         vol.Required(CONF_EVENT_PORT, default=DEFAULT_EVENT_PORT): vol.All(
             int, vol.Range(min=1, max=65535)
         ),
+    }
+)
+
+# Step 2b (Net/ZNet): IP address only
+STEP_USER_NET_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_HOST, default=""): str,
     }
 )
 
@@ -337,6 +359,45 @@ async def _validate_connection(host: str, command_port: int, event_port: int) ->
         await ctrl.disconnect()
 
 
+async def _validate_connection_net(host: str) -> None:
+    """Raise if the TellStick Net/ZNet device at *host* is not reachable.
+
+    Sends a UDP discovery probe (``b"D"`` on port 30303) and waits up to
+    3 seconds for the expected response.  Raises ``OSError`` on failure.
+    """
+    import socket as _socket
+
+    DISCOVERY_PORT = 30303
+    loop = asyncio.get_event_loop()
+
+    # Determine the outbound interface that routes to *host* so we bind only
+    # to that interface rather than to all interfaces.
+    try:
+        with _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM) as _route_sock:
+            _route_sock.connect((host, DISCOVERY_PORT))
+            local_ip = _route_sock.getsockname()[0]
+    except OSError:
+        local_ip = "127.0.0.1"
+
+    sock = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
+    sock.setblocking(False)
+    sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_BROADCAST, 1)
+    try:
+        sock.bind((local_ip, 0))
+        await loop.sock_sendto(sock, b"D", (host, DISCOVERY_PORT))
+        try:
+            data, _ = await asyncio.wait_for(
+                loop.sock_recvfrom(sock, 256), timeout=3.0
+            )
+            _LOGGER.debug("TellStick Net/ZNet discovery response: %r", data)
+        except asyncio.TimeoutError:
+            raise OSError(
+                f"No response from TellStick Net/ZNet at {host}:{DISCOVERY_PORT}"
+            )
+    finally:
+        sock.close()
+
+
 class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for TellStick Local."""
 
@@ -347,6 +408,7 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._host: str = DEFAULT_HOST
         self._command_port: int = DEFAULT_COMMAND_PORT
         self._event_port: int = DEFAULT_EVENT_PORT
+        self._hardware_type: str = DEFAULT_HARDWARE_TYPE
         self._hassio_discovery: bool = False
         self._rf_discovery: dict[str, Any] = {}
 
@@ -362,6 +424,7 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._host = discovery_info.slug
         self._command_port = DEFAULT_COMMAND_PORT
         self._event_port = DEFAULT_EVENT_PORT
+        self._hardware_type = HARDWARE_TYPE_DUO
         self._hassio_discovery = True
 
         return await self.async_step_hassio_confirm()
@@ -389,6 +452,7 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_HOST: self._host,
                         CONF_COMMAND_PORT: self._command_port,
                         CONF_EVENT_PORT: self._event_port,
+                        CONF_HARDWARE_TYPE: HARDWARE_TYPE_DUO,
                     },
                     options={
                         CONF_DEVICES: {},
@@ -409,7 +473,22 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Handle the initial step."""
+        """Step 1: choose hardware type (Duo / Net / ZNet)."""
+        if user_input is not None:
+            self._hardware_type = user_input[CONF_HARDWARE_TYPE]
+            if self._hardware_type == HARDWARE_TYPE_DUO:
+                return await self.async_step_user_duo()
+            return await self.async_step_user_net()
+
+        return self.async_show_form(
+            step_id="user",
+            data_schema=STEP_HARDWARE_SCHEMA,
+        )
+
+    async def async_step_user_duo(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Step 2 (Duo): enter host and TCP ports."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -437,6 +516,7 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_HOST: host,
                         CONF_COMMAND_PORT: cmd_port,
                         CONF_EVENT_PORT: evt_port,
+                        CONF_HARDWARE_TYPE: HARDWARE_TYPE_DUO,
                     },
                     options={
                         CONF_DEVICES: {},
@@ -444,8 +524,56 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
 
         return self.async_show_form(
-            step_id="user",
+            step_id="user_duo",
             data_schema=STEP_USER_SCHEMA,
+            errors=errors,
+        )
+
+    async def async_step_user_net(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Step 2 (Net/ZNet): enter device IP address."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            host = user_input[CONF_HOST].strip()
+
+            await self.async_set_unique_id(f"net:{host}")
+            self._abort_if_unique_id_configured()
+
+            try:
+                await _validate_connection_net(host)
+            except OSError:
+                errors["base"] = "cannot_connect"
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception(
+                    "Unexpected error validating TellStick Net/ZNet at %s", host
+                )
+                errors["base"] = "unknown"
+            else:
+                hw_label = (
+                    "TellStick ZNet" if self._hardware_type == HARDWARE_TYPE_ZNET
+                    else "TellStick Net"
+                )
+                return self.async_create_entry(
+                    title=f"{hw_label} ({host})",
+                    data={
+                        CONF_HOST: host,
+                        CONF_HARDWARE_TYPE: self._hardware_type,
+                    },
+                    options={
+                        CONF_DEVICES: {},
+                    },
+                )
+
+        hw_label = (
+            "TellStick ZNet" if self._hardware_type == HARDWARE_TYPE_ZNET
+            else "TellStick Net"
+        )
+        return self.async_show_form(
+            step_id="user_net",
+            data_schema=STEP_USER_NET_SCHEMA,
+            description_placeholders={"hardware_type": hw_label},
             errors=errors,
         )
 
