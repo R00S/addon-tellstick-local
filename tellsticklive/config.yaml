@@ -3,7 +3,7 @@ name: TellStick Local
 version: 2.3.3.0.20260320114348
 slug: tellsticklive
 image: ghcr.io/r00s/tellsticklive/{arch}
-description: TellStick and TellStick Duo local service (no cloud)
+description: TellStick, TellStick Duo, Net and ZNet local service (no cloud)
 url: https://github.com/R00S/addon-tellsticklive-roosfork
 arch:
   - aarch64
@@ -18,6 +18,8 @@ map:
 discovery:
   - tellstick_local
 options:
+  controller_type: usb
+  controller_ip: ""
   devices:
     - id: 1
       name: Example device
@@ -32,6 +34,8 @@ options:
       house: A
       unit: "2"
 schema:
+  controller_type: match(usb|net|znet)?
+  controller_ip: str?
   devices:
     - id: int(1,)
       name: str

@@ -55,3 +55,30 @@ for device in $(bashio::config 'devices|keys'); do
         echo "}"
     ) >> "${CONFIG}"
 done
+
+# Network controller (TellStick Net / ZNet)
+CONTROLLER_TYPE=$(bashio::config 'controller_type' 'usb')
+CONTROLLER_IP=$(bashio::config 'controller_ip' '')
+
+if [[ "${CONTROLLER_TYPE}" != "usb" ]] && bashio::var.has_value "${CONTROLLER_IP}"; then
+    # Map config value → telldusd type string
+    if [[ "${CONTROLLER_TYPE}" == "net" ]]; then
+        TD_TYPE="TellStickNet"
+    elif [[ "${CONTROLLER_TYPE}" == "znet" ]]; then
+        TD_TYPE="TellStickZNet"
+    else
+        bashio::log.warning "Unknown controller_type '${CONTROLLER_TYPE}', skipping network controller configuration"
+        TD_TYPE=""
+    fi
+    if bashio::var.has_value "${TD_TYPE}"; then
+        bashio::log.info "Configuring network controller: type=${TD_TYPE} ip=${CONTROLLER_IP}"
+        {
+            echo ""
+            echo "controller {"
+            echo "  id = 1"
+            echo "  type = \"${TD_TYPE}\""
+            echo "  ip = \"${CONTROLLER_IP}\""
+            echo "}"
+        } >> "${CONFIG}"
+    fi
+fi

@@ -69,6 +69,31 @@ Home Assistant <--TCP:50800/50801--> socat <--UNIX socket--> telldusd <--USB--> 
 - **Port 50800**: TCP bridge to TelldusClient socket (commands)
 - **Port 50801**: TCP bridge to TelldusEvents socket (events/sensor data)
 
+### TellStick Net / ZNet Support
+
+TellStick Net and TellStick ZNet are LAN-connected variants of the TellStick hardware.
+`telldusd` supports them natively via a `controller {}` stanza in `tellstick.conf`.
+
+When `controller_type` is `net` or `znet` and `controller_ip` is set, `telldusd.sh`
+appends a controller block to `/etc/tellstick.conf`. `telldusd` then connects to the
+hardware over the LAN instead of USB. From the integration's perspective (ports
+50800/50801, all the same `TellStickController` commands and events) nothing changes —
+the hardware abstraction is handled entirely by `telldusd`.
+
+No MQTT. No cloud. Same UI as TellStick Duo.
+
+**Configuration example** (add-on config tab in HA):
+
+```yaml
+controller_type: net
+controller_ip: "192.168.1.42"
+devices: []
+```
+
+**Authentication note**: TellStick Net/ZNet firmware may require pairing with
+`telldusd` on first use. If `telldusd` logs show authentication errors, the user
+may need to press the physical button on the device to accept the connection.
+
 ## Configuration Format
 
 The add-on configuration generates a tellstick.conf file that follows the [official TellStick configuration format](http://developer.telldus.com/wiki/TellStick_conf):
