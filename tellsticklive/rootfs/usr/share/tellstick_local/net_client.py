@@ -804,6 +804,11 @@ class TellStickNetController:
             )
             return -1
 
+        _LOGGER.warning(
+            "Net _send_rf called: method=%s device=%r sock=%s",
+            method_name, device, "OK" if self._sock else "NONE",
+        )
+
         protocol = device.get("protocol", "")
         model_full = device.get("model", "")
         model = model_full.split(":")[0] if ":" in model_full else model_full

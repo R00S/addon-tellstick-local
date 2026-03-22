@@ -24,6 +24,7 @@ class TellStickEntity(RestoreEntity):
         model: str,
         house: str = "",
         unit: str = "",
+        manufacturer: str = "",
     ) -> None:
         """Initialize a TellStick entity."""
         self._entry_id = entry_id
@@ -43,7 +44,7 @@ class TellStickEntity(RestoreEntity):
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, f"{entry_id}_{device_uid}")},
             name=name,
-            manufacturer="Telldus Technologies",
+            manufacturer=manufacturer or None,
             model=f"{protocol}/{model}" if model else protocol,
         )
 

@@ -360,12 +360,30 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, discovery_info: HassioServiceInfo
     ) -> FlowResult:
         """Handle discovery by the Supervisor (app installed → HA auto-offers setup)."""
-        await self.async_set_unique_id(discovery_info.uuid)
-        self._abort_if_unique_id_configured()
-
         # discovery_info.slug is the HAOS Supervisor internal hostname
         # (e.g. "e9305338-tellsticklive" for custom-repo apps).
-        self._host = discovery_info.slug
+        slug = discovery_info.slug
+
+        # Use a stable slug:port unique_id rather than discovery_info.uuid.
+        # The Supervisor UUID can change when the add-on is reinstalled or
+        # updated, which previously caused a *new* Duo entry to be created
+        # alongside the existing (possibly disabled) one — the old entry with
+        # all stored devices became orphaned and effectively disappeared.
+        await self.async_set_unique_id(f"{slug}:{DEFAULT_COMMAND_PORT}")
+        self._abort_if_unique_id_configured()
+
+        # Fallback: also check by host for entries created before this change
+        # (those used discovery_info.uuid as unique_id, so the set_unique_id
+        # check above won't find them).  Abort if any Duo entry for this slug
+        # already exists regardless of its state (loaded, disabled, error…).
+        for existing in self._async_current_entries():
+            if (
+                existing.data.get(CONF_BACKEND, BACKEND_DUO) == BACKEND_DUO
+                and existing.data.get(CONF_HOST) == slug
+            ):
+                return self.async_abort(reason="already_configured")
+
+        self._host = slug
         self._command_port = DEFAULT_COMMAND_PORT
         self._event_port = DEFAULT_EVENT_PORT
         self._hassio_discovery = True
@@ -390,7 +408,7 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "unknown"
             else:
                 return self.async_create_entry(
-                    title="TellStick Local",
+                    title="TellStick Duo",
                     data={
                         CONF_BACKEND: BACKEND_DUO,
                         CONF_HOST: self._host,
@@ -448,7 +466,7 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "unknown"
             else:
                 return self.async_create_entry(
-                    title=f"TellStick Local ({host})",
+                    title=f"TellStick Duo ({host})",
                     data={
                         CONF_BACKEND: BACKEND_DUO,
                         CONF_HOST: host,
@@ -580,7 +598,7 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     self._abort_if_unique_id_configured()
 
                     return self.async_create_entry(
-                        title=f"TellStick Net ({self._host})",
+                        title=f"TellStick Net/ZNet ({self._host})",
                         data={
                             CONF_BACKEND: BACKEND_NET,
                             CONF_HOST: self._host,

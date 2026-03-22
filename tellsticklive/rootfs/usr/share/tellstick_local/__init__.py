@@ -225,6 +225,32 @@ async def _check_version_mismatch(hass: HomeAssistant) -> None:
 
 
 @callback
+def _migrate_entry_title(
+    hass: HomeAssistant, entry: ConfigEntry, backend: str, host: str
+) -> None:
+    """Update legacy generic entry titles to hub-specific names.
+
+    Before 2.4.0.3 all entries used 'TellStick Local' / 'TellStick Net (host)'
+    as their title.  When both a Duo and a Net/ZNet are configured at the same
+    time those titles are indistinguishable in the HA UI, causing users to
+    accidentally configure or use the wrong hub.
+    """
+    title = entry.title
+    if backend == BACKEND_NET:
+        expected = f"TellStick Net/ZNet ({host})"
+        # Old titles: "TellStick Net (host)"
+        if title.startswith("TellStick Net") and title != expected:
+            hass.config_entries.async_update_entry(entry, title=expected)
+    else:
+        # Old titles: "TellStick Local" or "TellStick Local (host)"
+        if title.startswith("TellStick Local"):
+            new_title = (
+                f"TellStick Duo ({host})" if "(" in title else "TellStick Duo"
+            )
+            hass.config_entries.async_update_entry(entry, title=new_title)
+
+
+@callback
 def _clear_orphaned_tombstones(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Remove stale entity and device registry tombstones at startup.
 
@@ -410,6 +436,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     backend = entry.data.get(CONF_BACKEND, BACKEND_DUO)
     host = entry.data[CONF_HOST]
+
+    # --- One-time title migration ---
+    # Older versions used generic titles ("TellStick Local", "TellStick Local (host)",
+    # "TellStick Net (host)").  Migrate to hub-specific titles so users can
+    # immediately tell which entry controls which hardware, especially important
+    # when both a Duo and a Net/ZNet are configured simultaneously.
+    _migrate_entry_title(hass, entry, backend, host)
 
     if backend == BACKEND_NET:
         # --- TellStick Net / ZNet UDP backend ---

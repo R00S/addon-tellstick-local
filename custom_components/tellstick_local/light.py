@@ -60,6 +60,9 @@ async def async_setup_entry(
     device_id_map: dict[str, Any] = entry_data.get(ENTRY_DEVICE_ID_MAP, {})
     new_device_signal = SIGNAL_NEW_DEVICE.format(entry.entry_id)
 
+    backend = entry.data.get(CONF_BACKEND, BACKEND_DUO)
+    manufacturer = "TellStick Net/ZNet" if backend != BACKEND_DUO else "TellStick Duo"
+
     known: set[str] = set()
 
     # Pre-create entities for stored (manually-added) dimmer devices
@@ -81,6 +84,7 @@ async def async_setup_entry(
                 device_id=device_id_map.get(device_uid),
                 house=device_cfg.get(CONF_DEVICE_HOUSE, ""),
                 unit=device_cfg.get(CONF_DEVICE_UNIT, ""),
+                manufacturer=manufacturer,
             )
         )
     if stored_entities:
@@ -121,6 +125,7 @@ async def async_setup_entry(
             device_id=device_id_map.get(uid),
             house=params.get("house", ""),
             unit=params.get("unit", params.get("code", "")),
+            manufacturer=manufacturer,
         )
         async_add_entities([entity])
 
@@ -149,6 +154,7 @@ class TellStickLight(TellStickEntity, LightEntity):
         device_id: Any = None,
         house: str = "",
         unit: str = "",
+        manufacturer: str = "",
     ) -> None:
         """Initialize a TellStick light."""
         super().__init__(
@@ -159,6 +165,7 @@ class TellStickLight(TellStickEntity, LightEntity):
             model=model,
             house=house,
             unit=unit,
+            manufacturer=manufacturer,
         )
         self._controller = controller
         self._telldusd_device_id = device_id

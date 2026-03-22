@@ -31,6 +31,8 @@ from homeassistant.helpers import entity_registry as er
 
 from .client import RawDeviceEvent, TellStickController
 from .const import (
+    BACKEND_DUO,
+    CONF_BACKEND,
     CONF_DEVICE_HOUSE,
     CONF_DEVICE_MODEL,
     CONF_DEVICE_NAME,
@@ -69,6 +71,9 @@ async def async_setup_entry(
     device_id_map: dict[str, Any] = entry_data.get(ENTRY_DEVICE_ID_MAP, {})
     new_device_signal = SIGNAL_NEW_DEVICE.format(entry.entry_id)
 
+    backend = entry.data.get(CONF_BACKEND, BACKEND_DUO)
+    manufacturer = "TellStick Net/ZNet" if backend != BACKEND_DUO else "TellStick Duo"
+
     known: set[str] = set()
 
     # Pre-create entities for stored (manually-added) cover devices
@@ -90,6 +95,7 @@ async def async_setup_entry(
                 device_id=device_id_map.get(device_uid),
                 house=device_cfg.get(CONF_DEVICE_HOUSE, ""),
                 unit=device_cfg.get(CONF_DEVICE_UNIT, ""),
+                manufacturer=manufacturer,
             )
         )
     if stored_entities:
@@ -129,6 +135,7 @@ async def async_setup_entry(
             device_id=device_id_map.get(uid),
             house=params.get("house", ""),
             unit=params.get("unit", ""),
+            manufacturer=manufacturer,
         )
         async_add_entities([entity])
 
