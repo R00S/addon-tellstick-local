@@ -207,7 +207,7 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the switch on."""
-        _LOGGER.warning(
+        _LOGGER.debug(
             "turn_on: uid=%s controller=%s device_id=%r",
             self._device_uid, type(self._controller).__name__, self._telldusd_device_id,
         )
@@ -223,7 +223,7 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the switch off."""
-        _LOGGER.warning(
+        _LOGGER.debug(
             "turn_off: uid=%s controller=%s device_id=%r",
             self._device_uid, type(self._controller).__name__, self._telldusd_device_id,
         )
