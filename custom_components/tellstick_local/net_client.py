@@ -64,7 +64,10 @@ _MIN_TELLSTICKNET_FIRMWARE = 17
 # ---------------------------------------------------------------------------
 
 def _encode_bytes_value(s: bytes) -> bytes:
-    return b"%x%c%s" % (len(s), _TAG_SEP, s)
+    # Firmware LiveMessageToken.toByteArray() uses '%X:%s' (uppercase hex length).
+    # The reglistener check is a raw byte comparison: data == 'B:reglistener'.
+    # len("reglistener") = 11 = 0xB → must encode as 'B:reglistener', not 'b:reglistener'.
+    return b"%X%c%s" % (len(s), _TAG_SEP, s)
 
 
 def _encode_string(s: str) -> bytes:
@@ -72,8 +75,8 @@ def _encode_string(s: str) -> bytes:
 
 
 def _encode_integer(d: int) -> bytes:
-    """Encode integer as i<lowercase_hex>s."""
-    return b"%c%x%c" % (_TAG_INTEGER, int(d), _TAG_END)
+    """Encode integer as i<uppercase_hex>s (firmware LiveMessageToken uses '%X')."""
+    return b"%c%X%c" % (_TAG_INTEGER, int(d), _TAG_END)
 
 
 def _encode_dict(d: dict) -> bytes:
