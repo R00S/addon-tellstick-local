@@ -25,7 +25,17 @@ DOMAIN = "tellstick_local"
 #     2. custom_components/tellstick_local/const.py               (INTEGRATION_VERSION)
 #     3. tellsticklive/rootfs/usr/share/tellstick_local/manifest.json  ("version")
 #     4. tellsticklive/rootfs/usr/share/tellstick_local/const.py  (INTEGRATION_VERSION)
-INTEGRATION_VERSION = "2.3.3.0"
+INTEGRATION_VERSION = "2.4.0.0"
+
+# Backend type stored in config entry data
+CONF_BACKEND = "backend"
+BACKEND_DUO = "duo"   # TellStick Duo — TCP via socat bridges to telldusd
+BACKEND_NET = "net"   # TellStick Net / ZNet — UDP protocol direct to device
+
+# Net/ZNet UDP ports
+NET_DISCOVERY_PORT = 30303    # broadcast "D" → device replies with IP/MAC/firmware
+NET_COMMAND_PORT = 42314      # "reglistener" + "send" commands; ZNet pushes events here
+NET_REGISTRATION_INTERVAL_MINUTES = 10  # re-send "reglistener" every 10 minutes
 
 # Config keys (CONF_HOST from homeassistant.const is used for host)
 CONF_COMMAND_PORT = "command_port"

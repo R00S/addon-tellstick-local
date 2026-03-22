@@ -20,6 +20,13 @@
         "description": "The **{addon}** app is running and ready.\n\nIt will connect on **{host}** (command port **{command_port}**, event port **{event_port}**).\n\nClick **Submit** to set up TellStick Local."
       },
       "user": {
+        "title": "TellStick hardware type",
+        "menu_options": {
+          "duo": "TellStick Duo (USB — connected to HAOS via the TellStick Local app)",
+          "net": "TellStick Net / ZNet (connected via Wi-Fi or Ethernet)"
+        }
+      },
+      "duo": {
         "title": "Connect to TellStick daemon",
         "description": "Enter the host and ports of the TellStick Local app.\n\nFind the correct hostname in the **app log** — look for the line `use host: …`. For apps installed from a custom repository the hostname includes a prefix (e.g. `e9305338-tellsticklive`).",
         "data": {
@@ -31,6 +38,30 @@
           "host": "Hostname of the TellStick Local app. Check the app log for the `use host:` line to find the correct value.",
           "command_port": "TCP port for TellStick commands (default: 50800).",
           "event_port": "TCP port for TellStick events (default: 50801)."
+        }
+      },
+      "net_discovery": {
+        "title": "Discover TellStick Net / ZNet",
+        "description": "Searching for TellStick Net devices on your local network…\n\nIf a device was found, select it from the dropdown. Otherwise enter the IP address of your TellStick Net / ZNet manually.",
+        "data": {
+          "discovered_ip": "Discovered device",
+          "host": "IP address (manual)"
+        },
+        "data_description": {
+          "discovered_ip": "Select a discovered device or choose manual entry.",
+          "host": "Enter the IP address of your TellStick Net / ZNet device."
+        }
+      },
+      "net_confirm": {
+        "title": "Confirm TellStick Net device",
+        "description": "Confirm connection to TellStick Net / ZNet at **{host}**.\n\nThe MAC address (if known): {mac}",
+        "data": {
+          "host": "IP address",
+          "mac": "MAC address (optional)"
+        },
+        "data_description": {
+          "host": "IP address of the TellStick Net / ZNet device.",
+          "mac": "MAC address for identification (optional)."
         }
       },
       "add_rf_device": {

@@ -32,7 +32,10 @@ from homeassistant.data_entry_flow import FlowResult
 
 from .client import RawDeviceEvent, SensorEvent, TellStickController
 from .const import (
+    BACKEND_DUO,
+    BACKEND_NET,
     CONF_AUTOMATIC_ADD,
+    CONF_BACKEND,
     CONF_COMMAND_PORT,
     CONF_DETECT_SARTANO,
     CONF_DEVICE_HOUSE,
@@ -349,6 +352,9 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._event_port: int = DEFAULT_EVENT_PORT
         self._hassio_discovery: bool = False
         self._rf_discovery: dict[str, Any] = {}
+        # Net/ZNet specific state
+        self._net_mac: str = ""
+        self._net_discovered: list[tuple[str, str, str]] = []  # (ip, mac, raw)
 
     async def async_step_hassio(
         self, discovery_info: HassioServiceInfo
@@ -386,6 +392,7 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return self.async_create_entry(
                     title="TellStick Local",
                     data={
+                        CONF_BACKEND: BACKEND_DUO,
                         CONF_HOST: self._host,
                         CONF_COMMAND_PORT: self._command_port,
                         CONF_EVENT_PORT: self._event_port,
@@ -409,7 +416,16 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Handle the initial step."""
+        """Show backend type selection (TellStick Duo vs Net/ZNet)."""
+        return self.async_show_menu(
+            step_id="user",
+            menu_options=["duo", "net"],
+        )
+
+    async def async_step_duo(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle manual setup for TellStick Duo (TCP via telldusd socat bridges)."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -434,6 +450,7 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return self.async_create_entry(
                     title=f"TellStick Local ({host})",
                     data={
+                        CONF_BACKEND: BACKEND_DUO,
                         CONF_HOST: host,
                         CONF_COMMAND_PORT: cmd_port,
                         CONF_EVENT_PORT: evt_port,
@@ -444,8 +461,148 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
 
         return self.async_show_form(
-            step_id="user",
+            step_id="duo",
             data_schema=STEP_USER_SCHEMA,
+            errors=errors,
+        )
+
+    async def async_step_net(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Start TellStick Net/ZNet setup — run UDP discovery first."""
+        return await self.async_step_net_discovery()
+
+    async def async_step_net_discovery(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Discover TellStick Net/ZNet devices via UDP broadcast or manual IP entry.
+
+        If the UDP discovery finds devices, shows a dropdown to pick one or
+        enter an IP manually.  If no devices are found, shows the manual IP
+        entry form directly.
+        """
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            # User may have selected a discovered IP or typed one manually.
+            # "discovered_ip" comes from the found-devices dropdown; "" means manual.
+            host = user_input.get("discovered_ip", "").strip()
+            if not host:
+                host = user_input.get(CONF_HOST, "").strip()
+
+            if not host:
+                errors[CONF_HOST] = "required"
+            else:
+                # Find the MAC for the selected discovered IP (if any)
+                mac = ""
+                for disc_ip, disc_mac, _raw in self._net_discovered:
+                    if disc_ip == host:
+                        mac = disc_mac
+                        break
+                self._host = host
+                self._net_mac = mac
+                return await self.async_step_net_confirm()
+
+        # Try UDP discovery; time-box to 2 s (non-blocking)
+        self._net_discovered = []
+        try:
+            from .net_client import discover  # noqa: PLC0415
+
+            async for ip, mac, _raw in discover(timeout=2.0):
+                self._net_discovered.append((ip, mac, _raw))
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("Net discovery error (non-fatal): %s", err)
+
+        # Build schema — add a dropdown when devices were found
+        if self._net_discovered:
+            device_options: dict[str, str] = {}
+            for ip, mac, _raw in self._net_discovered:
+                label = f"{ip}" + (f" [{mac}]" if mac else "")
+                device_options[ip] = label
+            device_options[""] = "— Enter IP address manually —"
+            schema = vol.Schema(
+                {
+                    vol.Optional("discovered_ip", default=""): vol.In(device_options),
+                    vol.Optional(CONF_HOST, default=""): str,
+                }
+            )
+        else:
+            schema = vol.Schema(
+                {
+                    vol.Required(CONF_HOST, default=""): str,
+                }
+            )
+
+        return self.async_show_form(
+            step_id="net_discovery",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={
+                "found_count": str(len(self._net_discovered)),
+            },
+        )
+
+    async def async_step_net_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Confirm the selected TellStick Net/ZNet device and create the entry."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            # Re-read host from form if the user typed it manually in discovery step
+            host = user_input.get(CONF_HOST, self._host).strip() or self._host
+            if not host:
+                errors[CONF_HOST] = "required"
+            else:
+                self._host = host
+                self._net_mac = user_input.get("mac", self._net_mac).strip()
+
+                # Validate: try sending a reglistener packet
+                from .net_client import TellStickNetController  # noqa: PLC0415
+
+                test_ctrl = TellStickNetController(
+                    host=self._host, mac=self._net_mac
+                )
+                try:
+                    await asyncio.wait_for(test_ctrl.connect(), timeout=5)
+                    reachable = await test_ctrl.ping()
+                except (asyncio.TimeoutError, OSError):
+                    reachable = False
+                finally:
+                    await test_ctrl.disconnect()
+
+                if not reachable:
+                    errors["base"] = "cannot_connect"
+                else:
+                    await self.async_set_unique_id(
+                        f"net_{self._host}_{self._net_mac or self._host}"
+                    )
+                    self._abort_if_unique_id_configured()
+
+                    return self.async_create_entry(
+                        title=f"TellStick Net ({self._host})",
+                        data={
+                            CONF_BACKEND: BACKEND_NET,
+                            CONF_HOST: self._host,
+                            "mac": self._net_mac,
+                        },
+                        options={
+                            CONF_DEVICES: {},
+                        },
+                    )
+
+        return self.async_show_form(
+            step_id="net_confirm",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_HOST, default=self._host): str,
+                    vol.Optional("mac", default=self._net_mac): str,
+                }
+            ),
+            description_placeholders={
+                "host": self._host or "?",
+                "mac": self._net_mac or "?",
+            },
             errors=errors,
         )
 
@@ -630,28 +787,37 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     self.hass.config_entries.async_reload(entry.entry_id)
                 )
 
-                # Register with telldusd if needed
+                # Register with telldusd / Net controller if needed
                 entry_data = self.hass.data.get(DOMAIN, {}).get(entry_id, {})
-                controller: TellStickController | None = entry_data.get(
+                controller: Any = entry_data.get(
                     ENTRY_TELLSTICK_CONTROLLER
                 )
-                device_id_map: dict[str, int] = entry_data.get(
+                device_id_map: dict[str, Any] = entry_data.get(
                     ENTRY_DEVICE_ID_MAP, {}
                 )
                 if controller and dev_type != "sensor":
-                    try:
-                        telldusd_id = await controller.find_or_add_device(
-                            name,
-                            info.get("protocol", ""),
-                            info.get("model", ""),
-                            info.get("house", ""),
-                            info.get("unit", ""),
-                        )
-                        device_id_map[device_uid] = telldusd_id
-                    except Exception:  # noqa: BLE001
-                        _LOGGER.warning(
-                            "Could not register replaced device %s", device_uid
-                        )
+                    backend = entry.data.get(CONF_BACKEND, BACKEND_DUO)
+                    if backend == BACKEND_NET:
+                        device_id_map[device_uid] = {
+                            CONF_DEVICE_PROTOCOL: info.get("protocol", ""),
+                            CONF_DEVICE_MODEL: info.get("model", ""),
+                            CONF_DEVICE_HOUSE: info.get("house", ""),
+                            CONF_DEVICE_UNIT: info.get("unit", ""),
+                        }
+                    else:
+                        try:
+                            telldusd_id = await controller.find_or_add_device(
+                                name,
+                                info.get("protocol", ""),
+                                info.get("model", ""),
+                                info.get("house", ""),
+                                info.get("unit", ""),
+                            )
+                            device_id_map[device_uid] = telldusd_id
+                        except Exception:  # noqa: BLE001
+                            _LOGGER.warning(
+                                "Could not register replaced device %s", device_uid
+                            )
 
                 return self.async_abort(reason="device_replaced")
 
@@ -678,22 +844,31 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_DEVICE_HOUSE: info.get("house", ""),
                     CONF_DEVICE_UNIT: info.get("unit", ""),
                 }
-                # Register with telldusd so commands work immediately
+                # Register with telldusd or Net controller so commands work immediately
                 if controller:
-                    try:
-                        protocol = info.get("protocol", "")
-                        model_str = info.get("model", "")
-                        house_str = info.get("house", "")
-                        unit_str = info.get("unit", "")
-                        telldusd_id = await controller.find_or_add_device(
-                            name, protocol, model_str, house_str, unit_str,
-                        )
-                        device_id_map[device_uid] = telldusd_id
-                    except Exception:  # noqa: BLE001
-                        _LOGGER.warning(
-                            "Could not register discovered device %s with telldusd",
-                            device_uid,
-                        )
+                    backend = entry.data.get(CONF_BACKEND, BACKEND_DUO)
+                    if backend == BACKEND_NET:
+                        device_id_map[device_uid] = {
+                            CONF_DEVICE_PROTOCOL: info.get("protocol", ""),
+                            CONF_DEVICE_MODEL: info.get("model", ""),
+                            CONF_DEVICE_HOUSE: info.get("house", ""),
+                            CONF_DEVICE_UNIT: info.get("unit", ""),
+                        }
+                    else:
+                        try:
+                            protocol = info.get("protocol", "")
+                            model_str = info.get("model", "")
+                            house_str = info.get("house", "")
+                            unit_str = info.get("unit", "")
+                            telldusd_id = await controller.find_or_add_device(
+                                name, protocol, model_str, house_str, unit_str,
+                            )
+                            device_id_map[device_uid] = telldusd_id
+                        except Exception:  # noqa: BLE001
+                            _LOGGER.warning(
+                                "Could not register discovered device %s with telldusd",
+                                device_uid,
+                            )
             new_options = dict(entry.options)
             new_options[CONF_DEVICES] = existing_devices
             self.hass.config_entries.async_update_entry(
@@ -1017,6 +1192,31 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
             devices[uid] = cfg
             new_options = dict(self.config_entry.options)
             new_options[CONF_DEVICES] = devices
+
+            # Immediately reflect the new name in HA's device registry so
+            # the Devices & Services list updates without requiring a reload.
+            # We set name_by_user (user-controlled override) because this
+            # rename is an explicit user action.  Issue #33.
+            dev_reg_local = dr.async_get(self.hass)
+            if uid.startswith("sensor_"):
+                sensor_id_val = cfg.get("sensor_id", 0)
+                dev_key_local = f"sensor_{sensor_id_val}"
+                # For sensors, user_input["name"] is the base name (without
+                # the temperature/humidity suffix).
+                display_name = user_input["name"]
+            else:
+                dev_key_local = uid
+                display_name = cfg.get(CONF_DEVICE_NAME, uid)
+            dev_entry_local = dev_reg_local.async_get_device(
+                identifiers={
+                    (DOMAIN, f"{self.config_entry.entry_id}_{dev_key_local}")
+                }
+            )
+            if dev_entry_local:
+                dev_reg_local.async_update_device(
+                    dev_entry_local.id, name_by_user=display_name
+                )
+
             return self.async_create_entry(title="", data=new_options)
 
         name = cfg.get(CONF_DEVICE_NAME, uid)
@@ -1063,17 +1263,17 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
             entry_data = self.hass.data.get(DOMAIN, {}).get(
                 self.config_entry.entry_id, {}
             )
-            controller: TellStickController | None = entry_data.get(
+            controller: Any = entry_data.get(
                 ENTRY_TELLSTICK_CONTROLLER
             )
-            device_id_map: dict[str, int] = entry_data.get(
+            device_id_map: dict[str, Any] = entry_data.get(
                 ENTRY_DEVICE_ID_MAP, {}
             )
-            telldusd_id = device_id_map.get(uid)
+            device_or_id = device_id_map.get(uid)
 
-            if controller and telldusd_id is not None:
+            if controller and device_or_id is not None:
                 try:
-                    await controller.learn(telldusd_id)
+                    await controller.learn(device_or_id)
                 except Exception:  # noqa: BLE001
                     _LOGGER.exception("Failed to send learn signal for %s", uid)
                     errors["base"] = "teach_failed"
@@ -1106,14 +1306,16 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
             entry_data = self.hass.data.get(DOMAIN, {}).get(
                 self.config_entry.entry_id, {}
             )
-            controller: TellStickController | None = entry_data.get(
+            controller: Any = entry_data.get(
                 ENTRY_TELLSTICK_CONTROLLER
             )
-            device_id_map: dict[str, int] = entry_data.get(
+            device_id_map: dict[str, Any] = entry_data.get(
                 ENTRY_DEVICE_ID_MAP, {}
             )
             discovered: set[str] = entry_data.get("_discovered_uids", set())
             dev_reg = dr.async_get(self.hass)
+            ent_reg = er.async_get(self.hass)
+            entry_id = self.config_entry.entry_id
 
             # For sensors: collect all entries for the same sensor_id
             # (temp + hum share one physical device).
@@ -1156,6 +1358,31 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
 
                 discovered.discard(remove_uid)
 
+            # Remove entity registry entries so that if the same device is
+            # later re-added with a new name it gets fresh entity_ids instead
+            # of inheriting the old ones.  Single pass for all removed UIDs.
+            # Issue #33.
+            remove_unique_ids = {
+                f"{entry_id}_{r}" for r in uids_to_remove
+            }
+            for ent in list(
+                er.async_entries_for_config_entry(ent_reg, entry_id)
+            ):
+                if ent.unique_id in remove_unique_ids:
+                    try:
+                        ent_reg.async_remove(ent.entity_id)
+                        # Clear the DeletedRegistryEntry tombstone so that if
+                        # the same device is re-added later, HA creates a fresh
+                        # entity_id instead of restoring the old one.  Issue #33.
+                        ent_reg.deleted_entities.pop(
+                            (ent.domain, ent.platform, ent.unique_id), None
+                        )
+                    except Exception:  # noqa: BLE001
+                        _LOGGER.warning(
+                            "Could not remove entity %s from registry",
+                            ent.entity_id,
+                        )
+
             # Remove from device registry.  Sensors use a shared device
             # identifier: sensor_{sensor_id} (no type suffix).
             if uid.startswith("sensor_"):
@@ -1169,7 +1396,13 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                 }
             )
             if device_entry:
-                dev_reg.async_remove_device(device_entry.id)
+                dev_id = device_entry.id
+                dev_reg.async_remove_device(dev_id)
+                # Clear the device tombstone so the old area, labels, and
+                # name_by_user are not resurrected when the device is re-added.
+                # HA 2025.6+ stores these in DeletedDeviceEntry and
+                # to_device_entry() restores them on re-add.  Issue #33.
+                dev_reg.deleted_devices.pop(dev_id, None)
 
             new_options = dict(self.config_entry.options)
             new_options[CONF_DEVICES] = new_devices
@@ -1219,13 +1452,15 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
             entry_data = self.hass.data.get(DOMAIN, {}).get(
                 self.config_entry.entry_id, {}
             )
-            controller: TellStickController | None = entry_data.get(
+            controller: Any = entry_data.get(
                 ENTRY_TELLSTICK_CONTROLLER
             )
-            device_id_map: dict[str, int] = entry_data.get(
+            device_id_map: dict[str, Any] = entry_data.get(
                 ENTRY_DEVICE_ID_MAP, {}
             )
             dev_reg = dr.async_get(self.hass)
+            ent_reg = er.async_get(self.hass)
+            entry_id = self.config_entry.entry_id
             discovered: set[str] = entry_data.get("_discovered_uids", set())
 
             new_devices = dict(devices)
@@ -1274,7 +1509,11 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                     }
                 )
                 if device_entry:
-                    dev_reg.async_remove_device(device_entry.id)
+                    dev_id = device_entry.id
+                    dev_reg.async_remove_device(dev_id)
+                    # Clear tombstone so area/labels/name_by_user are not
+                    # resurrected on re-add (HA 2025.6+).  Issue #33.
+                    dev_reg.deleted_devices.pop(dev_id, None)
 
                 if ignore:
                     ignored[uid] = cfg.get(CONF_DEVICE_NAME, uid)
@@ -1289,6 +1528,29 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                     parts = uid.split("_", 2)
                     if len(parts) >= 2:
                         discovered.discard(f"sensor_{parts[1]}")
+
+            # Remove entity registry entries so that if the same device is
+            # later re-added with a new name it gets fresh entity_ids instead
+            # of inheriting the old ones.  Single pass for all removed UIDs.
+            # Issue #33.
+            remove_unique_ids = {f"{entry_id}_{u}" for u in all_uids}
+            for ent in list(
+                er.async_entries_for_config_entry(ent_reg, entry_id)
+            ):
+                if ent.unique_id in remove_unique_ids:
+                    try:
+                        ent_reg.async_remove(ent.entity_id)
+                        # Clear the DeletedRegistryEntry tombstone so that if
+                        # the same device is re-added later, HA creates a fresh
+                        # entity_id instead of restoring the old one.  Issue #33.
+                        ent_reg.deleted_entities.pop(
+                            (ent.domain, ent.platform, ent.unique_id), None
+                        )
+                    except Exception:  # noqa: BLE001
+                        _LOGGER.warning(
+                            "Could not remove entity %s from registry",
+                            ent.entity_id,
+                        )
 
             new_options = dict(self.config_entry.options)
             new_options[CONF_DEVICES] = new_devices
@@ -1522,7 +1784,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             entry = self._get_entry()
             try:
                 entry_data = self.hass.data[DOMAIN].get(entry.entry_id, {})
-                controller: TellStickController | None = entry_data.get(
+                controller: Any = entry_data.get(
                     ENTRY_TELLSTICK_CONTROLLER
                 )
                 if controller is None:
