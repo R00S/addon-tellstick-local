@@ -483,9 +483,13 @@ def _encode_everflourish_command(
 ) -> dict | None:
     """Return a native protocol dict for an everflourish UDP 'send' command.
 
-    The ZNet firmware's ProtocolEverflourish.stringForMethod() uses
-    1-indexed unit (intParameter('unit', 1, 4)) and integer method constants
-    (Device.TURNON=1, Device.TURNOFF=2, Device.LEARN=32).
+    The ZNet firmware (productiontest/Server.py CommandHandler.handleSend):
+      protocol.setModel(msg['model'])               ← 'model' key required
+      protocol.setParameters({'house': msg['house'],
+                               'unit':  msg['unit'] + 1})  ← firmware adds 1
+    ProtocolEverflourish.stringForMethod then does intParameter('unit',1,4)-1.
+    So we must send unit 0-indexed (same as arctech) — the firmware +1 makes
+    it 1-indexed before the protocol subtracts 1 back to 0-indexed.
     """
     method_int = _METHOD_INT.get(method_name)
     if method_int is None:
@@ -496,13 +500,14 @@ def _encode_everflourish_command(
         _LOGGER.warning("Everflourish: non-integer house %r", house)
         return None
     try:
-        unit_val = max(1, min(4, int(unit)))
+        unit0 = max(0, min(3, int(unit) - 1))  # 1-indexed → 0-indexed; firmware adds 1
     except (TypeError, ValueError):
-        unit_val = 1
+        unit0 = 0
     return OrderedDict(
         protocol="everflourish",
+        model="selflearning",   # required: firmware calls msg['model'] → KeyError without it
         house=house_int,
-        unit=unit_val,
+        unit=unit0,
         method=method_int,
     )
 
