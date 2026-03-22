@@ -17,6 +17,8 @@ from homeassistant.helpers import entity_registry as er
 
 from .client import DeviceEvent, RawDeviceEvent, TellStickController
 from .const import (
+    BACKEND_DUO,
+    CONF_BACKEND,
     CONF_DEVICE_HOUSE,
     CONF_DEVICE_MODEL,
     CONF_DEVICE_NAME,

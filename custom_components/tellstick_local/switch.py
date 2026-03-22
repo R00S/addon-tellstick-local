@@ -13,6 +13,8 @@ from homeassistant.helpers import entity_registry as er
 
 from .client import DeviceEvent, RawDeviceEvent, TellStickController
 from .const import (
+    BACKEND_DUO,
+    CONF_BACKEND,
     CONF_DEVICE_HOUSE,
     CONF_DEVICE_MODEL,
     CONF_DEVICE_NAME,
@@ -64,6 +66,8 @@ async def async_setup_entry(
     controller: TellStickController = entry_data[ENTRY_TELLSTICK_CONTROLLER]
     device_id_map: dict[str, Any] = entry_data.get(ENTRY_DEVICE_ID_MAP, {})
     new_device_signal = SIGNAL_NEW_DEVICE.format(entry.entry_id)
+    backend = entry.data.get(CONF_BACKEND, BACKEND_DUO)
+    manufacturer = "TellStick Net/ZNet" if backend != BACKEND_DUO else "TellStick Duo"
 
     known: set[str] = set()
 
@@ -86,6 +90,7 @@ async def async_setup_entry(
                 device_id=device_id_map.get(device_uid),
                 house=device_cfg.get(CONF_DEVICE_HOUSE, ""),
                 unit=device_cfg.get(CONF_DEVICE_UNIT, ""),
+                manufacturer=manufacturer,
             )
         )
     if stored_entities:
@@ -126,6 +131,7 @@ async def async_setup_entry(
             device_id=device_id_map.get(uid),
             house=params.get("house", ""),
             unit=params.get("unit", params.get("code", "")),
+            manufacturer=manufacturer,
         )
         async_add_entities([entity])
 
@@ -151,6 +157,7 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
         device_id: Any = None,
         house: str = "",
         unit: str = "",
+        manufacturer: str = "",
     ) -> None:
         """Initialize a TellStick switch."""
         super().__init__(
@@ -161,6 +168,7 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
             model=model,
             house=house,
             unit=unit,
+            manufacturer=manufacturer,
         )
         self._controller = controller
         self._telldusd_device_id = device_id
