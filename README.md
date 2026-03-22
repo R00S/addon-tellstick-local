@@ -239,8 +239,8 @@ each protocol supports.
 
 | Protocol       | Entity type    | Brands                                                                                                                |
 | -------------- | -------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `arctech`      | Switch / Light | Nexa, Proove, KlikAanKlikUit, Intertechno, HomeEasy, Chacon, CoCo, Luxorparts, Cleverio, Kappa, Bye Bye Standby, Elro |
-| `everflourish` | Switch         | GAO, Everflourish, Rusta                                                                                              |
+| `arctech`      | Switch / Light | Nexa, Proove, KlikAanKlikUit, Intertechno, HomeEasy, Chacon, CoCo, Kappa, Bye Bye Standby, Elro |
+| `everflourish` | Switch         | GAO, Everflourish, Rusta, Luxorparts, Cleverio                                                   |
 | `hasta`        | Cover          | Hasta, Rollertrol motorised blinds                                                                                    |
 | `mandolyn`     | Sensor         | Mandolyn / Summerbird (temperature/humidity)                                                                          |
 | `sartano`      | Switch         | Sartano, Brennenstuhl, Rusta, Elro (**opt-in** — see note below)                                                      |

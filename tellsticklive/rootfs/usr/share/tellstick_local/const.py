@@ -25,7 +25,7 @@ DOMAIN = "tellstick_local"
 #     2. custom_components/tellstick_local/const.py               (INTEGRATION_VERSION)
 #     3. tellsticklive/rootfs/usr/share/tellstick_local/manifest.json  ("version")
 #     4. tellsticklive/rootfs/usr/share/tellstick_local/const.py  (INTEGRATION_VERSION)
-INTEGRATION_VERSION = "2.4.0.0"
+INTEGRATION_VERSION = "2.4.0.1"
 
 # Backend type stored in config entry data
 CONF_BACKEND = "backend"
@@ -288,7 +288,7 @@ DEVICE_CATALOG: list[tuple[str, str, str, int]] = [
     ("KlikAanKlikUit — Self-learning on/off", "arctech", "selflearning-switch:klikaanklikuit", 8),
     # Lidl/Silvercrest 433 MHz sockets use arctech selflearning protocol
     ("Lidl (Silvercrest) — Self-learning on/off", "arctech", "selflearning-switch:silvercrest", 8),
-    ("Luxorparts / Cleverio — Self-learning on/off", "arctech", "selflearning-switch:luxorparts", 8),
+    ("Luxorparts / Cleverio — Self-learning on/off", "everflourish", "selflearning-switch:luxorparts", 11),
     ("Nexa — Bell", "arctech", "bell:nexa", 4),
     ("Nexa — Code switch", "arctech", "codeswitch:nexa", 1),
     ("Nexa — Self-learning dimmer", "arctech", "selflearning-dimmer:nexa", 8),
