@@ -54,10 +54,6 @@ _TAG_LIST = ord("l")      # b"l"
 _TAG_END = ord("s")       # b"s"
 _TAG_SEP = ord(":")       # b":"
 
-# RF command parameters appended after "send" dict
-_CMD_REPEAT_RF_DELAY = 10   # delay between packets in ms  (P)
-_CMD_REPEAT_RF_TIMES = 4    # number of packets ZNet sends  (R)
-
 # Discovery
 _SUPPORTED_PRODUCTS = {"TellStickNet", "TellstickNetV2", "TellstickZnet"}
 _MIN_TELLSTICKNET_FIRMWARE = 17
@@ -105,9 +101,12 @@ def _encode_any(t: Any) -> bytes:
 def encode_packet(command: str, **args: Any) -> bytes:
     """Encode a ZNet UDP command packet.
 
-    For "send" commands, the delay (P) and repeat-count (R) are appended
-    outside the args dict as top-level key-value pairs -- matching the ZNet
-    firmware protocol and molobrakos reference implementation.
+    The ZNet firmware uses a strict parser that expects exactly:
+      command_string [args_dict]
+    with nothing after the dict.  P/R repeat parameters are NOT appended as
+    trailing flat pairs -- the released molobrakos 0.1.2 (the reference that
+    works with ZNet) does not append them, and ZNet rejects packets with extra
+    bytes after the args dict.
 
     encode_packet("reglistener")  ->  b"B:reglistener"
     encode_packet("hello", foo="x")  ->  b"5:helloh3:foo1:xs"
@@ -115,9 +114,6 @@ def encode_packet(command: str, **args: Any) -> bytes:
     res = _encode_string(command)
     if args:
         res += _encode_dict(args)
-    if command == "send":
-        res += _encode_string("P") + _encode_integer(_CMD_REPEAT_RF_DELAY)
-        res += _encode_string("R") + _encode_integer(_CMD_REPEAT_RF_TIMES)
     return res
 
 
@@ -463,7 +459,7 @@ def _encode_arctech_command(
             model=send_model,
             house=house_val,
             unit=unit0,
-            method=method_name,
+            method=method_int,
         )
     if method_int == _DIM:
         if not isinstance(house_val, int):
@@ -554,6 +550,7 @@ def _encode_generic_command(
     protocol: str, model: str, house: Any, unit: Any, method_name: str
 ) -> dict:
     """Build a generic send dict for protocols handled natively by the ZNet."""
+    method_int = _METHOD_INT.get(method_name, 0)
     try:
         house_val: Any = int(house)
     except (TypeError, ValueError):
@@ -564,7 +561,7 @@ def _encode_generic_command(
         unit_val = str(unit)
     return OrderedDict(
         protocol=protocol, model=model,
-        house=house_val, unit=unit_val, method=method_name,
+        house=house_val, unit=unit_val, method=method_int,
     )
 
 
