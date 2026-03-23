@@ -512,8 +512,16 @@ def _event_dict_to_ha_events(ev: dict) -> Iterator[Any]:
         values = ev.get("values") or []
         if isinstance(values, list):
             for entry in values:
+                # Our own decoders produce: {"name": "temp", "value": "15.6"}
+                # ZNet firmware pre-decoded values use: {"type": 1, "value": "15.6"}
+                stype_int: int | None = None
                 stype_name = entry.get("name", "")
-                stype_int = _SENSOR_TYPE_MAP.get(stype_name)
+                if stype_name:
+                    stype_int = _SENSOR_TYPE_MAP.get(stype_name)
+                if stype_int is None:
+                    raw_type = entry.get("type")
+                    if isinstance(raw_type, int) and raw_type in _SENSOR_TYPE_MAP.values():
+                        stype_int = raw_type
                 if stype_int is not None:
                     try:
                         yield SensorEvent(
