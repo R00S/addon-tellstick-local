@@ -100,10 +100,12 @@ _LOGGER = logging.getLogger(__name__)
 #   2. _last_known_event_time: float — suppresses unknown events within 1s
 #      of a known device event (cross-protocol false positives from the
 #      same RF signal; works because arctech is decoded FIRST)
-#   3. _discovered_protocol_models: set — deduplicates by protocol+model
-#      per session (TelldusCenter approach; NOT pre-seeded from stored
-#      devices — pre-seeding blocks new devices sharing a protocol+model
-#      with existing ones)
+#   3. _discovered_protocol_models: dict[str, float] — deduplicates by
+#      protocol+model for a short time window (5 seconds).  Devices with
+#      unstable house/unit (door sensors) produce different UIDs on each
+#      transmission — this suppresses the flood from a single press.
+#      The window is short enough that pressing a SECOND device of the
+#      same protocol+model a few seconds later still gets discovered.
 #
 # Known limitation — unstable UID devices (e.g. some door sensors):
 #   Some devices produce different house/unit values on every activation
@@ -141,6 +143,13 @@ _CROSS_DECODE_WINDOW_SECS = 0.5
 # to set _last_known_event_time before the phantom is evaluated.
 # 300 ms is invisible to the user but 3× the ~100 ms cross-decode window.
 _PHANTOM_DEFER_SECS = 0.3
+
+# Seconds to suppress duplicate protocol+model discoveries.  Devices with
+# unstable house/unit (door sensors, some older remotes) produce different
+# UIDs on each RF transmission.  This window absorbs the burst from a
+# single button press while still allowing a second device of the same
+# protocol+model to be discovered by pressing it a few seconds later.
+_PROTO_MODEL_DEDUP_SECS = 5.0
 
 # Sensor data-type → suffix (mirrors sensor.py _SENSOR_META keys)
 _SENSOR_SUFFIX: dict[int, str] = {
@@ -584,14 +593,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Track UIDs for which discovery flows have been fired this session
         # to avoid flooding the UI with duplicate notifications.
         "_discovered_uids": set(),
-        # Track protocol+model pairs already discovered this session.
-        # telldusd fires ALL protocol decoders on every RF signal, and some
-        # devices (e.g. door sensors) decode with different house/unit values
-        # on each transmission.  TelldusCenter (filtereddeviceproxymodel.cpp)
-        # solves this by deduplicating on protocol+model — we do the same.
-        # NOT pre-seeded from stored devices — that would block new devices
-        # that share a protocol+model with existing ones.
-        "_discovered_protocol_models": set(),
+        # Track protocol+model pairs with timestamps.  Used to suppress
+        # duplicate discoveries from devices with unstable house/unit (door
+        # sensors produce different UIDs on each RF transmission).  Same
+        # protocol+model is suppressed for _PROTO_MODEL_DEDUP_SECS (5s),
+        # then allowed again so users can discover multiple devices of the
+        # same type by pressing them a few seconds apart.
+        "_discovered_protocol_models": {},
         # Timestamp of the last known-device raw event.  Used to suppress
         # false-positive unknown events from the same RF signal.
         # Protocol.cpp decodes arctech first (ProtocolNexa → ProtocolWaveman
@@ -699,16 +707,16 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
         discovered: set[str] = entry_data.get("_discovered_uids", set())
         discovered.discard(device_uid)
 
-        # Also clear the protocol+model deduplication key so the next RF signal
-        # from this device is not silently swallowed.  Sensor UIDs use a
-        # different code path and do not participate in proto_model dedup.
+        # Also clear the protocol+model deduplication timestamp so the next
+        # RF signal from this device is not silently swallowed.  Sensor UIDs
+        # use a different code path and do not participate in proto_model dedup.
         if not device_uid.startswith("sensor_"):
-            seen_proto_models: set[str] = entry_data.get(
-                "_discovered_protocol_models", set()
+            seen_proto_models: dict[str, float] = entry_data.get(
+                "_discovered_protocol_models", {}
             )
             parts = device_uid.split("_", 2)
             if len(parts) >= 2:
-                seen_proto_models.discard(f"{parts[0]}_{parts[1]}")
+                seen_proto_models.pop(f"{parts[0]}_{parts[1]}", None)
 
 
 async def async_remove_config_entry_device(
@@ -995,22 +1003,23 @@ def _fire_device_discovery(
         discovered.add(device_uid)
         return
 
-    # Deduplicate by protocol+model, matching TelldusCenter's approach
-    # (filtereddeviceproxymodel.cpp:60-70).  telldusd fires ALL protocol
-    # decoders on every RF signal, and some devices decode with different
-    # house/unit values on each transmission.  We only fire one discovery
-    # flow per unique protocol+model combination.
+    # Deduplicate by protocol+model with a time window.  Devices with
+    # unstable house/unit (door sensors) produce different UIDs on each
+    # transmission — suppress duplicates within _PROTO_MODEL_DEDUP_SECS.
+    # After the window expires, the same protocol+model can be discovered
+    # again (so users can discover multiple remotes of the same type).
     protocol = params.get("protocol", "")
     model = params.get("model", "")
     proto_model_key = f"{protocol}_{model}"
-    seen_proto_models: set[str] = entry_data["_discovered_protocol_models"]
-    if proto_model_key in seen_proto_models:
+    seen_proto_models: dict[str, float] = entry_data["_discovered_protocol_models"]
+    last_seen = seen_proto_models.get(proto_model_key, 0.0)
+    if now - last_seen < _PROTO_MODEL_DEDUP_SECS:
         discovered.add(device_uid)
         # Still update fire time so cross-decode phantoms from this RF
         # signal are suppressed (e.g. sartano from an arctech signal).
         entry_data["_last_discovery_fire_time"] = now
         return
-    seen_proto_models.add(proto_model_key)
+    seen_proto_models[proto_model_key] = now
 
     discovered.add(device_uid)
     entry_data["_last_discovery_fire_time"] = now
@@ -1065,17 +1074,18 @@ def _auto_add_device(
     protocol = params.get("protocol", "")
     model = params.get("model", "")
 
-    # Deduplicate by protocol+model, matching TelldusCenter's approach
-    # (filtereddeviceproxymodel.cpp:60-70).  Only auto-add the first
-    # event for each protocol+model combination per session.
+    # Deduplicate by protocol+model with a time window.  Same logic as
+    # _fire_device_discovery — suppress bursts from unstable-UID devices,
+    # but allow a second device of the same type after the window expires.
     proto_model_key = f"{protocol}_{model}"
-    seen_proto_models: set[str] = entry_data["_discovered_protocol_models"]
-    if proto_model_key in seen_proto_models:
+    seen_proto_models: dict[str, float] = entry_data["_discovered_protocol_models"]
+    last_seen = seen_proto_models.get(proto_model_key, 0.0)
+    if now - last_seen < _PROTO_MODEL_DEDUP_SECS:
         # Still update fire time so cross-decode phantoms from this RF
         # signal are suppressed (e.g. sartano from an arctech signal).
         entry_data["_last_discovery_fire_time"] = now
         return
-    seen_proto_models.add(proto_model_key)
+    seen_proto_models[proto_model_key] = now
 
     house = params.get("house", "")
     unit = params.get("unit", params.get("code", ""))
