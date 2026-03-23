@@ -854,6 +854,7 @@ def _handle_event(
     event: Any,
 ) -> None:
     """Dispatch an incoming telldusd event."""
+    _LOGGER.info("Event received: %s", type(event).__name__)
     if isinstance(event, RawDeviceEvent):
         _handle_raw_event(hass, entry, event)
     elif isinstance(event, DeviceEvent):
@@ -885,7 +886,7 @@ def _handle_raw_event(
     if params.get("class") == "sensor":
         return
 
-    _LOGGER.debug("Raw RF event from %s: %s", device_uid, params)
+    _LOGGER.info("Raw RF event from %s: %s", device_uid, params)
 
     # Broadcast for entity listeners (state updates for existing entities)
     async_dispatcher_send(hass, SIGNAL_EVENT.format(entry.entry_id), event)
@@ -1153,7 +1154,7 @@ def _handle_device_event(
     event: DeviceEvent,
 ) -> None:
     """Handle a named-device state-change event."""
-    _LOGGER.debug(
+    _LOGGER.info(
         "Device event: id=%s method=%s value=%s",
         event.device_id,
         event.method,
