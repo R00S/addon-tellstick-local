@@ -163,7 +163,7 @@ A Docker container managed by the HAOS Supervisor that:
 - Passes through the TellStick USB hardware via the `usb: true` config
 
 **How to install:** HAOS Settings → Apps → three-dot menu → Add custom repository
-→ `https://github.com/R00S/addon-tellsticklive-roosfork` → category **App**.
+→ `https://github.com/R00S/addon-tellstick-local` → category **App**.
 **Not installed via HACS.**
 
 The app also **automatically installs the companion integration** by copying it to

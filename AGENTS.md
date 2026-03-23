@@ -4,9 +4,9 @@ This document provides context for AI agents working on this repository.
 
 ## Repository Overview
 
-This is a Home Assistant add-on that provides TellStick/TellStick Duo hardware support with optional Telldus Live cloud integration. It's a fork of erik73's addon-tellsticklive, which itself was based on the now-deprecated official Home Assistant TellStick add-on.
+This is a Home Assistant add-on that provides local TellStick/TellStick Duo hardware support — no cloud, no Telldus Live. Originally based on erik73's addon-tellsticklive (which was based on the now-deprecated official Home Assistant TellStick add-on), this is now an independent project focused entirely on local control.
 
-**Background**: The official Home Assistant TellStick add-on was deprecated in December 2024 because the underlying Telldus library is no longer maintained by its original manufacturer. This fork continues to provide TellStick support for those who need it.
+**Background**: The official Home Assistant TellStick add-on was deprecated in December 2024 because the underlying Telldus library is no longer maintained by its original manufacturer. This project continues to provide local TellStick support.
 
 ## Architecture
 

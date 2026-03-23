@@ -16,16 +16,16 @@ the **TellStick Local** integration handles everything in the HA UI.
 
 **Acknowledgments:**
 
-- Fork of [erik73's addon-tellsticklive](https://github.com/erik73/addon-tellsticklive)
+- Originally based on [erik73's addon-tellsticklive](https://github.com/erik73/addon-tellsticklive) (thank you!)
 - Based on the now-deprecated official Home Assistant TellStick add-on
-- Uses a fork of telldus-core maintained by [erik73](https://github.com/erik73/telldus)
+- Uses [erik73's telldus-core fork](https://github.com/erik73/telldus) for the daemon build
 
 ---
 
 ## Installation
 
 1. In HAOS go to **Settings → Apps → ⋮ → Repositories**
-2. Add: `https://github.com/R00S/addon-tellsticklive-roosfork`, category **App**
+2. Add: `https://github.com/R00S/addon-tellstick-local`, category **App**
 3. Find **TellStick Local** in the store and click **Install**
 4. Click **Start** and wait for the log to show `TellStick Local is ready!`
 
@@ -72,7 +72,7 @@ All device management happens in the integration under **Settings → Devices & 
 - **Manage ignored** — un-ignore devices from **Configure** (⚙) → **Manage ignored
   devices**
 
-See the [project README](https://github.com/R00S/addon-tellsticklive-roosfork) for
+See the [project README](https://github.com/R00S/addon-tellstick-local) for
 full pairing instructions and supported devices.
 
 > **Upgrade notifications:** When the app updates the integration code, HA shows a
@@ -226,7 +226,7 @@ acknowledged by these receivers. Telldus Live controls them successfully via ZNe
 but the exact signal path it uses is not accessible through our interface.
 
 If you have one of these devices and find a working approach, please
-[open an issue](https://github.com/R00S/addon-tellsticklive-roosfork/issues).
+[open an issue](https://github.com/R00S/addon-tellstick-local/issues).
 
 ---
 
@@ -261,6 +261,6 @@ If you have one of these devices and find a working approach, please
 GNU General Public License v3.0 or later
 
 Copyright (c) 2019–2024 Erik Hilton
-Copyright (c) 2024–2026 R00S (roosfork modifications)
+Copyright (c) 2024–2026 R00S
 
-[issue]: https://github.com/R00S/addon-tellsticklive-roosfork/issues
+[issue]: https://github.com/R00S/addon-tellstick-local/issues

@@ -110,7 +110,7 @@ the C daemon cannot run inside Python.
 
 1. In HAOS go to **Settings → Apps** (or Add-ons on older versions)
 2. Click the **⋮ menu → Repositories** (or "Add custom repository")
-3. Add: `https://github.com/R00S/addon-tellsticklive-roosfork`
+3. Add: `https://github.com/R00S/addon-tellstick-local`
 4. Select category **App** (or Add-on) and click **Add**
 5. Find **TellStick Local** in the app store and click **Install**
 6. Click **Start** — wait for the log to show `TellStick Local is ready!`
@@ -404,7 +404,7 @@ confusion. If you find a working approach, please [open an issue][issue].
 GNU General Public License v3.0 or later
 
 Copyright (c) 2019–2024 Erik Hilton
-Copyright (c) 2024–2026 R00S (roosfork modifications)
+Copyright (c) 2024–2026 R00S
 
 See [LICENSE.md](LICENSE.md) and [NOTICE](NOTICE) for full details.
 
@@ -419,10 +419,10 @@ See [LICENSE.md](LICENSE.md) and [NOTICE](NOTICE) for full details.
 
 [aarch64-shield]: https://img.shields.io/badge/aarch64-yes-green.svg
 [amd64-shield]: https://img.shields.io/badge/amd64-yes-green.svg
-[commits-shield]: https://img.shields.io/github/commit-activity/y/R00S/addon-tellsticklive-roosfork.svg
-[commits]: https://github.com/R00S/addon-tellsticklive-roosfork/commits/main
-[github-actions-shield]: https://github.com/R00S/addon-tellsticklive-roosfork/workflows/CI/badge.svg
-[github-actions]: https://github.com/R00S/addon-tellsticklive-roosfork/actions
-[issue]: https://github.com/R00S/addon-tellsticklive-roosfork/issues
+[commits-shield]: https://img.shields.io/github/commit-activity/y/R00S/addon-tellstick-local.svg
+[commits]: https://github.com/R00S/addon-tellstick-local/commits/main
+[github-actions-shield]: https://github.com/R00S/addon-tellstick-local/workflows/CI/badge.svg
+[github-actions]: https://github.com/R00S/addon-tellstick-local/actions
+[issue]: https://github.com/R00S/addon-tellstick-local/issues
 [maintenance-shield]: https://img.shields.io/maintenance/yes/2026.svg
 [project-stage-shield]: https://img.shields.io/badge/project%20stage-RC-yellow.svg
