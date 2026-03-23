@@ -1,8 +1,8 @@
 ---
 name: TellStick Local
-version: 2.4.5.0
+version: 2.4.6.0
 slug: tellsticklive
-image: ghcr.io/r00s/tellstick-local/{arch}
+image: ghcr.io/r00s/tellsticklive/{arch}
 description: TellStick and TellStick Duo local service (no cloud)
 url: https://github.com/R00S/addon-tellstick-local
 arch:
