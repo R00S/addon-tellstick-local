@@ -651,6 +651,54 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
+    # Register the debug_connection action (service) so users can verify
+    # the integration is loaded and the connection is alive from
+    # Developer Tools → Actions → tellstick_local.debug_connection.
+    if not hass.services.has_service(DOMAIN, "debug_connection"):
+
+        async def _handle_debug_connection(call: Any) -> None:
+            """Report integration status via persistent notification."""
+            lines: list[str] = [
+                "**TellStick Local debug report**",
+                f"- Integration version (loaded): {INTEGRATION_VERSION}",
+            ]
+            for eid, edata in hass.data.get(DOMAIN, {}).items():
+                ctrl = edata.get(ENTRY_TELLSTICK_CONTROLLER)
+                # Find the matching config entry for backend info
+                ce = hass.config_entries.async_get_entry(eid)
+                be = ce.data.get(CONF_BACKEND, BACKEND_DUO) if ce else "?"
+                host = ce.data.get(CONF_HOST, "?") if ce else "?"
+                lines.append(f"- Entry: {eid[:8]}… backend={be} host={host}")
+
+                if ctrl and hasattr(ctrl, "ping"):
+                    try:
+                        alive = await ctrl.ping()
+                    except Exception:  # noqa: BLE001
+                        alive = False
+                    lines.append(f"  - Connection: {'OK ✅' if alive else 'FAILED ❌'}")
+                else:
+                    lines.append("  - Connection: no ping available")
+
+                stored = (
+                    ce.options.get(CONF_DEVICES, {}) if ce else {}
+                )
+                lines.append(f"  - Stored devices: {len(stored)}")
+                for uid in list(stored)[:20]:
+                    lines.append(f"    - {uid}")
+                discovered = edata.get("_discovered_uids", set())
+                lines.append(f"  - Discovered UIDs this session: {len(discovered)}")
+
+            msg = "\n".join(lines)
+            _LOGGER.info("Debug connection report:\n%s", msg)
+            pn_async_create(
+                hass,
+                msg,
+                title="TellStick Local — Debug Report",
+                notification_id=f"{DOMAIN}_debug",
+            )
+
+        hass.services.async_register(DOMAIN, "debug_connection", _handle_debug_connection)
+
     return True
 
 
@@ -891,16 +939,21 @@ def _handle_raw_event(
     # Broadcast for entity listeners (state updates for existing entities)
     async_dispatcher_send(hass, SIGNAL_EVENT.format(entry.entry_id), event)
 
-    # Fire an HA bus event so device triggers (automations) can listen
+    # Fire an HA bus event for every raw RF event so it is visible in
+    # Developer Tools → Events (listen for "tellstick_local_event").
+    # Also used by device triggers (automations).
     method = params.get("method", "")
-    if method in ("turnon", "turnoff"):
-        hass.bus.async_fire(
-            f"{DOMAIN}_event",
-            {
-                "device_uid": device_uid,
-                "type": "turned_on" if method == "turnon" else "turned_off",
-            },
-        )
+    event_data: dict[str, Any] = {
+        "device_uid": device_uid,
+        "type": (
+            "turned_on" if method == "turnon"
+            else "turned_off" if method == "turnoff"
+            else method or "unknown"
+        ),
+    }
+    # Include raw RF parameters for debugging
+    event_data.update(params)
+    hass.bus.async_fire(f"{DOMAIN}_event", event_data)
 
     stored_devices = entry.options.get(CONF_DEVICES, {})
     automatic_add = entry.options.get(CONF_AUTOMATIC_ADD, DEFAULT_AUTOMATIC_ADD)
@@ -1178,6 +1231,20 @@ def _handle_sensor_event(
         event.value,
     )
     async_dispatcher_send(hass, SIGNAL_EVENT.format(entry.entry_id), event)
+
+    # Fire an HA bus event so it is visible in Developer Tools → Events
+    # (listen for "tellstick_local_event").
+    hass.bus.async_fire(
+        f"{DOMAIN}_event",
+        {
+            "type": "sensor",
+            "sensor_id": event.sensor_id,
+            "protocol": event.protocol or "",
+            "model": event.model or "",
+            "data_type": event.data_type,
+            "value": event.value or "",
+        },
+    )
 
     # Check if this sensor is already stored (known)
     stored_devices = entry.options.get(CONF_DEVICES, {})
