@@ -250,6 +250,24 @@ If you have one of these devices and find a working approach, please
 - Verify USB is visible under the app Hardware tab
 - Try a different USB port or a short USB extension cable to improve reception
 
+### App version shows "dev" instead of a real version number
+
+If the app version displays **dev** instead of a numbered version (e.g. 2.4.11.0),
+the HAOS Supervisor did not find the correct stable release. To fix this:
+
+1. **Uninstall** the app: Settings → Apps → TellStick Local → ⋮ → Uninstall
+2. **Remove the repository**: Settings → Apps → ⋮ → Repositories → remove
+   `https://github.com/R00S/addon-tellstick-local`
+3. **Re-add the repository**: Settings → Apps → ⋮ → Repositories → add
+   `https://github.com/R00S/addon-tellstick-local`, category **App**
+4. **Install** TellStick Local from the store — it should now show the correct
+   version number
+
+> **Why this happens:** AwesomeVersion (used by the HAOS Supervisor) treats the
+> string "dev" as a higher version than any numeric version. Once an app is
+> installed with "dev", the Supervisor will never offer a numeric update because
+> it considers "dev" to already be the newest version.
+
 ---
 
 ## Support
