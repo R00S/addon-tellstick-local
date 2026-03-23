@@ -221,13 +221,17 @@ jobs:
           token: ${{ secrets.ROOSFORK_DEPLOY_KEY }}
           persist-credentials: true
 
-      - name: 🏷 Update config.yaml with new version and correct image slug
+      - name: 🏷 Update config.yaml with new version, correct image slug, and dev channel warning
         env:
           VERSION: ${{ needs.create-release.outputs.version }}
         run: |
           sed -i "s/^version:.*/version: ${VERSION}/" tellsticklive/config.yaml
           sed -i "s|^image:.*|image: ghcr.io/r00s/tellstick-local/{arch}|" tellsticklive/config.yaml
-          grep -E '^(version|image):' tellsticklive/config.yaml
+          # Inject the DEV channel warning into the description so users can see it in the
+          # HAOS app info panel.  This must NOT run in create-stable-release.yaml.
+          # Keep in sync with the matching step in create-test-release.yaml.
+          yq eval -i '.description = "⚠️ You are on the DEV channel (addon-tellsticklive-roosfork). This channel receives the latest unreleased features and may be unstable. For the stable release, switch your HAOS repository to https://github.com/R00S/addon-tellstick-local — see the README for details."' tellsticklive/config.yaml
+          grep -E '^(version|image|description):' tellsticklive/config.yaml
 
       - name: 💾 Commit and push
         env:
