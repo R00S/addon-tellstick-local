@@ -1,0 +1,88 @@
+---
+# One-time workflow to delete old GitHub releases and their tags.
+# Keeps only the release specified by the user (default: latest).
+#
+# Usage: Actions → Cleanup Old Releases → Run workflow
+#
+# After running, you can delete this workflow file.
+name: Cleanup Old Releases
+
+# yamllint disable-line rule:truthy
+on:
+  workflow_dispatch:
+    inputs:
+      keep_tag:
+        description: >-
+          Tag to KEEP (e.g. v2.4.10.0). All other releases and their
+          tags will be deleted. Leave empty to keep only the latest release.
+        required: false
+        type: string
+      dry_run:
+        description: >-
+          If true, only list what would be deleted without actually deleting.
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    name: Delete old releases
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⤵️ Check out code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+
+      - name: 🗑 Delete old releases and tags
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          KEEP_TAG: ${{ inputs.keep_tag }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          # Determine which tag to keep
+          if [[ -z "$KEEP_TAG" ]]; then
+            KEEP_TAG=$(gh release view --json tagName -q '.tagName' 2>/dev/null || true)
+            if [[ -z "$KEEP_TAG" ]]; then
+              echo "::error ::No latest release found and no keep_tag specified"
+              exit 1
+            fi
+          fi
+          echo "🔒 Keeping release: ${KEEP_TAG}"
+          echo ""
+
+          # List all releases
+          RELEASES=$(gh release list --limit 200 --json tagName -q '.[].tagName')
+          TOTAL=$(echo "$RELEASES" | wc -l)
+          echo "📋 Found ${TOTAL} releases total"
+          echo ""
+
+          DELETED=0
+          KEPT=0
+          for TAG in $RELEASES; do
+            if [[ "$TAG" == "$KEEP_TAG" ]]; then
+              echo "✅ KEEP: ${TAG}"
+              KEPT=$((KEPT + 1))
+              continue
+            fi
+
+            if [[ "$DRY_RUN" == "true" ]]; then
+              echo "🔍 Would delete: ${TAG}"
+            else
+              echo "🗑  Deleting release: ${TAG}"
+              gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+            fi
+            DELETED=$((DELETED + 1))
+          done
+
+          echo ""
+          echo "=============================="
+          if [[ "$DRY_RUN" == "true" ]]; then
+            echo "DRY RUN — would delete ${DELETED} releases, keep ${KEPT}"
+          else
+            echo "Deleted ${DELETED} releases, kept ${KEPT}"
+          fi
+          echo "=============================="
