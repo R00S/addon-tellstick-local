@@ -988,10 +988,13 @@ def _fire_device_discovery(
     # Suppress false positives from a known device's RF signal.
     # Protocol.cpp decodes arctech first, so the known-device event
     # (if any) has already been processed and set the timestamp.
+    # NOTE: Do NOT add to `discovered` here — temporal suppression must be
+    # transient.  Adding permanently blocks the UID even after the window
+    # expires, preventing legitimate devices pressed shortly after a known
+    # device from ever being discovered.
     last_known = entry_data.get("_last_known_event_time", 0.0)
     now = time.monotonic()
     if now - last_known < _KNOWN_DEVICE_SHADOW_SECS:
-        discovered.add(device_uid)
         return
 
     # Suppress cross-protocol phantom discoveries.  Identical protocols
@@ -1000,7 +1003,6 @@ def _fire_device_discovery(
     # decodes within the window are phantoms.  Issue #33.
     last_fire = entry_data.get("_last_discovery_fire_time", 0.0)
     if now - last_fire < _CROSS_DECODE_WINDOW_SECS:
-        discovered.add(device_uid)
         return
 
     # Deduplicate by protocol+model with a time window.  Devices with
@@ -1014,7 +1016,6 @@ def _fire_device_discovery(
     seen_proto_models: dict[str, float] = entry_data["_discovered_protocol_models"]
     last_seen = seen_proto_models.get(proto_model_key, 0.0)
     if now - last_seen < _PROTO_MODEL_DEDUP_SECS:
-        discovered.add(device_uid)
         # Still update fire time so cross-decode phantoms from this RF
         # signal are suppressed (e.g. sartano from an arctech signal).
         entry_data["_last_discovery_fire_time"] = now
@@ -1052,14 +1053,18 @@ def _auto_add_device(
     discovered: set[str] = entry_data.get("_discovered_uids", set())
     if device_uid in discovered:
         return
-    discovered.add(device_uid)
 
-    # Skip permanently ignored devices
+    # Skip permanently ignored devices (permanent — ok to lock UID)
     ignored_uids = entry.options.get(CONF_IGNORED_UIDS, {})
     if device_uid in ignored_uids:
+        discovered.add(device_uid)
         return
 
     # Suppress false positives from a known device's RF signal.
+    # NOTE: Do NOT add to `discovered` here — temporal suppression must be
+    # transient.  Adding permanently blocks the UID even after the window
+    # expires, preventing legitimate devices pressed shortly after a known
+    # device from ever being discovered.
     last_known = entry_data.get("_last_known_event_time", 0.0)
     now = time.monotonic()
     if now - last_known < _KNOWN_DEVICE_SHADOW_SECS:
@@ -1086,6 +1091,10 @@ def _auto_add_device(
         entry_data["_last_discovery_fire_time"] = now
         return
     seen_proto_models[proto_model_key] = now
+
+    # All temporal checks passed — commit to adding this device.
+    discovered.add(device_uid)
+    _LOGGER.info("Auto-adding device %s (protocol=%s model=%s)", device_uid, protocol, model)
 
     house = params.get("house", "")
     unit = params.get("unit", params.get("code", ""))
@@ -1159,7 +1168,7 @@ def _handle_sensor_event(
     event: SensorEvent,
 ) -> None:
     """Handle a sensor reading event."""
-    _LOGGER.debug(
+    _LOGGER.info(
         "Sensor event: id=%s protocol=%s model=%s type=%s value=%s",
         event.sensor_id,
         event.protocol,
@@ -1175,6 +1184,13 @@ def _handle_sensor_event(
     suffix = _SENSOR_SUFFIX.get(event.data_type)
     sensor_prefix = f"sensor_{event.sensor_id}_"
     is_known = any(uid.startswith(sensor_prefix) for uid in stored_devices)
+
+    if not suffix:
+        _LOGGER.warning(
+            "Sensor event data_type=%s has no suffix mapping — sensor ignored "
+            "(supported types: %s)",
+            event.data_type, list(_SENSOR_SUFFIX.keys()),
+        )
 
     if is_known:
         # Auto-persist this data_type if not already stored.  After a
@@ -1224,6 +1240,10 @@ def _handle_sensor_event(
         ignored_uids = entry.options.get(CONF_IGNORED_UIDS, {})
         if sensor_uid not in discovered and sensor_uid not in ignored_uids:
             discovered.add(sensor_uid)
+            _LOGGER.info(
+                "Auto-adding sensor %s (protocol=%s model=%s type=%s)",
+                sensor_uid, event.protocol, event.model, event.data_type,
+            )
             existing_devices = dict(stored_devices)
             existing_devices[sensor_uid] = {
                 CONF_DEVICE_NAME: f"TellStick sensor {event.sensor_id} {suffix}",
