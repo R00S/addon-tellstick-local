@@ -1,0 +1,182 @@
+---
+# Creates a stable (production) release from the main branch.
+#
+# What this does:
+#   1. Reads the version from manifest.json (or the optional input override).
+#   2. Updates tellsticklive/config.yaml from "dev" to the real version and
+#      commits + pushes to main (replaces the deploy.yaml post-build step,
+#      which only runs on direct GitHub release events).
+#   3. Creates the git tag v{VERSION} on the HEAD of main.
+#   4. Creates a non-prerelease GitHub Release.
+#   5. Calls deploy.yaml to build and push :VERSION + :latest Docker images
+#      for all supported HAOS architectures (aarch64 + amd64).
+#
+# Usage:
+#   Go to Actions → Create Stable Release → Run workflow → select main branch.
+#   Optionally enter a version override (default: version from manifest.json).
+name: Create Stable Release
+
+# yamllint disable-line rule:truthy
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: >-
+          Version to release (leave empty to use manifest.json version).
+          Format: X.Y.Z or X.Y.Z.W
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  create-stable-release:
+    name: Tag and publish stable release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - name: ⤵️ Check out main
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: 🔒 Verify workflow is dispatched from main
+        run: |
+          CURRENT_REF="${GITHUB_REF#refs/heads/}"
+          if [[ "$CURRENT_REF" != "main" ]]; then
+            echo "::error ::This workflow must be dispatched from the main branch (got: $CURRENT_REF)"
+            exit 1
+          fi
+
+      - name: 🏷 Determine release version
+        id: version
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          if [[ -n "$INPUT_VERSION" ]]; then
+            VERSION="$INPUT_VERSION"
+          else
+            VERSION=$(jq -r '.version' custom_components/tellstick_local/manifest.json)
+          fi
+
+          # Validate format: X.Y.Z or X.Y.Z.W (numeric segments, dots only)
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+            echo "::error ::Invalid version '$VERSION' — expected X.Y.Z or X.Y.Z.W"
+            exit 1
+          fi
+
+          # Fail fast if the tag already exists
+          if git rev-parse "v${VERSION}" >/dev/null 2>&1; then
+            echo "::error ::Tag v${VERSION} already exists — bump the version first"
+            exit 1
+          fi
+
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: 🏷 Update config.yaml to release version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          sed -i "s/^version:.*/version: ${VERSION}/" tellsticklive/config.yaml
+          grep '^version:' tellsticklive/config.yaml
+
+      - name: 💾 Commit and push config.yaml version update
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add tellsticklive/config.yaml
+          if ! git diff --cached --quiet; then
+            git commit -m "🔖 Release v${VERSION} [skip ci]"
+            git pull --rebase origin main
+            git push
+          else
+            echo "config.yaml already at version ${VERSION}, nothing to commit"
+          fi
+
+      - name: 🏷 Create and push git tag
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git tag "${TAG}"
+          git push origin "${TAG}"
+
+      - name: 📋 Generate release notes
+        id: release_notes
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Find the previous tag to compute a changelog range
+          PREV_TAG=$(git tag --sort=-version:refname \
+            | grep -v "^v${VERSION}$" | head -1 || true)
+
+          cat > release_notes.md << EOF
+          # TellStick Local v${VERSION}
+
+          ## Installation
+
+          1. In HAOS go to **Settings → Apps → ⋮ → Repositories**
+          2. Add: \`https://github.com/${REPO}\`, category **App**
+          3. Find **TellStick Local** and install it
+          4. Start the app — it will automatically copy the integration into your HA config
+          5. Accept the **"New device found: TellStick Local — Set up?"** notification
+
+          No HACS install needed — the integration is bundled in the app.
+
+          ## Changes
+
+          $(if [[ -n "$PREV_TAG" ]]; then
+            git log --oneline "${PREV_TAG}..HEAD" 2>/dev/null || git log --oneline -20
+          else
+            git log --oneline -20
+          fi)
+
+          ---
+
+          *Builds for all supported HAOS platforms: aarch64, amd64*
+          EOF
+
+          cat release_notes.md
+
+      - name: 🚀 Create GitHub Release
+        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "TellStick Local v${{ steps.version.outputs.version }}"
+          body_path: release_notes.md
+          draft: false
+          prerelease: false
+          target_commitish: main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 📊 Summary
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+          REPO: ${{ github.repository }}
+        run: |
+          echo "## 🎉 Stable Release Created!" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Version:** \`${VERSION}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Tag:** \`${TAG}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "🔗 https://github.com/${REPO}/releases/tag/${TAG}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Docker images are being built — see the **deploy** job below for progress." >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    name: Build and push stable Docker images
+    needs: create-stable-release
+    uses: ./.github/workflows/deploy.yaml
+    with:
+      version: ${{ needs.create-stable-release.outputs.version }}
+    secrets: inherit
