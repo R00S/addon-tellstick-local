@@ -9,9 +9,12 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers import entity_registry as er
 
 from .client import DeviceEvent, RawDeviceEvent, TellStickController
 from .const import (
+    BACKEND_DUO,
+    CONF_BACKEND,
     CONF_DEVICE_HOUSE,
     CONF_DEVICE_MODEL,
     CONF_DEVICE_NAME,
@@ -40,8 +43,15 @@ _SWITCH_MODELS = {
     "ecosavers",
 }
 
+# Protocols that use UP/DOWN/STOP (not ON/OFF) — handled by cover.py instead.
+# Source: ProtocolHasta.cpp and ProtocolBrateck.cpp — methods() returns
+# TELLSTICK_UP | TELLSTICK_DOWN | TELLSTICK_STOP, not TELLSTICK_TURNON.
+_COVER_PROTOCOLS = {"hasta", "brateck"}
+
 
 def _is_switch(protocol: str, model: str) -> bool:
+    if protocol.lower() in _COVER_PROTOCOLS:
+        return False
     base = model.split(":")[0].lower() if ":" in model else model.lower()
     return base in _SWITCH_MODELS
 
@@ -54,8 +64,10 @@ async def async_setup_entry(
     """Set up TellStick switch entities."""
     entry_data = hass.data[DOMAIN][entry.entry_id]
     controller: TellStickController = entry_data[ENTRY_TELLSTICK_CONTROLLER]
-    device_id_map: dict[str, int] = entry_data.get(ENTRY_DEVICE_ID_MAP, {})
+    device_id_map: dict[str, Any] = entry_data.get(ENTRY_DEVICE_ID_MAP, {})
     new_device_signal = SIGNAL_NEW_DEVICE.format(entry.entry_id)
+    backend = entry.data.get(CONF_BACKEND, BACKEND_DUO)
+    manufacturer = "TellStick Net/ZNet" if backend != BACKEND_DUO else "TellStick Duo"
 
     known: set[str] = set()
 
@@ -78,6 +90,7 @@ async def async_setup_entry(
                 device_id=device_id_map.get(device_uid),
                 house=device_cfg.get(CONF_DEVICE_HOUSE, ""),
                 unit=device_cfg.get(CONF_DEVICE_UNIT, ""),
+                manufacturer=manufacturer,
             )
         )
     if stored_entities:
@@ -91,8 +104,17 @@ async def async_setup_entry(
         protocol = params.get("protocol", "")
         model = params.get("model", "")
         uid = event.device_id
-        if not uid or uid in known:
+        if not uid:
             return
+        if uid in known:
+            # Guard: if the entity was deleted in this session without a
+            # reload (delete + re-add same session), `uid` stays in `known`
+            # but the entity is gone from the registry.  Check and allow
+            # re-creation.  Issue #33.
+            unique_id = f"{entry.entry_id}_{uid}"
+            if er.async_get(hass).async_get_entity_id("switch", DOMAIN, unique_id) is not None:
+                return  # entity still active — skip duplicate
+            known.discard(uid)  # entity was deleted — fall through to create
         if not _is_switch(protocol, model):
             return
         known.add(uid)
@@ -109,6 +131,7 @@ async def async_setup_entry(
             device_id=device_id_map.get(uid),
             house=params.get("house", ""),
             unit=params.get("unit", params.get("code", "")),
+            manufacturer=manufacturer,
         )
         async_add_entities([entity])
 
@@ -131,9 +154,10 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
         protocol: str,
         model: str,
         controller: TellStickController,
-        device_id: int | None = None,
+        device_id: Any = None,
         house: str = "",
         unit: str = "",
+        manufacturer: str = "",
     ) -> None:
         """Initialize a TellStick switch."""
         super().__init__(
@@ -144,6 +168,7 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
             model=model,
             house=house,
             unit=unit,
+            manufacturer=manufacturer,
         )
         self._controller = controller
         self._telldusd_device_id = device_id
@@ -182,6 +207,10 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the switch on."""
+        _LOGGER.debug(
+            "turn_on: uid=%s controller=%s device_id=%r",
+            self._device_uid, type(self._controller).__name__, self._telldusd_device_id,
+        )
         if self._telldusd_device_id is not None:
             await self._controller.turn_on(self._telldusd_device_id)
         else:
@@ -194,6 +223,10 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the switch off."""
+        _LOGGER.debug(
+            "turn_off: uid=%s controller=%s device_id=%r",
+            self._device_uid, type(self._controller).__name__, self._telldusd_device_id,
+        )
         if self._telldusd_device_id is not None:
             await self._controller.turn_off(self._telldusd_device_id)
         else:

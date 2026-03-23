@@ -20,7 +20,7 @@ from homeassistant.helpers.issue_registry import (
 from homeassistant.config_entries import SOURCE_IGNORE, ConfigEntry
 from homeassistant.const import CONF_HOST, EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .client import (
@@ -30,7 +30,10 @@ from .client import (
     TellStickController,
 )
 from .const import (
+    BACKEND_DUO,
+    BACKEND_NET,
     CONF_AUTOMATIC_ADD,
+    CONF_BACKEND,
     CONF_COMMAND_PORT,
     CONF_DETECT_SARTANO,
     CONF_DEVICE_HOUSE,
@@ -50,6 +53,7 @@ from .const import (
     PLATFORMS,
     SIGNAL_EVENT,
     SIGNAL_NEW_DEVICE,
+    build_device_uid,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -151,6 +155,12 @@ _SENSOR_SUFFIX: dict[int, str] = {
 
 _ISSUE_RESTART = "restart_required"
 
+# Protocols that are receive-only sensors — telldusd emits TDSensorEvent for
+# these (not controllable devices).  Pre-configured app-config entries for these
+# protocols are skipped during startup import because they have no house/unit and
+# are auto-discovered from RF events instead.
+_APP_SENSOR_PROTOCOLS = frozenset({"fineoffset", "oregon", "mandolyn"})
+
 
 async def _check_version_mismatch(hass: HomeAssistant) -> None:
     """Fire or clear a repair issue based on on-disk manifest vs loaded code.
@@ -214,6 +224,199 @@ async def _check_version_mismatch(hass: HomeAssistant) -> None:
     )
 
 
+@callback
+def _migrate_entry_title(
+    hass: HomeAssistant, entry: ConfigEntry, backend: str, host: str
+) -> None:
+    """Update legacy generic entry titles to hub-specific names.
+
+    Before 2.4.0.3 all entries used 'TellStick Local' / 'TellStick Net (host)'
+    as their title.  When both a Duo and a Net/ZNet are configured at the same
+    time those titles are indistinguishable in the HA UI, causing users to
+    accidentally configure or use the wrong hub.
+    """
+    title = entry.title
+    if backend == BACKEND_NET:
+        expected = f"TellStick Net/ZNet ({host})"
+        # Old titles: "TellStick Net (host)"
+        if title.startswith("TellStick Net") and title != expected:
+            hass.config_entries.async_update_entry(entry, title=expected)
+    else:
+        # Old titles: "TellStick Local" or "TellStick Local (host)"
+        if title.startswith("TellStick Local"):
+            new_title = (
+                f"TellStick Duo ({host})" if "(" in title else "TellStick Duo"
+            )
+            hass.config_entries.async_update_entry(entry, title=new_title)
+
+
+@callback
+def _clear_orphaned_tombstones(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove stale entity and device registry tombstones at startup.
+
+    Before v2.1.12.2 the options-flow delete paths did not pop tombstones
+    after calling async_remove / async_remove_device.  If a user deleted a
+    device using those paths on an older version, the tombstone was written to
+    disk and survives upgrades.
+
+    What tombstones actually do (verified from HA source):
+    - Entity tombstone (DeletedRegistryEntry): on re-add, HA restores the old
+      *internal HA UUID* (the ``id`` field) and ``created_at``.  The entity_id
+      is always regenerated from ``suggested_object_id`` — not from the
+      tombstone — so entity_id inheritance is unaffected.  The risk is that the
+      new entity silently reuses the old UUID, which links it to the old
+      entity's recorder history.
+    - Device tombstone (DeletedDeviceEntry): since HA 2025.6 this stores
+      ``area_id``, ``labels``, AND ``name_by_user`` in addition to
+      ``config_entries``, ``connections``, ``identifiers``, and the device UUID.
+      ``to_device_entry()`` restores all of them on re-add.  This is the direct
+      cause of area/label inheritance when a device is deleted and re-added
+      (Issue #33, jet001se report).  Clearing the tombstone prevents the old
+      area, labels, and name from being resurrected on re-add.
+
+    Clearing both tombstones at startup ensures every re-added device starts
+    truly fresh.  Issue #33.
+    """
+    # --- Entity registry tombstones ---
+    ent_reg = er.async_get(hass)
+    valid_unique_ids: set[str] = {
+        f"{entry.entry_id}_{uid}"
+        for uid in entry.options.get(CONF_DEVICES, {})
+    }
+    orphan_ent_keys = [
+        key
+        for key, deleted_ent in list(ent_reg.deleted_entities.items())
+        if key[1] == DOMAIN  # platform == tellstick_local
+        and deleted_ent.config_entry_id == entry.entry_id
+        and deleted_ent.unique_id not in valid_unique_ids
+    ]
+    for key in orphan_ent_keys:
+        ent_reg.deleted_entities.pop(key, None)
+    if orphan_ent_keys:
+        _LOGGER.debug(
+            "Cleared %d orphaned entity tombstone(s) for entry %s (Issue #33)",
+            len(orphan_ent_keys),
+            entry.entry_id,
+        )
+
+    # --- Device registry tombstones ---
+    dev_reg = dr.async_get(hass)
+    orphan_dev_ids = [
+        dev_id
+        for dev_id, deleted_dev in list(dev_reg.deleted_devices.items())
+        if entry.entry_id in deleted_dev.config_entries
+    ]
+    for dev_id in orphan_dev_ids:
+        dev_reg.deleted_devices.pop(dev_id, None)
+    if orphan_dev_ids:
+        _LOGGER.debug(
+            "Cleared %d orphaned device tombstone(s) for entry %s (Issue #33)",
+            len(orphan_dev_ids),
+            entry.entry_id,
+        )
+
+
+async def _import_app_configured_devices(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    controller: TellStickController,
+    device_id_map: dict[str, Any],
+) -> None:
+    """Import devices pre-configured in the app config but not yet in CONF_DEVICES.
+
+    When a user pastes their device YAML into the app's Configuration tab (HAOS
+    YAML mode), those devices are registered with telldusd via ``tellstick.conf``
+    but are unknown to the integration.  This function detects such "unmanaged"
+    telldusd devices and adds them to CONF_DEVICES before platform setup, so that
+    each platform (switch/light/cover) creates the correct entity type based on
+    the original model string from the app config.
+
+    Sensor-only protocols (fineoffset, oregon, mandolyn) are skipped — they have
+    no house/unit and are auto-discovered from TDSensorEvent instead.
+
+    This restores the "paste YAML → devices appear in HA" workflow from the
+    parent repo (erik73/addon-tellsticklive) after migrating to this fork.
+    """
+    all_devices = await controller.list_devices()
+
+    existing_devices: dict[str, Any] = dict(entry.options.get(CONF_DEVICES, {}))
+    ignored_uids: set[str] = set(entry.options.get(CONF_IGNORED_UIDS, {}).keys())
+
+    # Build a lookup of already-managed (protocol, house, unit) tuples so we
+    # can skip devices that are managed via the old house/unit format (where
+    # the UID key might differ from build_device_uid when models differ).
+    managed_params: set[tuple[str, str, str]] = {
+        (
+            cfg.get(CONF_DEVICE_PROTOCOL, ""),
+            cfg.get(CONF_DEVICE_HOUSE, ""),
+            cfg.get(CONF_DEVICE_UNIT, ""),
+        )
+        for cfg in existing_devices.values()
+    }
+
+    new_devices: dict[str, dict[str, Any]] = {}
+    for dev in all_devices:
+        protocol = dev["protocol"]
+        house = dev["house"]
+        unit = dev["unit"]
+        telldusd_id = dev["id"]
+
+        if not protocol:
+            continue
+
+        # Sensor-only protocols: auto-discovered from TDSensorEvent, not here.
+        if protocol in _APP_SENSOR_PROTOCOLS:
+            continue
+
+        # Skip if already managed by protocol+house+unit (covers both UID
+        # formats and avoids fetching name/model for known devices).
+        if (protocol, house, unit) in managed_params:
+            continue
+
+        # Fetch name and model only for candidates to minimise TCP round-trips.
+        name, model = await controller.get_device_name_model(telldusd_id)
+
+        uid = build_device_uid(protocol, model, house, unit)
+
+        # Skip if already managed by UID or user-ignored.
+        if uid in existing_devices or uid in ignored_uids:
+            continue
+
+        # Avoid duplicates when list_devices() returns two entries with the
+        # same effective UID (can happen when app config and integration both
+        # previously registered the same device).
+        if uid in new_devices:
+            continue
+
+        new_devices[uid] = {
+            CONF_DEVICE_NAME: name or f"TellStick {uid}",
+            CONF_DEVICE_PROTOCOL: protocol,
+            CONF_DEVICE_MODEL: model,
+            CONF_DEVICE_HOUSE: house,
+            CONF_DEVICE_UNIT: unit,
+            "_telldusd_id": telldusd_id,
+        }
+
+    if not new_devices:
+        return
+
+    _LOGGER.info(
+        "Importing %d device(s) pre-configured in app config: %s",
+        len(new_devices),
+        list(new_devices.keys()),
+    )
+
+    for uid, dev_cfg in new_devices.items():
+        existing_devices[uid] = {
+            k: v for k, v in dev_cfg.items() if not k.startswith("_")
+        }
+        device_id_map[uid] = dev_cfg["_telldusd_id"]
+
+    new_options = dict(entry.options)
+    new_options[CONF_DEVICES] = existing_devices
+    hass.config_entries.async_update_entry(entry, options=new_options)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up TellStick Local from a config entry."""
 
@@ -225,52 +428,103 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # a restart is needed.
     await _check_version_mismatch(hass)
 
+    # --- One-time tombstone cleanup (Issue #33) ---
+    # Clear orphaned entity/device registry tombstones left by deletions
+    # performed on versions older than 2.1.12.3 (before tombstone clearing
+    # was added to all delete paths).  This is a no-op on clean installs.
+    _clear_orphaned_tombstones(hass, entry)
+
+    backend = entry.data.get(CONF_BACKEND, BACKEND_DUO)
     host = entry.data[CONF_HOST]
-    cmd_port = entry.data[CONF_COMMAND_PORT]
-    evt_port = entry.data[CONF_EVENT_PORT]
 
-    controller = TellStickController(
-        host=host, command_port=cmd_port, event_port=evt_port
-    )
+    # --- One-time title migration ---
+    # Older versions used generic titles ("TellStick Local", "TellStick Local (host)",
+    # "TellStick Net (host)").  Migrate to hub-specific titles so users can
+    # immediately tell which entry controls which hardware, especially important
+    # when both a Duo and a Net/ZNet are configured simultaneously.
+    _migrate_entry_title(hass, entry, backend, host)
 
-    try:
-        await asyncio.wait_for(controller.connect(), timeout=10)
-    except (asyncio.TimeoutError, OSError) as err:
-        _LOGGER.error("Cannot connect to TellStick daemon at %s: %s", host, err)
-        return False
+    if backend == BACKEND_NET:
+        # --- TellStick Net / ZNet UDP backend ---
+        from .net_client import TellStickNetController  # noqa: PLC0415
 
-    # Re-register stored devices with telldusd.  telldusd's device list is
-    # ephemeral (reset when the app container restarts), so we must do this on
-    # every setup.  find_or_add_device avoids duplicates on warm reconnects.
-    device_id_map: dict[str, int] = {}
-    stored_devices: dict[str, Any] = entry.options.get(CONF_DEVICES, {})
-    for device_uid, device_cfg in stored_devices.items():
-        # Skip sensor entries — they don't register with telldusd
-        if device_uid.startswith("sensor_"):
-            continue
+        mac = entry.data.get("mac", "")
+        controller: Any = TellStickNetController(host=host, mac=mac)
         try:
-            # Prefer the "params" dict (new format) over house/unit (old format)
-            params = device_cfg.get("params")
-            if params:
-                telldusd_id = await controller.add_device(
-                    device_cfg.get(CONF_DEVICE_NAME, device_uid),
-                    device_cfg[CONF_DEVICE_PROTOCOL],
-                    device_cfg.get(CONF_DEVICE_MODEL, ""),
-                    params,
-                )
-            else:
-                telldusd_id = await controller.find_or_add_device(
-                    device_cfg.get(CONF_DEVICE_NAME, device_uid),
-                    device_cfg[CONF_DEVICE_PROTOCOL],
-                    device_cfg.get(CONF_DEVICE_MODEL, ""),
-                    device_cfg.get(CONF_DEVICE_HOUSE, ""),
-                    device_cfg.get(CONF_DEVICE_UNIT, ""),
-                )
-            device_id_map[device_uid] = telldusd_id
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.warning(
-                "Could not register device %s with telldusd: %s", device_uid, err
+            await asyncio.wait_for(controller.connect(), timeout=10)
+        except (asyncio.TimeoutError, OSError) as err:
+            _LOGGER.error(
+                "Cannot connect to TellStick Net at %s: %s", host, err
             )
+            return False
+
+        # For Net, populate device_id_map with device parameter dicts.
+        # The Net controller has no telldusd registry; commands are sent
+        # directly using the stored protocol/model/house/unit.
+        device_id_map: dict[str, Any] = {}
+        stored_devices: dict[str, Any] = entry.options.get(CONF_DEVICES, {})
+        for device_uid, device_cfg in stored_devices.items():
+            if device_uid.startswith("sensor_"):
+                continue
+            device_id_map[device_uid] = {
+                CONF_DEVICE_PROTOCOL: device_cfg.get(CONF_DEVICE_PROTOCOL, ""),
+                CONF_DEVICE_MODEL: device_cfg.get(CONF_DEVICE_MODEL, ""),
+                CONF_DEVICE_HOUSE: device_cfg.get(CONF_DEVICE_HOUSE, ""),
+                CONF_DEVICE_UNIT: device_cfg.get(CONF_DEVICE_UNIT, ""),
+            }
+        # Net does not use _import_app_configured_devices
+        do_app_import = False
+
+    else:
+        # --- TellStick Duo TCP backend (default) ---
+        cmd_port = entry.data[CONF_COMMAND_PORT]
+        evt_port = entry.data[CONF_EVENT_PORT]
+
+        controller = TellStickController(
+            host=host, command_port=cmd_port, event_port=evt_port
+        )
+
+        try:
+            await asyncio.wait_for(controller.connect(), timeout=10)
+        except (asyncio.TimeoutError, OSError) as err:
+            _LOGGER.error(
+                "Cannot connect to TellStick daemon at %s: %s", host, err
+            )
+            return False
+
+        # Re-register stored devices with telldusd.  telldusd's device list is
+        # ephemeral (reset when the app container restarts), so we must do this
+        # on every setup.  find_or_add_device avoids duplicates on warm reconnects.
+        device_id_map = {}
+        stored_devices = entry.options.get(CONF_DEVICES, {})
+        for device_uid, device_cfg in stored_devices.items():
+            # Skip sensor entries — they don't register with telldusd
+            if device_uid.startswith("sensor_"):
+                continue
+            try:
+                # Prefer the "params" dict (new format) over house/unit (old format)
+                params = device_cfg.get("params")
+                if params:
+                    telldusd_id = await controller.add_device(
+                        device_cfg.get(CONF_DEVICE_NAME, device_uid),
+                        device_cfg[CONF_DEVICE_PROTOCOL],
+                        device_cfg.get(CONF_DEVICE_MODEL, ""),
+                        params,
+                    )
+                else:
+                    telldusd_id = await controller.find_or_add_device(
+                        device_cfg.get(CONF_DEVICE_NAME, device_uid),
+                        device_cfg[CONF_DEVICE_PROTOCOL],
+                        device_cfg.get(CONF_DEVICE_MODEL, ""),
+                        device_cfg.get(CONF_DEVICE_HOUSE, ""),
+                        device_cfg.get(CONF_DEVICE_UNIT, ""),
+                    )
+                device_id_map[device_uid] = telldusd_id
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.warning(
+                    "Could not register device %s with telldusd: %s", device_uid, err
+                )
+        do_app_import = True
 
     # Clean up orphan subentry records left by older versions of the
     # integration.  We no longer create subentries because they cause the
@@ -327,6 +581,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Listen for options changes (reload only when automatic_add changes)
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
 
+    # Import devices pre-configured in the app's YAML config (Configuration tab)
+    # that are not yet known to the integration.  Duo-only — the Net backend
+    # has no telldusd registry and no app config tab.
+    # Must run BEFORE platform setup so platforms see the imported devices in
+    # CONF_DEVICES and create entities with the correct type (switch/light/cover)
+    # from the original model string.
+    # Wrapped in a broad try/except — this is a bonus hook-on and must never
+    # interfere with the existing setup flow.
+    if do_app_import:
+        try:
+            await _import_app_configured_devices(
+                hass, entry, controller, device_id_map
+            )
+        except Exception as _import_err:  # noqa: BLE001
+            _LOGGER.warning(
+                "App-config device import skipped due to error (setup continues): %s",
+                _import_err,
+            )
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     return True
@@ -349,7 +622,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if ok:
         entry_data = hass.data[DOMAIN].pop(entry.entry_id, {})
-        ctrl: TellStickController | None = entry_data.get(ENTRY_TELLSTICK_CONTROLLER)
+        ctrl: Any = entry_data.get(ENTRY_TELLSTICK_CONTROLLER)
         if ctrl:
             await ctrl.disconnect()
     return ok
@@ -416,10 +689,8 @@ async def async_remove_config_entry_device(
 
     # Best-effort removal from telldusd
     entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
-    controller: TellStickController | None = entry_data.get(
-        ENTRY_TELLSTICK_CONTROLLER
-    )
-    device_id_map: dict[str, int] = entry_data.get(ENTRY_DEVICE_ID_MAP, {})
+    controller: Any = entry_data.get(ENTRY_TELLSTICK_CONTROLLER)
+    device_id_map: dict[str, Any] = entry_data.get(ENTRY_DEVICE_ID_MAP, {})
     discovered: set[str] = entry_data.get("_discovered_uids", set())
 
     # Sensor devices use identifier "sensor_{sensor_id}" (no type suffix).
@@ -427,11 +698,13 @@ async def async_remove_config_entry_device(
     # Find and remove ALL matching entries.
     stored_devices: dict[str, Any] = dict(entry.options.get(CONF_DEVICES, {}))
     removed_any = False
+    removed_uids: list[str] = []
 
     if device_uid.startswith("sensor_") and device_uid in stored_devices:
         # Exact match (unlikely — sensors use sensor_{id} without suffix)
         del stored_devices[device_uid]
         removed_any = True
+        removed_uids.append(device_uid)
         discovered.discard(device_uid)
     elif device_uid.startswith("sensor_"):
         # Shared identifier format: sensor_{sensor_id}
@@ -441,6 +714,7 @@ async def async_remove_config_entry_device(
             if uid.startswith(sensor_prefix):
                 del stored_devices[uid]
                 removed_any = True
+                removed_uids.append(uid)
                 discovered.discard(uid)
                 # Remove from telldusd map
                 if controller and uid in device_id_map:
@@ -458,6 +732,7 @@ async def async_remove_config_entry_device(
         # Non-sensor device: exact UID match
         del stored_devices[device_uid]
         removed_any = True
+        removed_uids.append(device_uid)
         discovered.discard(device_uid)
         if controller and device_uid in device_id_map:
             try:
@@ -472,6 +747,50 @@ async def async_remove_config_entry_device(
         new_options = dict(entry.options)
         new_options[CONF_DEVICES] = stored_devices
         hass.config_entries.async_update_entry(entry, options=new_options)
+
+        # Remove entity registry entries so that if the same device is later
+        # re-added with a new name it gets fresh entity_ids instead of
+        # inheriting the old ones.  Issue #33.
+        ent_reg = er.async_get(hass)
+        remove_unique_ids = {f"{entry.entry_id}_{u}" for u in removed_uids}
+        for ent in list(er.async_entries_for_config_entry(ent_reg, entry.entry_id)):
+            if ent.unique_id in remove_unique_ids:
+                try:
+                    ent_reg.async_remove(ent.entity_id)
+                    # Clear the DeletedRegistryEntry tombstone so that the old
+                    # entity UUID is not silently reused when the device is
+                    # re-added, which would link the new entity to the old
+                    # entity's recorder history.  Issue #33.
+                    ent_reg.deleted_entities.pop(
+                        (ent.domain, ent.platform, ent.unique_id), None
+                    )
+                except Exception:  # noqa: BLE001
+                    _LOGGER.warning(
+                        "Could not remove entity %s from registry",
+                        ent.entity_id,
+                    )
+
+    # Schedule device registry tombstone clearing AFTER HA removes the device.
+    # When this function returns True, HA calls
+    # async_update_device(device.id, remove_config_entry_id=entry.entry_id)
+    # which (since we have only one config entry per device) calls
+    # async_remove_device() — moving the device to deleted_devices.
+    # We schedule a task to pop the tombstone so the old area, labels, and
+    # name_by_user are not resurrected on re-add (HA 2025.6+ stores these in
+    # DeletedDeviceEntry and to_device_entry() restores them).
+    #
+    # No race condition: async_create_task schedules a new asyncio Task that
+    # cannot start until the current coroutine returns and the caller's
+    # synchronous @callback (async_update_device → async_remove_device) has
+    # already completed.  The tombstone is guaranteed to exist by the time the
+    # task runs.  Issue #33.
+    _dev_entry_id = device_entry.id
+
+    async def _clear_device_tombstone() -> None:
+        dev_reg = dr.async_get(hass)
+        dev_reg.deleted_devices.pop(_dev_entry_id, None)
+
+    hass.async_create_task(_clear_device_tombstone())
 
     return True
 
@@ -738,21 +1057,29 @@ def _auto_add_device(
 
     # Register with telldusd and store ID so commands work
     async def _register_and_signal() -> None:
-        controller: TellStickController | None = entry_data.get(
-            ENTRY_TELLSTICK_CONTROLLER
-        )
-        device_id_map: dict[str, int] = entry_data.get(ENTRY_DEVICE_ID_MAP, {})
+        controller: Any = entry_data.get(ENTRY_TELLSTICK_CONTROLLER)
+        device_id_map: dict[str, Any] = entry_data.get(ENTRY_DEVICE_ID_MAP, {})
         if controller:
-            try:
-                telldusd_id = await controller.find_or_add_device(
-                    name, protocol, model, house, unit,
-                )
-                device_id_map[device_uid] = telldusd_id
-            except Exception:  # noqa: BLE001
-                _LOGGER.warning(
-                    "Could not register auto-added device %s with telldusd",
-                    device_uid,
-                )
+            backend = entry.data.get(CONF_BACKEND, BACKEND_DUO)
+            if backend == BACKEND_NET:
+                # Net controller: store device params dict so commands work
+                device_id_map[device_uid] = {
+                    CONF_DEVICE_PROTOCOL: protocol,
+                    CONF_DEVICE_MODEL: model,
+                    CONF_DEVICE_HOUSE: house,
+                    CONF_DEVICE_UNIT: unit,
+                }
+            else:
+                try:
+                    telldusd_id = await controller.find_or_add_device(
+                        name, protocol, model, house, unit,
+                    )
+                    device_id_map[device_uid] = telldusd_id
+                except Exception:  # noqa: BLE001
+                    _LOGGER.warning(
+                        "Could not register auto-added device %s with telldusd",
+                        device_uid,
+                    )
         async_dispatcher_send(
             hass, SIGNAL_NEW_DEVICE.format(entry.entry_id), event
         )
@@ -799,14 +1126,13 @@ def _handle_sensor_event(
     is_known = any(uid.startswith(sensor_prefix) for uid in stored_devices)
 
     if is_known:
-        # Known sensor — revive entity after restart
-        async_dispatcher_send(
-            hass, SIGNAL_NEW_DEVICE.format(entry.entry_id), event
-        )
         # Auto-persist this data_type if not already stored.  After a
         # migration or add-as-new for one data_type, the companion
         # (temp↔hum) arrives later and must also be persisted so it
         # survives restarts.  Issue #33.
+        # IMPORTANT: do this BEFORE dispatching SIGNAL_NEW_DEVICE so that
+        # when sensor.py._async_new_device runs it can read the correct
+        # user-provided name from entry.options (not the default fallback).
         if suffix:
             sensor_uid = f"sensor_{event.sensor_id}_{suffix}"
             if sensor_uid not in stored_devices:
@@ -835,6 +1161,10 @@ def _handle_sensor_event(
                 hass.config_entries.async_update_entry(
                     entry, options=new_options
                 )
+        # Known sensor — revive entity after restart
+        async_dispatcher_send(
+            hass, SIGNAL_NEW_DEVICE.format(entry.entry_id), event
+        )
     elif suffix and automatic_add:
         # Auto-add: persist sensor and fire signal
         sensor_uid = f"sensor_{event.sensor_id}_{suffix}"
