@@ -147,9 +147,10 @@ jobs:
 
   post-build:
     name: Publish release version to repository
-    if: >-
-      github.event_name == 'release'
-      || inputs.version != ''
+    # Only run for direct GitHub releases — NOT for test/beta/rc builds
+    # triggered via workflow_call from create-release.yaml (which would
+    # corrupt main's config.yaml with a pre-release version number).
+    if: github.event_name == 'release'
     needs:
       - information
       - build
