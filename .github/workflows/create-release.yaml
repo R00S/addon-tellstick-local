@@ -202,3 +202,43 @@ jobs:
     with:
       version: ${{ needs.create-release.outputs.version }}
     secrets: inherit
+
+  update-dev-repo:
+    name: Push version update to addon-tellsticklive-roosfork (dev channel)
+    # This job updates the dev-channel repository so that HAOS users who have
+    # https://github.com/R00S/addon-tellsticklive-roosfork in their add-on store
+    # see this release as an available update.
+    #
+    # REQUIRED SECRET: ROOSFORK_DEPLOY_KEY must be a Personal Access Token (PAT)
+    # or deploy key with write access to R00S/addon-tellsticklive-roosfork.
+    needs: [create-release, deploy]
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⤵️ Check out addon-tellsticklive-roosfork
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: R00S/addon-tellsticklive-roosfork
+          token: ${{ secrets.ROOSFORK_DEPLOY_KEY }}
+          persist-credentials: true
+
+      - name: 🏷 Update config.yaml with new version and correct image slug
+        env:
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          sed -i "s/^version:.*/version: ${VERSION}/" tellsticklive/config.yaml
+          sed -i "s|^image:.*|image: ghcr.io/r00s/tellstick-local/{arch}|" tellsticklive/config.yaml
+          grep -E '^(version|image):' tellsticklive/config.yaml
+
+      - name: 💾 Commit and push
+        env:
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add tellsticklive/config.yaml
+          if ! git diff --cached --quiet; then
+            git commit -m "🚀 Release ${VERSION} [skip ci]"
+            git push
+          else
+            echo "No changes to commit"
+          fi
