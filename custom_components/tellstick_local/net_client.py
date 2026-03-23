@@ -406,6 +406,38 @@ _METHOD_INT: dict[str, int] = {
 }
 
 
+def _arctech_selflearning_pulse_train(
+    house: int, unit0: int, method_name: str
+) -> bytes | None:
+    """Build raw arctech selflearning ON/OFF/LEARN pulse train.
+
+    Port of ``ProtocolArctech.stringSelflearningForCode`` from telldus-server.
+    ``unit0`` is 0-indexed (0–15).  Returns ``None`` for unsupported methods.
+
+    The native firmware dict format (``{protocol, model, house, unit, method}``)
+    only works on TellStick Net (C firmware with built-in arctech support).
+    TellStick ZNet uses the Python tellstick-server stack whose ``productiontest``
+    UDP handler does not reliably encode the dict into RF pulses.  Sending the
+    pre-computed S= pulse bytes bypasses the ZNet encoding entirely and produces
+    the same signal as ``DeviceNode._command`` (the Telldus Live path).
+    """
+    if method_name in ("turnon", "learn"):
+        method_bit = _ONE
+    elif method_name == "turnoff":
+        method_bit = _ZERO
+    else:
+        return None
+
+    code = _SHORT + bytes([255])           # preamble: SHORT + 0xFF
+    for i in range(25, -1, -1):
+        code += _ONE if house & (1 << i) else _ZERO
+    code += _ZERO                          # group bit = 0
+    code += method_bit                     # on/off bit
+    for i in range(3, -1, -1):
+        code += _ONE if unit0 & (1 << i) else _ZERO
+    return code + _SHORT
+
+
 def _arctech_dim_pulse_train(house: int, unit0: int, level: int) -> bytes:
     """Build raw arctech selflearning dim pulse train (unit is 0-indexed)."""
     code = _SHORT + bytes([255])
@@ -426,8 +458,9 @@ def _encode_arctech_command(
 ) -> dict | bytes | None:
     """Encode an arctech RF command.
 
-    Returns an OrderedDict (native firmware on/off), raw bytes (dim pulse
-    train), or None if the combination is not supported.
+    Returns raw bytes (selflearning pulse train or dim pulse train), an
+    OrderedDict (native dict for codeswitch/bell/kp100), or None if the
+    combination is not supported.
     """
     method_int = _METHOD_INT.get(method_name)
     if method_int is None:
@@ -454,12 +487,22 @@ def _encode_arctech_command(
         method_int = _TURNOFF
 
     if method_int in (_TURNON, _TURNOFF, _LEARN):
-        # For selflearning, model must be "selflearning" (not "selflearning-switch").
-        # For codeswitch, bell, kp100 pass the model through as received.
-        send_model = "selflearning" if model in ("selflearning", "selflearning-switch", "selflearning-dimmer") else model
+        if model in ("selflearning", "selflearning-switch", "selflearning-dimmer"):
+            # Use pre-encoded S= pulse train.  The native firmware dict format
+            # only works on TellStick Net (C firmware); TellStick ZNet's
+            # productiontest UDP handler does not reliably encode arctech dicts.
+            if not isinstance(house_val, int):
+                _LOGGER.warning(
+                    "Arctech selflearning: non-integer house %r — cannot build pulse train",
+                    house,
+                )
+                return None
+            return _arctech_selflearning_pulse_train(house_val, unit0, method_name)
+        # codeswitch, bell, kp100 — keep native dict (ZNet handles these via
+        # the same productiontest path; no S= encoder implemented yet).
         return OrderedDict(
             protocol="arctech",
-            model=send_model,
+            model=model,
             house=house_val,
             unit=unit0,
             method=method_int,
@@ -474,45 +517,99 @@ def _encode_arctech_command(
 
 # ---------------------------------------------------------------------------
 # Everflourish TX encoding
-# The ZNet firmware has ProtocolEverflourish registered in
-# Protocol.protocolInstance() (rf433/src/rf433/Protocol.py).  We send a
-# native protocol dict — the same pattern that works for arctech — so the
-# ZNet firmware invokes its own ProtocolEverflourish.stringForMethod()
-# internally, which is the proven code path.
+# Port of ProtocolEverflourish from telldus-server.  We build the S= pulse
+# bytes ourselves so the ZNet firmware only needs to transmit them — no
+# reliance on productiontest/Server.py's dict-based encoding path (which
+# does not work reliably on ZNet for the same reason arctech dict ON/OFF
+# fails: the TellStick Net C firmware had native dict support, but ZNet's
+# Python productiontest module does not).
 # ---------------------------------------------------------------------------
+
+_EF_S = bytes([60])    # short pulse ≈ 600 µs  (ProtocolEverflourish.py: s=chr(60))
+_EF_L = bytes([114])   # long pulse  ≈ 1140 µs (ProtocolEverflourish.py: l=chr(114))
+_EF_SSSL = _EF_S * 3 + _EF_L   # encodes bit 0: s+s+s+l
+_EF_SLSS = _EF_S + _EF_L + _EF_S * 2  # encodes bit 1: s+l+s+s
+
+
+def _everflourish_checksum(x: int) -> int:
+    """Calculate Everflourish checksum.
+
+    Port of ``ProtocolEverflourish.calculateChecksum`` from telldus-server.
+    """
+    lut = [
+        0xF, 0xA, 0x7, 0xE,
+        0xF, 0xD, 0x9, 0x1,
+        0x1, 0x2, 0x4, 0x8,
+        0x3, 0x6, 0xC, 0xB,
+    ]
+    if (x & 0x3) == 3:
+        lo = x & 0x00FF
+        hi = x & 0xFF00
+        lo += 4
+        if lo > 0x100:
+            lo = 0x12
+        x = lo | hi
+    bit = 1
+    res = 0x5
+    for i in range(16):
+        if x & bit:
+            res ^= lut[i]
+        bit <<= 1
+    return res
+
+
+def _everflourish_pulse_train(
+    house_int: int, unit0: int, method_name: str
+) -> bytes | None:
+    """Build raw Everflourish ON/OFF/LEARN pulse train.
+
+    Port of ``ProtocolEverflourish.stringForMethod`` from telldus-server.
+    ``unit0`` is 0-indexed (0–3).  Returns ``None`` for unsupported methods.
+    """
+    if method_name == "turnon":
+        action = 15
+    elif method_name == "turnoff":
+        action = 0
+    elif method_name == "learn":
+        action = 10
+    else:
+        return None
+
+    ef_bits = [_EF_SSSL, _EF_SLSS]   # [0-bit, 1-bit]
+
+    device_code = (house_int << 2) | unit0
+    check = _everflourish_checksum(device_code)
+
+    code = _EF_S * 8                   # 8-pulse preamble
+    for i in range(15, -1, -1):
+        code += ef_bits[(device_code >> i) & 0x01]
+    for i in range(3, -1, -1):
+        code += ef_bits[(check >> i) & 0x01]
+    for i in range(3, -1, -1):
+        code += ef_bits[(action >> i) & 0x01]
+    code += _EF_S * 4                  # sync end
+    return code
+
 
 def _encode_everflourish_command(
     house: Any, unit: Any, method_name: str
-) -> dict | None:
-    """Return a native protocol dict for an everflourish UDP 'send' command.
+) -> bytes | None:
+    """Return a pre-encoded S= pulse train for an Everflourish RF command.
 
-    The ZNet firmware (productiontest/Server.py CommandHandler.handleSend):
-      protocol.setModel(msg['model'])               ← 'model' key required
-      protocol.setParameters({'house': msg['house'],
-                               'unit':  msg['unit'] + 1})  ← firmware adds 1
-    ProtocolEverflourish.stringForMethod then does intParameter('unit',1,4)-1.
-    So we must send unit 0-indexed (same as arctech) — the firmware +1 makes
-    it 1-indexed before the protocol subtracts 1 back to 0-indexed.
+    Builds the pulse bytes locally (port of ProtocolEverflourish.stringForMethod)
+    so the ZNet firmware only needs to transmit them — no reliance on the
+    productiontest UDP handler's dict-to-RF encoding path.
     """
-    method_int = _METHOD_INT.get(method_name)
-    if method_int is None:
-        return None
     try:
         house_int = max(0, min(16383, int(house)))
     except (TypeError, ValueError):
         _LOGGER.warning("Everflourish: non-integer house %r", house)
         return None
     try:
-        unit0 = max(0, min(3, int(unit) - 1))  # 1-indexed → 0-indexed; firmware adds 1
+        unit0 = max(0, min(3, int(unit) - 1))  # user 1-indexed → 0-indexed
     except (TypeError, ValueError):
         unit0 = 0
-    return OrderedDict(
-        protocol="everflourish",
-        model="selflearning",   # required: firmware calls msg['model'] → KeyError without it
-        house=house_int,
-        unit=unit0,
-        method=method_int,
-    )
+    return _everflourish_pulse_train(house_int, unit0, method_name)
 
 
 def _encode_generic_command(
@@ -806,7 +903,7 @@ class TellStickNetController:
                     "Net everflourish: unsupported method=%s", method_name
                 )
                 return -1
-            send_kwargs = dict(rf_packet)
+            send_kwargs = dict(S=rf_packet)
         else:
             send_kwargs = dict(
                 _encode_generic_command(protocol, model, house, unit, method_name)
