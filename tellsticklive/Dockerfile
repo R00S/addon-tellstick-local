@@ -66,13 +66,13 @@ LABEL \
     io.hass.arch="${BUILD_ARCH}" \
     io.hass.type="addon" \
     io.hass.version=${BUILD_VERSION} \
-    maintainer="Erik Hilton <erikhilton73@gmail.com>" \
+    maintainer="R00S" \
     org.opencontainers.image.title="${BUILD_NAME}" \
     org.opencontainers.image.description="${BUILD_DESCRIPTION}" \
-    org.opencontainers.image.vendor="Erik73 Hassio-Addons" \
-    org.opencontainers.image.authors="Erik Hilton <erikhilton73@gmail.com>" \
+    org.opencontainers.image.vendor="R00S" \
+    org.opencontainers.image.authors="R00S" \
     org.opencontainers.image.licenses="GPL-3.0-or-later" \
-    org.opencontainers.image.url="https://github.com/erik73/hassio-addons" \
+    org.opencontainers.image.url="https://github.com/R00S/addon-tellstick-local" \
     org.opencontainers.image.source="https://github.com/${BUILD_REPOSITORY}" \
     org.opencontainers.image.documentation="https://github.com/${BUILD_REPOSITORY}/blob/main/README.md" \
     org.opencontainers.image.created=${BUILD_DATE} \

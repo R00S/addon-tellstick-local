@@ -25,5 +25,5 @@ Even better: You could submit a pull request with a fix / new feature!
    maintainer, or if you do not have permission to do that, you may request
    the maintainer to merge it for you.
 
-[github]: https://github.com/R00S/addon-tellsticklive-roosfork/issues
-[prs]: https://github.com/R00S/addon-tellsticklive-roosfork/pulls
+[github]: https://github.com/R00S/addon-tellstick-local/issues
+[prs]: https://github.com/R00S/addon-tellstick-local/pulls

@@ -4,7 +4,7 @@ version: 2.4.1.2.20260323082127
 slug: tellsticklive
 image: ghcr.io/r00s/tellsticklive/{arch}
 description: TellStick and TellStick Duo local service (no cloud)
-url: https://github.com/R00S/addon-tellsticklive-roosfork
+url: https://github.com/R00S/addon-tellstick-local
 arch:
   - aarch64
   - amd64
