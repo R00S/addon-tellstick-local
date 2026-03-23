@@ -430,6 +430,60 @@ The Dockerfile:
 4. Cover position tracking — Hasta/Brateck do not report position; a future
    feature could use timed travel distance to estimate position.
 
+## Dev / Stable Channel Split
+
+This project uses two separate GitHub repositories to give users a choice between
+a stable channel and a dev (edge) channel — the same pattern used by
+[hassio-addons/repository](https://github.com/hassio-addons/repository) /
+[hassio-addons/repository-edge](https://github.com/hassio-addons/repository-edge).
+
+### Two repos, one codebase
+
+| Repo | Purpose | Docker tag | HAOS repo URL |
+| ---- | ------- | ---------- | ------------- |
+| `R00S/addon-tellstick-local` | Stable releases | `:X.Y.Z` + `:latest` | `https://github.com/R00S/addon-tellstick-local` |
+| `R00S/addon-tellstick-local-dev` | Dev/edge channel | `:dev` + `:edge` | `https://github.com/R00S/addon-tellstick-local-dev` |
+
+The dev repo is a **thin index** — it has no code, Dockerfile or build system of its
+own. It only contains `repository.json` and `tellsticklive/config.yaml` with
+`version: dev` pointing at the pre-built `:dev` Docker images. The actual builds
+happen here in the main repo via `.github/workflows/edge.yaml`.
+
+### How features flow
+
+```
+feature branch  ──→  dev branch  ──→  main branch
+                          │                │
+                     edge.yaml        deploy.yaml
+                     builds :dev      builds :X.Y.Z
+                     & :edge tags     & :latest tags
+                          │
+                  addon-tellstick-local-dev
+                  (users on dev channel receive
+                   updates on every restart)
+```
+
+1. Feature work happens on feature branches in this repo
+2. When ready for wider testing, merge to the `dev` branch
+3. `edge.yaml` automatically rebuilds `:dev` and `:edge` Docker images
+4. Dev channel users (who added `addon-tellstick-local-dev` to HAOS) get the
+   update on next app restart
+5. When the feature is stable, open a PR from `dev` → `main`
+6. On merge to `main`, create a GitHub release — `deploy.yaml` builds and
+   publishes versioned stable images
+
+### Setting up the dev repo (one-time)
+
+The `dev-repository/` directory in this repo contains the exact files for
+`R00S/addon-tellstick-local-dev`. To set it up:
+
+1. Create a new GitHub repo named `addon-tellstick-local-dev`
+2. Copy all files from `dev-repository/` to the root of the new repo
+3. Push to `main` — that's it, the dev HAOS channel is live
+
+Whenever the schema in `tellsticklive/config.yaml` (stable) changes, mirror
+the same change in `dev-repository/tellsticklive/config.yaml`.
+
 ## Migration Notes
 
 Users migrating from the deprecated official add-on should:
