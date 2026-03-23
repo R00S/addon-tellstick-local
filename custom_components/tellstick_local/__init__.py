@@ -596,7 +596,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Track protocol+model pairs with timestamps.  Used to suppress
         # duplicate discoveries from devices with unstable house/unit (door
         # sensors produce different UIDs on each RF transmission).  Same
-        # protocol+model is suppressed for _PROTO_MODEL_DEDUP_SECS (5s),
+        # protocol+model is suppressed for _PROTO_MODEL_DEDUP_SECS (12s),
         # then allowed again so users can discover multiple devices of the
         # same type by pressing them a few seconds apart.
         "_discovered_protocol_models": {},
