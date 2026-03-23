@@ -318,6 +318,132 @@ def _decode_everflourish(data: int) -> dict | None:
     )
 
 
+# X10 house code lookup (from telldus-core/service/ProtocolX10.cpp).
+# Index is house letter offset (A=0..P=15), value is the 4-bit RF code.
+_X10_HOUSES = [6, 0xE, 2, 0xA, 1, 9, 5, 0xD, 7, 0xF, 3, 0xB, 0, 8, 4, 0xC]
+
+
+def _decode_x10(data: int) -> dict | None:
+    """Decode X10 codeswitch raw data.
+
+    Port of telldus-core/service/ProtocolX10.cpp ``decodeData``.
+    Test vectors from ProtocolX10Test.cpp:
+
+    >>> _decode_x10(0x609F00FF)
+    {'_class': 'command', 'protocol': 'x10', 'model': 'codeswitch', 'house': 'A', 'unit': 1, 'method': 'turnon'}
+    >>> _decode_x10(0x847B28D7)
+    {'_class': 'command', 'protocol': 'x10', 'model': 'codeswitch', 'house': 'E', 'unit': 11, 'method': 'turnoff'}
+    """
+    # Extract 4-bit raw house code from bits 31-28 (LSB-first order)
+    raw_house = 0
+    for i in range(4):
+        raw_house >>= 1
+        if (data >> (31 - i)) & 1:
+            raw_house |= 0x8
+
+    # Bit 27 must be 0
+    if (data >> 27) & 1:
+        return None
+
+    unit = 0
+    # Bit 26 → unit bit 3
+    if (data >> 26) & 1:
+        unit |= 1 << 3
+
+    # Bits 25, 24 must be 0
+    if (data >> 25) & 1 or (data >> 24) & 1:
+        return None
+
+    # Skip complement bytes — jump to bit 14
+    # Bit 14 → unit bit 2
+    if (data >> 14) & 1:
+        unit |= 1 << 2
+    # Bit 13 → method (0 = turnon, 1 = turnoff)
+    method_bit = (data >> 13) & 1
+    # Bit 12 → unit bit 0
+    if (data >> 12) & 1:
+        unit |= 1 << 0
+    # Bit 11 → unit bit 1
+    if (data >> 11) & 1:
+        unit |= 1 << 1
+
+    # Reverse-lookup raw_house → letter A-P
+    house_idx = -1
+    for idx, code in enumerate(_X10_HOUSES):
+        if code == raw_house:
+            house_idx = idx
+            break
+    if house_idx < 0:
+        return None
+
+    return dict(
+        _class="command", protocol="x10", model="codeswitch",
+        house=chr(ord("A") + house_idx), unit=unit + 1,
+        method="turnoff" if method_bit else "turnon",
+    )
+
+
+def _decode_hasta(data: int, model: str = "selflearning") -> dict | None:
+    """Decode hasta motorised-blind raw data (v1 selflearning + v2 selflearningv2).
+
+    Port of telldus-core/service/ProtocolHasta.cpp ``decodeData``.
+    Test vectors from ProtocolHastaTest.cpp:
+
+    >>> _decode_hasta(0xC671100, 'selflearning')
+    {'_class': 'command', 'protocol': 'hasta', 'model': 'selflearning', 'house': 26380, 'unit': 1, 'method': 'down'}
+    >>> _decode_hasta(0xC670100, 'selflearning')
+    {'_class': 'command', 'protocol': 'hasta', 'model': 'selflearning', 'house': 26380, 'unit': 1, 'method': 'up'}
+    >>> _decode_hasta(0x4B891F01, 'selflearningv2')
+    {'_class': 'command', 'protocol': 'hasta', 'model': 'selflearningv2', 'house': 19337, 'unit': 15, 'method': 'down'}
+    >>> _decode_hasta(0x4B89CF01, 'selflearningv2')
+    {'_class': 'command', 'protocol': 'hasta', 'model': 'selflearningv2', 'house': 19337, 'unit': 15, 'method': 'up'}
+    """
+    all_data = data >> 8
+    unit = all_data & 0xF
+    all_data >>= 4
+    method_code = all_data & 0xF
+    all_data >>= 4
+    house = all_data & 0xFFFF
+
+    is_v2 = model.lower().startswith("selflearningv2")
+
+    if not is_v2:
+        # v1: byte-swap house
+        house = ((house << 8) | (house >> 8)) & 0xFFFF
+        if method_code == 0:
+            method = "up"
+        elif method_code == 1:
+            method = "down"
+        elif method_code == 5:
+            method = "stop"
+        elif method_code == 4:
+            method = "learn"
+        else:
+            return None
+        model_str = "selflearning"
+    else:
+        # v2: no byte-swap
+        if method_code == 12:
+            method = "up"
+        elif method_code in (1, 8):
+            method = "down"
+        elif method_code == 5:
+            method = "stop"
+        elif method_code == 4:
+            method = "learn"
+        else:
+            return None
+        model_str = "selflearningv2"
+
+    if house < 1 or house > 65535 or unit < 1 or unit > 16:
+        return None
+
+    return dict(
+        _class="command", protocol="hasta", model=model_str,
+        house=house, unit=unit, method=method,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Sensor protocol decoders  (ported from molobrakos/tellsticknet/protocols/)
 # ---------------------------------------------------------------------------
@@ -475,6 +601,10 @@ def _decode_rf_event(packet: dict) -> dict | None:
         decoded = _decode_sartano(data)
     elif protocol == "everflourish":
         decoded = _decode_everflourish(data)
+    elif protocol == "x10":
+        decoded = _decode_x10(data)
+    elif protocol == "hasta":
+        decoded = _decode_hasta(data, model)
     else:
         _LOGGER.debug(
             "Net: no decoder for protocol=%s model=%s data=0x%X; skipping event",
