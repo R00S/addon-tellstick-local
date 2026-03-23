@@ -1,3 +1,4 @@
+---
 # tests/ha-tests-integration.yaml
 # Test scenarios for ha-dev-platform MCP run_tests tool
 # These are executed against a live HA dev instance with the integration installed
