@@ -439,10 +439,10 @@ a stable channel and a dev (edge) channel — the same pattern used by
 
 ### Two repos, one codebase
 
-| Repo | Purpose | Docker tag | HAOS repo URL |
-| ---- | ------- | ---------- | ------------- |
-| `R00S/addon-tellstick-local` | Stable releases | `:X.Y.Z` + `:latest` | `https://github.com/R00S/addon-tellstick-local` |
-| `R00S/addon-tellsticklive-roosfork` | Dev/edge channel | `:dev` + `:edge` | `https://github.com/R00S/addon-tellsticklive-roosfork` |
+| Repo                                | Purpose          | Docker tag           | HAOS repo URL                                          |
+| ----------------------------------- | ---------------- | -------------------- | ------------------------------------------------------ |
+| `R00S/addon-tellstick-local`        | Stable releases  | `:X.Y.Z` + `:latest` | `https://github.com/R00S/addon-tellstick-local`        |
+| `R00S/addon-tellsticklive-roosfork` | Dev/edge channel | `:dev` + `:edge`     | `https://github.com/R00S/addon-tellsticklive-roosfork` |
 
 The dev repo lives at the **old repository path** (`addon-tellsticklive-roosfork`).
 This is intentional: existing users who already had that URL added to HAOS continue
