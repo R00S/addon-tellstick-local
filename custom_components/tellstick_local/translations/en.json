@@ -10,6 +10,10 @@
     "restart_required": {
       "title": "Restart required — TellStick Local v{new_version} installed",
       "description": "The TellStick Local app installed integration **v{new_version}** (currently loaded: v{current_version}).\n\nRestart Home Assistant to activate the new version."
+    },
+    "dev_channel": {
+      "title": "⚠️ TellStick Local — you are on the dev channel",
+      "description": "You are using the **development channel** (`addon-tellsticklive-roosfork`). This channel receives the latest unreleased features and may occasionally be unstable.\n\n**To switch to the stable channel:**\n1. Go to **Settings → Apps → ⋮ → Repositories**\n2. Remove `https://github.com/R00S/addon-tellsticklive-roosfork`\n3. Add `https://github.com/R00S/addon-tellstick-local` (category: **App**)\n4. Find **TellStick Local** in the app store and install it\n\nYour existing configuration is preserved — same slug, same data directory."
     }
   },
   "config": {

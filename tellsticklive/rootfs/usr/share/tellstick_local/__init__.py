@@ -154,6 +154,7 @@ _SENSOR_SUFFIX: dict[int, str] = {
 }
 
 _ISSUE_RESTART = "restart_required"
+_ISSUE_DEV_CHANNEL = "dev_channel"
 
 # Protocols that are receive-only sensors — telldusd emits TDSensorEvent for
 # these (not controllable devices).  Pre-configured app-config entries for these
@@ -222,6 +223,40 @@ async def _check_version_mismatch(hass: HomeAssistant) -> None:
         title=f"Restart required — TellStick Local v{disk_version} installed",
         notification_id=_ISSUE_RESTART,
     )
+
+
+async def _check_dev_channel(hass: HomeAssistant) -> None:
+    """Fire or clear a repair issue based on whether this is a dev-channel build.
+
+    The edge.yaml CI workflow writes a ``channel.txt`` file with content ``dev``
+    into the bundled integration directory.  Stable builds do not write this
+    file.  When present, the integration surfaces a HA repair issue so users
+    can easily see they are on the development channel and learn how to switch
+    to the stable release.
+    """
+    channel_file = pathlib.Path(__file__).parent / "channel.txt"
+    try:
+        content = await hass.async_add_executor_job(channel_file.read_text)
+        channel = content.strip().lower()
+    except (FileNotFoundError, OSError):
+        channel = ""
+
+    if channel == "dev":
+        _LOGGER.info(
+            "TellStick Local is running on the dev channel "
+            "(addon-tellsticklive-roosfork). "
+            "Switch to https://github.com/R00S/addon-tellstick-local for stable releases."
+        )
+        async_create_issue(
+            hass,
+            DOMAIN,
+            _ISSUE_DEV_CHANNEL,
+            is_fixable=False,
+            severity=IssueSeverity.WARNING,
+            translation_key=_ISSUE_DEV_CHANNEL,
+        )
+    else:
+        async_delete_issue(hass, DOMAIN, _ISSUE_DEV_CHANNEL)
 
 
 @callback
@@ -427,6 +462,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # In that case we fire a persistent notification so the user knows
     # a restart is needed.
     await _check_version_mismatch(hass)
+
+    # --- Dev-channel detection ---
+    # The edge.yaml CI workflow writes channel.txt = "dev" into the bundled
+    # integration.  When present, we surface a repair issue so users on the
+    # dev channel are clearly informed and shown how to switch to stable.
+    await _check_dev_channel(hass)
 
     # --- One-time tombstone cleanup (Issue #33) ---
     # Clear orphaned entity/device registry tombstones left by deletions

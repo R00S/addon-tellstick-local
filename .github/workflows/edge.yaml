@@ -64,6 +64,8 @@ jobs:
           mkdir -p "${TARGET}/rootfs/usr/share/tellstick_local"
           cp -r custom_components/tellstick_local/. \
             "${TARGET}/rootfs/usr/share/tellstick_local/"
+          # Mark this as a dev-channel build so the integration can warn users.
+          echo "dev" > "${TARGET}/rootfs/usr/share/tellstick_local/channel.txt"
       - name: 🏗 Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
       - name: 🔑 Login to GitHub Container Registry
