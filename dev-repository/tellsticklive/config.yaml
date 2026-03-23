@@ -14,11 +14,7 @@ name: TellStick Local
 version: dev
 slug: tellsticklive
 image: ghcr.io/r00s/tellsticklive/{arch}
-description: >-
-  ⚠️ You are on the DEV channel (addon-tellsticklive-roosfork). This channel
-  receives the latest unreleased features and may be unstable. For the stable
-  release, switch your HAOS repository to
-  https://github.com/R00S/addon-tellstick-local — see the README for details.
+description: TellStick and TellStick Duo local service (no cloud)
 url: https://github.com/R00S/addon-tellsticklive-roosfork
 arch:
   - aarch64
