@@ -13,7 +13,7 @@
 name: TellStick Local
 version: dev
 slug: tellsticklive
-image: ghcr.io/r00s/tellstick-local/{arch}
+image: ghcr.io/r00s/tellsticklive/{arch}
 description: >-
   ⚠️ You are on the DEV channel (addon-tellsticklive-roosfork). This channel
   receives the latest unreleased features and may be unstable. For the stable

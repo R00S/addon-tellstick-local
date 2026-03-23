@@ -219,12 +219,12 @@ jobs:
           token: ${{ secrets.ROOSFORK_DEPLOY_KEY }}
           persist-credentials: true
 
-      - name: 🏷 Update config.yaml with new version and correct image slug
+      - name: 🏷 Update config.yaml with new version
         env:
           VERSION: ${{ needs.create-test-release.outputs.version }}
         run: |
           sed -i "s/^version:.*/version: ${VERSION}/" tellsticklive/config.yaml
-          sed -i "s|^image:.*|image: ghcr.io/r00s/tellstick-local/{arch}|" tellsticklive/config.yaml
+          sed -i "s|^image:.*|image: ghcr.io/r00s/tellsticklive/{arch}|" tellsticklive/config.yaml
           grep -E '^(version|image):' tellsticklive/config.yaml
 
       - name: 💾 Commit and push
