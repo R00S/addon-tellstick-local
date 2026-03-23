@@ -98,6 +98,12 @@ def _encode_any(t: Any) -> bytes:
         return _encode_string(t)
     if isinstance(t, dict):
         return _encode_dict(t)
+    if isinstance(t, (list, tuple)):
+        return b"%c%s%c" % (
+            _TAG_LIST,
+            b"".join(_encode_any(x) for x in t),
+            _TAG_END,
+        )
     raise NotImplementedError(f"Cannot encode type {type(t)!r}")
 
 
@@ -284,6 +290,162 @@ def _decode_sartano(data: int) -> dict | None:
     )
 
 
+def _decode_everflourish(data: int) -> dict | None:
+    """Decode everflourish selflearning raw data.
+
+    Port of molobrakos/tellsticknet/protocols/everflourish.py (MIT licence).
+    Ref: telldus-core/service/ProtocolEverflourish.cpp
+    """
+    house = (data & 0xFFFC00) >> 10
+    unit = ((data & 0x300) >> 8) + 1
+    method_nib = data & 0xF
+
+    if house > 16383 or not (1 <= unit <= 4):
+        return None
+
+    if method_nib == 0:
+        method = "turnoff"
+    elif method_nib == 15:
+        method = "turnon"
+    elif method_nib == 10:
+        method = "learn"
+    else:
+        return None
+
+    return dict(
+        _class="command", protocol="everflourish", model="selflearning",
+        house=house, unit=unit, method=method,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Sensor protocol decoders  (ported from molobrakos/tellsticknet/protocols/)
+# ---------------------------------------------------------------------------
+
+def _decode_fineoffset_sensor(data: int) -> dict | None:
+    """Decode fineoffset temperature/humidity sensor raw data.
+
+    Port of molobrakos/tellsticknet/protocols/fineoffset.py (MIT licence).
+    Ref: telldus-core/service/ProtocolFineoffset.cpp
+
+    The ZNet sends fineoffset sensor events as:
+      class:sensor, protocol:fineoffset, data:0x48801aff05
+    The data integer encodes sensor_id, temperature, and humidity.
+
+    >>> _decode_fineoffset_sensor(0x48801aff05)['temp']
+    2.6
+    """
+    hex_str = "%010x" % int(data)
+    hex_str = hex_str[:-2]  # strip checksum byte
+
+    humidity = int(hex_str[-2:], 16)
+    hex_str = hex_str[:-2]
+
+    value = int(hex_str[-3:], 16)
+    temp = (value & 0x7FF) / 10
+    if (value >> 11) & 1:
+        temp = -temp
+    temp = round(temp, 1)
+
+    hex_str = hex_str[:-3]
+    sensor_id = int(hex_str, 16) & 0xFF
+
+    if humidity <= 100:
+        return dict(
+            sensorId=sensor_id,
+            model="temperaturehumidity",
+            values=[
+                {"name": "temp", "value": str(temp)},
+                {"name": "humidity", "value": str(humidity)},
+            ],
+        )
+    return dict(
+        sensorId=sensor_id,
+        model="temperature",
+        values=[{"name": "temp", "value": str(temp)}],
+    )
+
+
+def _decode_mandolyn_sensor(data: int) -> dict | None:
+    """Decode mandolyn/summerbird temperature/humidity sensor raw data.
+
+    Port of molobrakos/tellsticknet/protocols/mandolyn.py (MIT licence).
+    Ref: telldus-core/service/ProtocolMandolyn.cpp
+
+    >>> _decode_mandolyn_sensor(0x134039c3)['temp']
+    7.8
+    """
+    value = int(data) >> 1
+    temp = ((value & 0x7FFF) - 6400) / 128
+    temp = round(temp, 1)
+
+    value >>= 15
+    humidity = value & 0x7F
+
+    value >>= 7
+    value >>= 3
+    channel = (value & 0x3) + 1
+
+    value >>= 2
+    house = value & 0xF
+
+    sensor_id = house * 10 + channel
+
+    result: dict = dict(
+        sensorId=sensor_id,
+        model="temperaturehumidity",
+        values=[
+            {"name": "temp", "value": str(temp)},
+            {"name": "humidity", "value": str(humidity)},
+        ],
+    )
+    return result
+
+
+def _decode_sensor_event(packet: dict) -> dict | None:
+    """Decode a sensor event's raw data integer into sensor values.
+
+    The ZNet firmware sends sensor events as:
+      class:sensor, protocol:fineoffset, data:0x41B03B4DAA
+    The raw ``data`` integer must be decoded by protocol-specific decoders.
+    If the packet already contains a ``values`` list (e.g. from a future
+    firmware version), it is returned as-is.
+    """
+    # Already decoded (e.g. newer firmware or test fixture)
+    values = packet.get("values")
+    if values:
+        return packet
+
+    data = packet.get("data")
+    if not isinstance(data, int):
+        _LOGGER.debug("Net sensor: no data integer in packet %s", packet)
+        return None
+
+    protocol = packet.get("protocol", "")
+
+    if protocol == "fineoffset":
+        decoded = _decode_fineoffset_sensor(data)
+    elif protocol == "mandolyn":
+        decoded = _decode_mandolyn_sensor(data)
+    else:
+        _LOGGER.debug(
+            "Net sensor: no decoder for protocol=%s; raw data=0x%X",
+            protocol, data,
+        )
+        return None
+
+    if decoded is None:
+        return None
+
+    # Merge decoded fields into the original packet
+    result = dict(packet)
+    result.update(decoded)
+    # Ensure the sensor id is present as "id" (for _event_dict_to_ha_events)
+    if "sensorId" in decoded:
+        result["id"] = decoded["sensorId"]
+    return result
+
+
 def _decode_rf_event(packet: dict) -> dict | None:
     """Resolve house/unit/method from the raw data integer in the packet."""
     protocol = packet.get("protocol", "")
@@ -309,9 +471,12 @@ def _decode_rf_event(packet: dict) -> dict | None:
         decoded = _decode_waveman(data)
     elif protocol == "sartano":
         decoded = _decode_sartano(data)
+    elif protocol == "everflourish":
+        decoded = _decode_everflourish(data)
     else:
         _LOGGER.debug(
-            "Net: no decoder for protocol=%s model=%s; skipping event", protocol, model
+            "Net: no decoder for protocol=%s model=%s data=0x%X; skipping event",
+            protocol, model, data,
         )
         return None
 
@@ -579,7 +744,7 @@ async def discover(timeout: float = 3.0) -> AsyncGenerator[tuple[str, str, str],
             _LOGGER.debug("Could not set up discovery socket: %s", err)
             return
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         try:
             await loop.sock_sendto(sock, b"D", ("<broadcast>", NET_DISCOVERY_PORT))
         except OSError as err:
@@ -667,6 +832,7 @@ class TellStickNetController:
             # network — binding to a single interface would miss them.
             # This matches the molobrakos/tellsticknet reference implementation.
             sock.bind(("", NET_COMMAND_PORT))
+            _LOGGER.info("Net: bound to port %d for %s", NET_COMMAND_PORT, self.host)
         except OSError:
             _LOGGER.warning(
                 "Port %d already bound; using ephemeral port for %s",
@@ -678,6 +844,7 @@ class TellStickNetController:
             sock.bind(("", 0))
         self._sock = sock
         await self._send_raw(encode_packet("reglistener"))
+        _LOGGER.info("Net: sent reglistener to %s:%d", self.host, NET_COMMAND_PORT)
 
     async def disconnect(self) -> None:
         """Cancel tasks and close the socket."""
@@ -766,7 +933,7 @@ class TellStickNetController:
     async def _send_raw(self, data: bytes) -> None:
         if self._sock is None:
             raise OSError("Socket not connected")
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         await loop.sock_sendto(self._sock, data, (self.host, NET_COMMAND_PORT))
 
     async def _send_rf(
@@ -826,16 +993,32 @@ class TellStickNetController:
     async def _event_loop(self) -> None:
         if self._sock is None:
             return
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
+        _LOGGER.info(
+            "Net: event listener started for %s (socket bound to port %s)",
+            self.host,
+            self._sock.getsockname()[1] if self._sock else "?",
+        )
+        packet_count = 0
         while True:
             try:
                 data, (src_ip, _port) = await asyncio.wait_for(
                     loop.sock_recvfrom(self._sock, 4096), timeout=70.0
                 )
                 if src_ip != self.host:
+                    _LOGGER.debug(
+                        "Net: ignoring packet from %s (expected %s)", src_ip, self.host
+                    )
                     continue
+                packet_count += 1
+                if packet_count <= 3:
+                    _LOGGER.info(
+                        "Net: received packet #%d from %s (%d bytes)",
+                        packet_count, src_ip, len(data),
+                    )
                 self._process_packet(data)
             except asyncio.TimeoutError:
+                _LOGGER.debug("Net: no packets from %s in 70s (waiting…)", self.host)
                 continue
             except asyncio.CancelledError:
                 break
@@ -848,11 +1031,24 @@ class TellStickNetController:
     def _process_packet(self, raw: bytes) -> None:
         args = decode_packet(raw)
         if not args:
+            _LOGGER.debug("Net: unrecognised packet from %s: %r", self.host, raw[:60])
             return
         event_class = args.get("class", args.get("_class", ""))
+        _LOGGER.debug(
+            "Net packet: class=%s protocol=%s model=%s data=%s",
+            event_class,
+            args.get("protocol", "?"),
+            args.get("model", "?"),
+            hex(args["data"]) if isinstance(args.get("data"), int) else args.get("data", "?"),
+        )
         if event_class == "sensor":
-            for ev in _event_dict_to_ha_events(args):
+            # Decode the raw data integer into sensor values
+            decoded = _decode_sensor_event(args)
+            if decoded is None:
+                return
+            for ev in _event_dict_to_ha_events(decoded):
                 if ev is not None:
+                    _LOGGER.debug("Net sensor event: %s", ev)
                     self._dispatch(ev)
             return
         decoded = _decode_rf_event(args)
