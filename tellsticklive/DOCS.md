@@ -138,7 +138,7 @@ hasta, ikea, mandolyn, oregon, risingsun, sartano, silvanchip, upm, waveman, x10
 
 ## Pairing self-learning devices
 
-Self-learning devices (Nexa, Proove, Luxorparts, and other arctech-compatible
+Self-learning devices (Nexa, Proove, and other arctech-compatible
 switches) must be paired using a **learn** signal. Sending a normal `on` command
 is **not** sufficient — the receiver needs a special learning sequence to register
 the house/unit code.
@@ -216,30 +216,17 @@ for TX-only devices or headless setups.
 Once paired, you can control the device with normal on/off commands through the
 **TellStick Local** integration.
 
-### Luxorparts / Cleverio 50969 and similar switches
+### ⛔ Luxorparts / Cleverio 50969, 50970, 50972 — NOT WORKING
 
-Luxorparts / Cleverio 433 MHz switches (50969, 50970, etc.) use the standard
-**arctech / selflearning** protocol. They are compatible with TellStick Duo and
-work the same way as Nexa, Proove, and other arctech self-learning devices.
+These specific Luxorparts / Cleverio 1000W sockets **are not supported** and have
+been removed from the "Add by brand" picker.
 
-> **Note:** The Luxorparts remote sends a **multi-part signal** that telldusd
-> decodes as three separate protocols (arctech, everflourish, waveman). The
-> correct interpretation is **arctech / selflearning**. Ignore the everflourish
-> and waveman detections — they are false positives from similar bit patterns.
+Learn and on/off signals sent via TellStick Duo or TellStick Net/ZNet are not
+acknowledged by these receivers. Telldus Live controls them successfully via ZNet,
+but the exact signal path it uses is not accessible through our interface.
 
-**Pairing a Luxorparts receiver:**
-
-1. Add the device via **Settings → Devices & Services → TellStick Local →
-   Add device** and select **Luxorparts / Cleverio — Self-learning on/off**
-2. A random house code and unit will be generated automatically
-3. Put the Luxorparts receiver into learn mode (hold the button until the LED
-   blinks)
-4. Click **Submit** — the pairing signal is sent immediately
-5. The receiver should stop blinking, confirming it learned the code
-
-If pairing fails on the first attempt, try again — some receivers need multiple
-learn signals. The TellStick Duo firmware repeat patch improves reliability for
-picky receivers.
+If you have one of these devices and find a working approach, please
+[open an issue](https://github.com/R00S/addon-tellsticklive-roosfork/issues).
 
 ---
 

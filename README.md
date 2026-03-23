@@ -1,8 +1,18 @@
 # Home Assistant: TellStick Local
 
 > [!NOTE]
-> **✅ Stable release** – All known bugs are fixed and the feature set is complete.
-> If you hit any issue, please [open an issue][issue].
+> **🟡 TellStick Duo — Release Candidate** – Core features are working and well-tested.
+> Minor issues may remain. If you hit any problem, please [open an issue][issue].
+
+> [!WARNING]
+> **🔴 TellStick Net / ZNet — ALPHA** – Basic on/off commands and event reception work
+> for common protocols (arctech, everflourish). Many edge cases are untested. Do not
+> use in a production setup. Feedback and bug reports are very welcome.
+
+> [!CAUTION]
+> **⛔ Luxorparts / Cleverio 50969, 50970, 50972 — NOT WORKING** – These 1000W sockets
+> do not respond to commands from either TellStick Duo or TellStick Net/ZNet via this
+> integration. No workaround is currently known. See [details below](#known-limitations).
 
 ![Project Stage][project-stage-shield]
 
@@ -13,16 +23,20 @@
 ![Project Maintenance][maintenance-shield]
 [![GitHub Activity][commits-shield]][commits]
 
-Local-only TellStick Duo support for Home Assistant – no cloud, no YAML, full GUI.
+Local-only TellStick Duo and TellStick Net/ZNet support for Home Assistant – no cloud, no YAML, full GUI.
 
 ---
 
 ## About
 
-This project makes the **TellStick Duo USB stick** work in Home Assistant OS exactly
+This project makes **TellStick Duo** and **TellStick Net/ZNet** devices work in Home Assistant OS exactly
 like other 433 MHz receivers (e.g. RFXtrx) — controlled entirely through the HA GUI
 and the Home Assistant companion app, with no cloud, no Telldus Live account, and no
 YAML file editing.
+
+> **Hardware support status:**
+> - **TellStick Duo** (USB stick) — **Release Candidate.** Core features are working and well-tested.
+> - **TellStick Net / ZNet** (LAN device) — **ALPHA.** On/off and event reception work for arctech and everflourish. Many edge cases are untested. Not recommended for production.
 
 > **Terminology note:** HAOS 2026.2 renamed "Add-ons" to "Apps" in the UI. Both names
 > refer to the same Supervisor-managed Docker container.
@@ -240,7 +254,7 @@ each protocol supports.
 | Protocol       | Entity type    | Brands                                                                                                                |
 | -------------- | -------------- | --------------------------------------------------------------------------------------------------------------------- |
 | `arctech`      | Switch / Light | Nexa, Proove, KlikAanKlikUit, Intertechno, HomeEasy, Chacon, CoCo, Kappa, Bye Bye Standby, Elro |
-| `everflourish` | Switch         | GAO, Everflourish, Rusta, Luxorparts, Cleverio                                                   |
+| `everflourish` | Switch         | GAO, Everflourish, Rusta                                                         |
 | `hasta`        | Cover          | Hasta, Rollertrol motorised blinds                                                                                    |
 | `mandolyn`     | Sensor         | Mandolyn / Summerbird (temperature/humidity)                                                                          |
 | `sartano`      | Switch         | Sartano, Brennenstuhl, Rusta, Elro (**opt-in** — see note below)                                                      |
@@ -258,11 +272,16 @@ each protocol supports.
 > actually have sartano hardware, enable the **"Detect sartano/codeswitch
 > devices"** toggle in **Configure → Settings**.
 
-> **Self-learning receivers (Luxorparts 50969/50970, Nexa, etc.):** These receivers
+> **Self-learning receivers (Nexa, KAKU, Proove, etc.):** These receivers
 > are dual-protocol — they learn whatever code is sent during pairing. Use
 > Method B (Add device → Add by brand → pick your brand → send teach signal) to pair
 > them. The TellStick Duo includes a firmware-level repeat patch for reliable pairing
 > with picky receivers.
+
+> **⛔ Luxorparts / Cleverio 50969, 50970, 50972:** These specific 1000W sockets are
+> **not supported** — they do not respond to learn or on/off commands via this
+> integration, for either TellStick Duo or TellStick Net/ZNet. They have been removed
+> from the "Add by brand" picker. See [Known limitations](#known-limitations) for details.
 
 ### TX only (can be controlled but not auto-discovered)
 
@@ -321,8 +340,6 @@ and run the manual setup flow.
 
 1. Make sure the receiver was in learn mode _before_ clicking Submit
 2. Try again — the pairing signal can be re-sent as many times as needed
-3. For picky receivers (like Luxorparts 50969), the TellStick Duo firmware patch
-   repeats the learn signal 5 times automatically
 
 ### "On/off commands don't work (TellStick doesn't blink)"
 
@@ -342,6 +359,34 @@ them permanently.
 > appearing alongside arctech/selflearning. To avoid this, sartano auto-detection
 > is **off by default**. If you have real sartano hardware, enable the
 > **"Detect sartano/codeswitch devices"** toggle in **Configure → Settings**.
+
+---
+
+## Known limitations
+
+### Luxorparts / Cleverio 50969, 50970, 50972 — NOT WORKING
+
+These specific Luxorparts / Cleverio 1000W remote-controlled sockets **do not work**
+with this integration via either TellStick Duo or TellStick Net/ZNet.
+
+**What was tried:**
+- The remote sends RF signals that telldusd decodes as three different protocols
+  simultaneously (arctech/selflearning, everflourish, waveman). None of these
+  correctly controls the 50969/50970/50972 receivers.
+- Sending arctech selflearning learn/on/off signals: ZNet LED flashes but the
+  socket does not respond.
+- Sending everflourish signals: same result.
+- Telldus Live controls these sockets successfully via ZNet — the exact internal
+  signal path used by Telldus Live is not accessible from our UDP interface.
+
+**Root cause:** The 50969/50970/50972 likely use a proprietary or non-standard
+encoding that telldusd does not implement correctly for TX, even though it can
+decode the RF signals when received. The Telldus Live app may use a different
+internal command path on the ZNet hardware that is not exposed via the UDP
+productiontest interface.
+
+**These models have been removed from the "Add by brand" picker** to avoid
+confusion. If you find a working approach, please [open an issue][issue].
 
 ---
 
@@ -378,4 +423,4 @@ See [LICENSE.md](LICENSE.md) and [NOTICE](NOTICE) for full details.
 [github-actions]: https://github.com/R00S/addon-tellsticklive-roosfork/actions
 [issue]: https://github.com/R00S/addon-tellsticklive-roosfork/issues
 [maintenance-shield]: https://img.shields.io/maintenance/yes/2026.svg
-[project-stage-shield]: https://img.shields.io/badge/project%20stage-production-brightgreen.svg
+[project-stage-shield]: https://img.shields.io/badge/project%20stage-RC-yellow.svg
