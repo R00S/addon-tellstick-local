@@ -101,7 +101,7 @@ _LOGGER = logging.getLogger(__name__)
 #      of a known device event (cross-protocol false positives from the
 #      same RF signal; works because arctech is decoded FIRST)
 #   3. _discovered_protocol_models: dict[str, float] — deduplicates by
-#      protocol+model for a short time window (5 seconds).  Devices with
+#      protocol+model for a short time window (12 seconds).  Devices with
 #      unstable house/unit (door sensors) produce different UIDs on each
 #      transmission — this suppresses the flood from a single press.
 #      The window is short enough that pressing a SECOND device of the
