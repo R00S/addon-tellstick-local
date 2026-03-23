@@ -1,0 +1,73 @@
+---
+# Syncs tellsticklive/config.yaml version back to the latest stable release
+# tag whenever a push to main resets it to "dev".
+#
+# Why this is needed:
+#   Feature branches must have `version: dev` in config.yaml (linter rule).
+#   When a feature PR is merged into main after a stable release, git may
+#   apply the feature branch's "dev" value, overwriting the released version.
+#   The HAOS Supervisor reads config.yaml from the GitHub repo to determine
+#   the available add-on version — if it says "dev", the store shows "dev".
+#
+# This workflow detects that situation and restores the correct version.
+name: Sync Release Version
+
+# yamllint disable-line rule:truthy
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    name: Restore version from latest release tag
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⤵️ Check out main
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+
+      - name: 🔍 Check config.yaml version and latest tag
+        id: check
+        run: |
+          CURRENT=$(grep '^version:' tellsticklive/config.yaml | awk '{print $2}')
+          echo "current=${CURRENT}" >> "$GITHUB_OUTPUT"
+
+          LATEST_TAG=$(git tag --sort=-version:refname \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)
+          LATEST="${LATEST_TAG#v}"
+          echo "latest=${LATEST}" >> "$GITHUB_OUTPUT"
+
+          if [[ "$CURRENT" == "dev" && -n "$LATEST" ]]; then
+            echo "needs_sync=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "needs_sync=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 🏷 Restore version in config.yaml
+        if: steps.check.outputs.needs_sync == 'true'
+        env:
+          VERSION: ${{ steps.check.outputs.latest }}
+        run: |
+          sed -i "s/^version:.*/version: ${VERSION}/" tellsticklive/config.yaml
+          grep '^version:' tellsticklive/config.yaml
+
+      - name: 💾 Commit and push restored version
+        if: steps.check.outputs.needs_sync == 'true'
+        env:
+          VERSION: ${{ steps.check.outputs.latest }}
+        run: |
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add tellsticklive/config.yaml
+          if ! git diff --cached --quiet; then
+            git commit -m "🔖 Restore release version ${VERSION} after merge [skip ci]"
+            git pull --rebase origin main
+            git push
+          else
+            echo "config.yaml already at ${VERSION}, nothing to commit"
+          fi
