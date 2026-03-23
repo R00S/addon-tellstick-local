@@ -931,7 +931,17 @@ def _handle_raw_event(
     # no house/unit, so device_uid is just "fineoffset_temperaturehumidity" —
     # adding it produces an empty device with no entities.  Sensor data is
     # handled exclusively by _handle_sensor_event; bail out here.
+    # We still fire a bus event so it is visible in Developer Tools → Events.
     if params.get("class") == "sensor":
+        _LOGGER.info("Raw sensor RF event from %s: %s", device_uid, params)
+        hass.bus.async_fire(
+            f"{DOMAIN}_event",
+            {
+                "device_uid": device_uid,
+                "type": "raw_sensor",
+                **params,
+            },
+        )
         return
 
     _LOGGER.info("Raw RF event from %s: %s", device_uid, params)
