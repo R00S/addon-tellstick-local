@@ -19,6 +19,13 @@ on:
         required: false
         type: string
         default: ""
+      is_stable:
+        description: >-
+          Set to true when called from create-stable-release so that
+          post-build publishes the real version back to this repository.
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -147,10 +154,11 @@ jobs:
 
   post-build:
     name: Publish release version to repository
-    # Only run for direct GitHub releases — NOT for test/beta/rc builds
-    # triggered via workflow_call from create-release.yaml (which would
-    # corrupt main's config.yaml with a pre-release version number).
-    if: github.event_name == 'release'
+    # Run for direct GitHub releases OR when called from create-stable-release.yaml
+    # (is_stable: true).  Must NOT run for test/beta/rc workflow_call builds from
+    # create-release.yaml — those carry pre-release version numbers that would
+    # corrupt main's config.yaml.
+    if: github.event_name == 'release' || inputs.is_stable == true
     needs:
       - information
       - build

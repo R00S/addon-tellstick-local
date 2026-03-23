@@ -179,4 +179,5 @@ jobs:
     uses: ./.github/workflows/deploy.yaml
     with:
       version: ${{ needs.create-stable-release.outputs.version }}
+      is_stable: true
     secrets: inherit
