@@ -149,7 +149,7 @@ _PHANTOM_DEFER_SECS = 0.3
 # UIDs on each RF transmission.  This window absorbs the burst from a
 # single button press while still allowing a second device of the same
 # protocol+model to be discovered by pressing it a few seconds later.
-_PROTO_MODEL_DEDUP_SECS = 5.0
+_PROTO_MODEL_DEDUP_SECS = 12.0
 
 # Sensor data-type → suffix (mirrors sensor.py _SENSOR_META keys)
 _SENSOR_SUFFIX: dict[int, str] = {
