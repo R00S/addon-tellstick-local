@@ -479,15 +479,19 @@ feature branch  ──→  dev branch  ──→  main branch
 
 ### Setting up the dev repo (one-time)
 
-The `dev-repository/` directory in this repo contains the exact files for
-`R00S/addon-tellsticklive-roosfork`. To set it up:
+The dev repo (`R00S/addon-tellsticklive-roosfork`) is a separate GitHub
+repository. It needs `repository.json` and `tellsticklive/config.yaml`
+(with `version: dev`) at its root.
 
-1. Create a new GitHub repo named `addon-tellsticklive-roosfork`
-2. Copy all files from `dev-repository/` to the root of the new repo
-3. Push to `main` — that's it, the dev HAOS channel is live
+> **⚠️ NEVER put a `config.yaml` with `slug: tellsticklive` anywhere in
+> THIS repo except `tellsticklive/config.yaml`.** The HAOS Supervisor scans
+> the entire repository for add-on directories. A duplicate `config.yaml`
+> with the same slug but `version: dev` causes the Supervisor to use the
+> "dev" version (AwesomeVersion treats "dev" as higher than any numeric
+> version), hiding the real stable release from users.
 
 Whenever the schema in `tellsticklive/config.yaml` (stable) changes, mirror
-the same change in `dev-repository/tellsticklive/config.yaml`.
+the same change in the dev repo's `tellsticklive/config.yaml`.
 
 ## Migration Notes
 

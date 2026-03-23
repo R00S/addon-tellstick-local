@@ -56,6 +56,16 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           persist-credentials: false
+      - name: 🔧 Set version to dev for linter
+        env:
+          TARGET: ${{ needs.information.outputs.target }}
+        run: |
+          # The addon-linter requires version: dev on non-tagged commits.
+          # On main, config.yaml has the real release version (e.g. 2.4.11.0)
+          # which is correct for HAOS but would fail the linter.
+          # Temporarily set it to dev so the linter passes without requiring
+          # config.yaml on main to actually say "dev".
+          sed -i 's/^version:.*/version: dev/' "${TARGET}/config.yaml"
       - name: 🚀 Run App Lint
         uses: frenck/action-addon-linter@f995494fd84fae6310d23617e66d0e37de4f14eb
         with:
