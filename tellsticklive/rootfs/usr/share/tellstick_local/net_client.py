@@ -332,7 +332,8 @@ def _decode_fineoffset_sensor(data: int) -> dict | None:
       class:sensor, protocol:fineoffset, data:0x48801aff05
     The data integer encodes sensor_id, temperature, and humidity.
 
-    >>> _decode_fineoffset_sensor(0x48801aff05)['temp']
+    >>> vals = _decode_fineoffset_sensor(0x48801aff05)['values']
+    >>> float([v for v in vals if v['name'] == 'temp'][0]['value'])
     2.6
     """
     hex_str = "%010x" % int(data)
@@ -372,7 +373,8 @@ def _decode_mandolyn_sensor(data: int) -> dict | None:
     Port of molobrakos/tellsticknet/protocols/mandolyn.py (MIT licence).
     Ref: telldus-core/service/ProtocolMandolyn.cpp
 
-    >>> _decode_mandolyn_sensor(0x134039c3)['temp']
+    >>> vals = _decode_mandolyn_sensor(0x134039c3)['values']
+    >>> float([v for v in vals if v['name'] == 'temp'][0]['value'])
     7.8
     """
     value = int(data) >> 1
