@@ -618,6 +618,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _handle_event(hass, entry, event)
 
     controller.add_callback(_event_callback)
+
+    # For the Net backend, register a raw packet callback that fires a bus
+    # event for EVERY decoded ZNet packet — even unrecognised protocols.
+    # This lets users debug ZNet traffic in Developer Tools → Events by
+    # listening for "tellstick_local_event" with type "znet_raw_packet".
+    if backend == BACKEND_NET and hasattr(controller, "add_raw_packet_callback"):
+
+        @callback
+        def _raw_packet_callback(packet: dict) -> None:
+            # Convert all values to JSON-safe types for the HA bus event
+            event_data: dict[str, Any] = {"type": "znet_raw_packet"}
+            for k, v in packet.items():
+                if isinstance(v, int) and k == "data":
+                    event_data[k] = hex(v)
+                else:
+                    event_data[k] = str(v) if not isinstance(v, (str, int, float, bool)) else v
+            hass.bus.async_fire(f"{DOMAIN}_event", event_data)
+
+        controller.add_raw_packet_callback(_raw_packet_callback)
+
     controller.start_event_listener()
 
     async def _on_hass_stop(_event: Any) -> None:
@@ -1269,6 +1289,7 @@ def _handle_sensor_event(
             "(supported types: %s)",
             event.data_type, list(_SENSOR_SUFFIX.keys()),
         )
+        return
 
     if is_known:
         # Auto-persist this data_type if not already stored.  After a

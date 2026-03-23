@@ -818,6 +818,9 @@ class TellStickNetController:
     _callbacks: list[Callable[[Any], None]] = field(
         default_factory=list, init=False, repr=False
     )
+    _raw_packet_callbacks: list[Callable[[dict], None]] = field(
+        default_factory=list, init=False, repr=False
+    )
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -876,6 +879,15 @@ class TellStickNetController:
             self._callbacks.remove(callback)
         except ValueError:
             pass
+
+    def add_raw_packet_callback(self, callback: Callable[[dict], None]) -> None:
+        """Register a callback that receives EVERY decoded packet dict.
+
+        Unlike ``add_callback`` (which only fires for recognised protocol
+        events), this fires for every ``7:RawData`` packet received from the
+        ZNet — even when the protocol has no decoder.  Useful for debugging.
+        """
+        self._raw_packet_callbacks.append(callback)
 
     # ------------------------------------------------------------------
     # RF commands (same names as TellStickController)
@@ -1043,6 +1055,12 @@ class TellStickNetController:
             args.get("model", "?"),
             hex(args["data"]) if isinstance(args.get("data"), int) else args.get("data", "?"),
         )
+
+        # Fire raw packet callbacks for EVERY decoded packet — even ones
+        # with no protocol decoder.  This lets __init__.py fire HA bus events
+        # so users can see ALL ZNet traffic in Developer Tools → Events.
+        self._dispatch_raw_packet(args)
+
         if event_class == "sensor":
             # Decode the raw data integer into sensor values
             decoded = _decode_sensor_event(args)
@@ -1079,3 +1097,11 @@ class TellStickNetController:
                 cb(event)
             except Exception as exc:  # noqa: BLE001
                 _LOGGER.error("Net callback error: %s", exc)
+
+    def _dispatch_raw_packet(self, packet: dict) -> None:
+        """Notify raw packet callbacks with the decoded packet dict."""
+        for cb in list(self._raw_packet_callbacks):
+            try:
+                cb(packet)
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.error("Net raw packet callback error: %s", exc)
