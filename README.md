@@ -35,6 +35,7 @@ and the Home Assistant companion app, with no cloud, no Telldus Live account, an
 YAML file editing.
 
 > **Hardware support status:**
+>
 > - **TellStick Duo** (USB stick) — **Release Candidate.** Core features are working and well-tested.
 > - **TellStick Net / ZNet** (LAN device) — **ALPHA.** On/off and event reception work for arctech and everflourish. Many edge cases are untested. Not recommended for production.
 
@@ -251,17 +252,17 @@ each protocol supports.
 
 ### Auto-discoverable (press a button → device appears)
 
-| Protocol       | Entity type    | Brands                                                                                                                |
-| -------------- | -------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Protocol       | Entity type    | Brands                                                                                          |
+| -------------- | -------------- | ----------------------------------------------------------------------------------------------- |
 | `arctech`      | Switch / Light | Nexa, Proove, KlikAanKlikUit, Intertechno, HomeEasy, Chacon, CoCo, Kappa, Bye Bye Standby, Elro |
-| `everflourish` | Switch         | GAO, Everflourish, Rusta                                                         |
-| `hasta`        | Cover          | Hasta, Rollertrol motorised blinds                                                                                    |
-| `mandolyn`     | Sensor         | Mandolyn / Summerbird (temperature/humidity)                                                                          |
-| `sartano`      | Switch         | Sartano, Brennenstuhl, Rusta, Elro (**opt-in** — see note below)                                                      |
-| `waveman`      | Switch         | Waveman                                                                                                               |
-| `x10`          | Switch         | X10                                                                                                                   |
-| `fineoffset`   | Sensor         | Nexa LMST-606 / WDS-100 thermometers, Fine Offset weather stations                                                    |
-| `oregon`       | Sensor         | Oregon Scientific weather sensors (temp, humidity, rain, wind, UV)                                                    |
+| `everflourish` | Switch         | GAO, Everflourish, Rusta                                                                        |
+| `hasta`        | Cover          | Hasta, Rollertrol motorised blinds                                                              |
+| `mandolyn`     | Sensor         | Mandolyn / Summerbird (temperature/humidity)                                                    |
+| `sartano`      | Switch         | Sartano, Brennenstuhl, Rusta, Elro (**opt-in** — see note below)                                |
+| `waveman`      | Switch         | Waveman                                                                                         |
+| `x10`          | Switch         | X10                                                                                             |
+| `fineoffset`   | Sensor         | Nexa LMST-606 / WDS-100 thermometers, Fine Offset weather stations                              |
+| `oregon`       | Sensor         | Oregon Scientific weather sensors (temp, humidity, rain, wind, UV)                              |
 
 > **Nexa note:** Nexa _switches, dimmers, remotes and buttons_ use the `arctech`
 > protocol. Nexa _thermometers and weather sensors_ (LMST-606, WDS-100 etc.) use
@@ -370,6 +371,7 @@ These specific Luxorparts / Cleverio 1000W remote-controlled sockets **do not wo
 with this integration via either TellStick Duo or TellStick Net/ZNet.
 
 **What was tried:**
+
 - The remote sends RF signals that telldusd decodes as three different protocols
   simultaneously (arctech/selflearning, everflourish, waveman). None of these
   correctly controls the 50969/50970/50972 receivers.
