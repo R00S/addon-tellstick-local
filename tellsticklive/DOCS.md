@@ -270,6 +270,65 @@ the HAOS Supervisor did not find the correct stable release. To fix this:
 
 ---
 
+## Debugging with Developer Tools → Events
+
+You can monitor raw 433 MHz traffic in real time using the Home Assistant
+**Developer Tools → Events** page. This is useful for verifying that your
+TellStick hardware is receiving RF signals and for diagnosing detection issues.
+
+### Listening for events
+
+1. Go to **Developer Tools → Events** (or press `e` on the HA keyboard shortcut)
+2. In the **Listen to events** section, enter: `tellstick_local_event`
+3. Click **Start listening**
+4. Press a 433 MHz remote button — you should see events appear
+
+### Event types
+
+**Duo backend** — decoded RF events appear as:
+
+```yaml
+event_type: tellstick_local_event
+data:
+  type: raw
+  protocol: arctech
+  model: selflearning
+  house: "2673666"
+  unit: "1"
+  method: turnon
+```
+
+**ZNet/Net backend** — raw packets from the ZNet firmware appear as:
+
+```yaml
+event_type: tellstick_local_event
+data:
+  type: znet_raw_packet
+  protocol: arctech
+  model: selflearning
+  data: "0x511f590"
+```
+
+For the ZNet backend, the `data` field contains the raw RF payload as a hex
+integer. The integration decodes this automatically for supported protocols
+(arctech, waveman, sartano, everflourish, x10, hasta). If you see
+`znet_raw_packet` events but no device is detected, it may mean the protocol
+decoder is missing or the deduplication window is suppressing repeated signals.
+
+### What to check
+
+- **No events at all** — the TellStick hardware is not receiving signals.
+  Check USB connection, antenna, and that the app is running.
+- **Events appear but no device detected** — check that `automatic_add` is
+  enabled in the integration options (Settings → Devices & Services →
+  TellStick Local → Configure). Also check that the protocol is supported.
+- **Multiple events per button press** — this is normal. The TellStick Duo
+  runs all protocol decoders on every RF signal, so one button press can
+  produce events for arctech, everflourish, and waveman simultaneously.
+  Only the correct protocol should be added; the others are false positives.
+
+---
+
 ## Support
 
 - [Open an issue on GitHub][issue]

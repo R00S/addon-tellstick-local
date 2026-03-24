@@ -169,6 +169,7 @@ class TellStickCover(TellStickEntity, CoverEntity):
         device_id: Any = None,
         house: str = "",
         unit: str = "",
+        manufacturer: str = "",
     ) -> None:
         """Initialize a TellStick cover entity."""
         super().__init__(
@@ -179,6 +180,7 @@ class TellStickCover(TellStickEntity, CoverEntity):
             model=model,
             house=house,
             unit=unit,
+            manufacturer=manufacturer,
         )
         self._controller = controller
         self._telldusd_device_id = device_id

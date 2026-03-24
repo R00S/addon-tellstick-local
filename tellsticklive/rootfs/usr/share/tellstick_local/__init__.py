@@ -106,10 +106,12 @@ _LOGGER = logging.getLogger(__name__)
 #   2. _last_known_event_time: float — suppresses unknown events within 1s
 #      of a known device event (cross-protocol false positives from the
 #      same RF signal; works because arctech is decoded FIRST)
-#   3. _discovered_protocol_models: set — deduplicates by protocol+model
-#      per session (TelldusCenter approach; NOT pre-seeded from stored
-#      devices — pre-seeding blocks new devices sharing a protocol+model
-#      with existing ones)
+#   3. _discovered_protocol_models: dict[str, float] — deduplicates by
+#      protocol+model for a short time window (12 seconds).  Devices with
+#      unstable house/unit (door sensors) produce different UIDs on each
+#      transmission — this suppresses the flood from a single press.
+#      The window is short enough that pressing a SECOND device of the
+#      same protocol+model a few seconds later still gets discovered.
 #
 # Known limitation — unstable UID devices (e.g. some door sensors):
 #   Some devices produce different house/unit values on every activation
@@ -147,6 +149,13 @@ _CROSS_DECODE_WINDOW_SECS = 0.5
 # to set _last_known_event_time before the phantom is evaluated.
 # 300 ms is invisible to the user but 3× the ~100 ms cross-decode window.
 _PHANTOM_DEFER_SECS = 0.3
+
+# Seconds to suppress duplicate protocol+model discoveries.  Devices with
+# unstable house/unit (door sensors, some older remotes) produce different
+# UIDs on each RF transmission.  This window absorbs the burst from a
+# single button press while still allowing a second device of the same
+# protocol+model to be discovered by pressing it a few seconds later.
+_PROTO_MODEL_DEDUP_SECS = 12.0
 
 # Sensor data-type → suffix (mirrors sensor.py _SENSOR_META keys)
 _SENSOR_SUFFIX: dict[int, str] = {
@@ -792,14 +801,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Track UIDs for which discovery flows have been fired this session
         # to avoid flooding the UI with duplicate notifications.
         "_discovered_uids": set(),
-        # Track protocol+model pairs already discovered this session.
-        # telldusd fires ALL protocol decoders on every RF signal, and some
-        # devices (e.g. door sensors) decode with different house/unit values
-        # on each transmission.  TelldusCenter (filtereddeviceproxymodel.cpp)
-        # solves this by deduplicating on protocol+model — we do the same.
-        # NOT pre-seeded from stored devices — that would block new devices
-        # that share a protocol+model with existing ones.
-        "_discovered_protocol_models": set(),
+        # Track protocol+model pairs with timestamps.  Used to suppress
+        # duplicate discoveries from devices with unstable house/unit (door
+        # sensors produce different UIDs on each RF transmission).  Same
+        # protocol+model is suppressed for _PROTO_MODEL_DEDUP_SECS (12s),
+        # then allowed again so users can discover multiple devices of the
+        # same type by pressing them a few seconds apart.
+        "_discovered_protocol_models": {},
         # Timestamp of the last known-device raw event.  Used to suppress
         # false-positive unknown events from the same RF signal.
         # Protocol.cpp decodes arctech first (ProtocolNexa → ProtocolWaveman
@@ -818,6 +826,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _handle_event(hass, entry, event)
 
     controller.add_callback(_event_callback)
+
+    # For the Net backend, register a raw packet callback that fires a bus
+    # event for EVERY decoded ZNet packet — even unrecognised protocols.
+    # This lets users debug ZNet traffic in Developer Tools → Events by
+    # listening for "tellstick_local_event" with type "znet_raw_packet".
+    if backend == BACKEND_NET and hasattr(controller, "add_raw_packet_callback"):
+
+        @callback
+        def _raw_packet_callback(packet: dict) -> None:
+            # Convert all values to JSON-safe types for the HA bus event
+            event_data: dict[str, Any] = {"type": "znet_raw_packet"}
+            for k, v in packet.items():
+                if isinstance(v, int) and k == "data":
+                    event_data[k] = hex(v)
+                else:
+                    event_data[k] = str(v) if not isinstance(v, (str, int, float, bool)) else v
+            hass.bus.async_fire(f"{DOMAIN}_event", event_data)
+
+        controller.add_raw_packet_callback(_raw_packet_callback)
+
     controller.start_event_listener()
 
     async def _on_hass_stop(_event: Any) -> None:
@@ -867,6 +895,53 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 entry.entry_id,
             )
 
+    # Register the debug_connection action (service) so users can verify
+    # the integration is loaded and the connection is alive from
+    # Developer Tools → Actions → tellstick_local.debug_connection.
+    if not hass.services.has_service(DOMAIN, "debug_connection"):
+
+        async def _handle_debug_connection(call: Any) -> None:
+            """Report integration status via persistent notification."""
+            lines: list[str] = [
+                "**TellStick Local debug report**",
+                f"- Integration version (loaded): {INTEGRATION_VERSION}",
+            ]
+            for eid, edata in hass.data.get(DOMAIN, {}).items():
+                ctrl = edata.get(ENTRY_TELLSTICK_CONTROLLER)
+                # Find the matching config entry for backend info
+                ce = hass.config_entries.async_get_entry(eid)
+                be = ce.data.get(CONF_BACKEND, BACKEND_DUO) if ce else "?"
+                host = ce.data.get(CONF_HOST, "?") if ce else "?"
+                lines.append(f"- Entry: {eid[:8]}… backend={be} host={host}")
+
+                if ctrl and hasattr(ctrl, "ping"):
+                    try:
+                        alive = await ctrl.ping()
+                    except Exception:  # noqa: BLE001
+                        alive = False
+                    lines.append(f"  - Connection: {'OK ✅' if alive else 'FAILED ❌'}")
+                else:
+                    lines.append("  - Connection: no ping available")
+
+                stored = (
+                    ce.options.get(CONF_DEVICES, {}) if ce else {}
+                )
+                lines.append(f"  - Stored devices: {len(stored)}")
+                for uid in list(stored)[:20]:
+                    lines.append(f"    - {uid}")
+                discovered = edata.get("_discovered_uids", set())
+                lines.append(f"  - Discovered UIDs this session: {len(discovered)}")
+
+            msg = "\n".join(lines)
+            _LOGGER.info("Debug connection report:\n%s", msg)
+            pn_async_create(
+                hass,
+                msg,
+                title="TellStick Local — Debug Report",
+                notification_id=f"{DOMAIN}_debug",
+            )
+
+        hass.services.async_register(DOMAIN, "debug_connection", _handle_debug_connection)
     return True
 
 
@@ -941,16 +1016,16 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
         discovered: set[str] = entry_data.get("_discovered_uids", set())
         discovered.discard(device_uid)
 
-        # Also clear the protocol+model deduplication key so the next RF signal
-        # from this device is not silently swallowed.  Sensor UIDs use a
-        # different code path and do not participate in proto_model dedup.
+        # Also clear the protocol+model deduplication timestamp so the next
+        # RF signal from this device is not silently swallowed.  Sensor UIDs
+        # use a different code path and do not participate in proto_model dedup.
         if not device_uid.startswith("sensor_"):
-            seen_proto_models: set[str] = entry_data.get(
-                "_discovered_protocol_models", set()
+            seen_proto_models: dict[str, float] = entry_data.get(
+                "_discovered_protocol_models", {}
             )
             parts = device_uid.split("_", 2)
             if len(parts) >= 2:
-                seen_proto_models.discard(f"{parts[0]}_{parts[1]}")
+                seen_proto_models.pop(f"{parts[0]}_{parts[1]}", None)
 
 
 async def async_remove_config_entry_device(
@@ -1088,6 +1163,7 @@ def _handle_event(
     event: Any,
 ) -> None:
     """Dispatch an incoming telldusd event."""
+    _LOGGER.info("Event received: %s", type(event).__name__)
     if isinstance(event, RawDeviceEvent):
         _handle_raw_event(hass, entry, event)
     elif isinstance(event, DeviceEvent):
@@ -1116,24 +1192,39 @@ def _handle_raw_event(
     # no house/unit, so device_uid is just "fineoffset_temperaturehumidity" —
     # adding it produces an empty device with no entities.  Sensor data is
     # handled exclusively by _handle_sensor_event; bail out here.
+    # We still fire a bus event so it is visible in Developer Tools → Events.
     if params.get("class") == "sensor":
-        return
-
-    _LOGGER.debug("Raw RF event from %s: %s", device_uid, params)
-
-    # Broadcast for entity listeners (state updates for existing entities)
-    async_dispatcher_send(hass, SIGNAL_EVENT.format(entry.entry_id), event)
-
-    # Fire an HA bus event so device triggers (automations) can listen
-    method = params.get("method", "")
-    if method in ("turnon", "turnoff"):
+        _LOGGER.info("Raw sensor RF event from %s: %s", device_uid, params)
         hass.bus.async_fire(
             f"{DOMAIN}_event",
             {
                 "device_uid": device_uid,
-                "type": "turned_on" if method == "turnon" else "turned_off",
+                "type": "raw_sensor",
+                **params,
             },
         )
+        return
+
+    _LOGGER.info("Raw RF event from %s: %s", device_uid, params)
+
+    # Broadcast for entity listeners (state updates for existing entities)
+    async_dispatcher_send(hass, SIGNAL_EVENT.format(entry.entry_id), event)
+
+    # Fire an HA bus event for every raw RF event so it is visible in
+    # Developer Tools → Events (listen for "tellstick_local_event").
+    # Also used by device triggers (automations).
+    method = params.get("method", "")
+    event_data: dict[str, Any] = {
+        "device_uid": device_uid,
+        "type": (
+            "turned_on" if method == "turnon"
+            else "turned_off" if method == "turnoff"
+            else method or "unknown"
+        ),
+    }
+    # Include raw RF parameters for debugging
+    event_data.update(params)
+    hass.bus.async_fire(f"{DOMAIN}_event", event_data)
 
     stored_devices = entry.options.get(CONF_DEVICES, {})
     automatic_add = entry.options.get(CONF_AUTOMATIC_ADD, DEFAULT_AUTOMATIC_ADD)
@@ -1222,10 +1313,13 @@ def _fire_device_discovery(
     # Suppress false positives from a known device's RF signal.
     # Protocol.cpp decodes arctech first, so the known-device event
     # (if any) has already been processed and set the timestamp.
+    # NOTE: Do NOT add to `discovered` here — temporal suppression must be
+    # transient.  Adding permanently blocks the UID even after the window
+    # expires, preventing legitimate devices pressed shortly after a known
+    # device from ever being discovered.
     last_known = entry_data.get("_last_known_event_time", 0.0)
     now = time.monotonic()
     if now - last_known < _KNOWN_DEVICE_SHADOW_SECS:
-        discovered.add(device_uid)
         return
 
     # Suppress cross-protocol phantom discoveries.  Identical protocols
@@ -1234,25 +1328,24 @@ def _fire_device_discovery(
     # decodes within the window are phantoms.  Issue #33.
     last_fire = entry_data.get("_last_discovery_fire_time", 0.0)
     if now - last_fire < _CROSS_DECODE_WINDOW_SECS:
-        discovered.add(device_uid)
         return
 
-    # Deduplicate by protocol+model, matching TelldusCenter's approach
-    # (filtereddeviceproxymodel.cpp:60-70).  telldusd fires ALL protocol
-    # decoders on every RF signal, and some devices decode with different
-    # house/unit values on each transmission.  We only fire one discovery
-    # flow per unique protocol+model combination.
+    # Deduplicate by protocol+model with a time window.  Devices with
+    # unstable house/unit (door sensors) produce different UIDs on each
+    # transmission — suppress duplicates within _PROTO_MODEL_DEDUP_SECS.
+    # After the window expires, the same protocol+model can be discovered
+    # again (so users can discover multiple remotes of the same type).
     protocol = params.get("protocol", "")
     model = params.get("model", "")
     proto_model_key = f"{protocol}_{model}"
-    seen_proto_models: set[str] = entry_data["_discovered_protocol_models"]
-    if proto_model_key in seen_proto_models:
-        discovered.add(device_uid)
+    seen_proto_models: dict[str, float] = entry_data["_discovered_protocol_models"]
+    last_seen = seen_proto_models.get(proto_model_key, 0.0)
+    if now - last_seen < _PROTO_MODEL_DEDUP_SECS:
         # Still update fire time so cross-decode phantoms from this RF
         # signal are suppressed (e.g. sartano from an arctech signal).
         entry_data["_last_discovery_fire_time"] = now
         return
-    seen_proto_models.add(proto_model_key)
+    seen_proto_models[proto_model_key] = now
 
     discovered.add(device_uid)
     entry_data["_last_discovery_fire_time"] = now
@@ -1285,14 +1378,18 @@ def _auto_add_device(
     discovered: set[str] = entry_data.get("_discovered_uids", set())
     if device_uid in discovered:
         return
-    discovered.add(device_uid)
 
-    # Skip permanently ignored devices
+    # Skip permanently ignored devices (permanent — ok to lock UID)
     ignored_uids = entry.options.get(CONF_IGNORED_UIDS, {})
     if device_uid in ignored_uids:
+        discovered.add(device_uid)
         return
 
     # Suppress false positives from a known device's RF signal.
+    # NOTE: Do NOT add to `discovered` here — temporal suppression must be
+    # transient.  Adding permanently blocks the UID even after the window
+    # expires, preventing legitimate devices pressed shortly after a known
+    # device from ever being discovered.
     last_known = entry_data.get("_last_known_event_time", 0.0)
     now = time.monotonic()
     if now - last_known < _KNOWN_DEVICE_SHADOW_SECS:
@@ -1307,17 +1404,22 @@ def _auto_add_device(
     protocol = params.get("protocol", "")
     model = params.get("model", "")
 
-    # Deduplicate by protocol+model, matching TelldusCenter's approach
-    # (filtereddeviceproxymodel.cpp:60-70).  Only auto-add the first
-    # event for each protocol+model combination per session.
+    # Deduplicate by protocol+model with a time window.  Same logic as
+    # _fire_device_discovery — suppress bursts from unstable-UID devices,
+    # but allow a second device of the same type after the window expires.
     proto_model_key = f"{protocol}_{model}"
-    seen_proto_models: set[str] = entry_data["_discovered_protocol_models"]
-    if proto_model_key in seen_proto_models:
+    seen_proto_models: dict[str, float] = entry_data["_discovered_protocol_models"]
+    last_seen = seen_proto_models.get(proto_model_key, 0.0)
+    if now - last_seen < _PROTO_MODEL_DEDUP_SECS:
         # Still update fire time so cross-decode phantoms from this RF
         # signal are suppressed (e.g. sartano from an arctech signal).
         entry_data["_last_discovery_fire_time"] = now
         return
-    seen_proto_models.add(proto_model_key)
+    seen_proto_models[proto_model_key] = now
+
+    # All temporal checks passed — commit to adding this device.
+    discovered.add(device_uid)
+    _LOGGER.info("Auto-adding device %s (protocol=%s model=%s)", device_uid, protocol, model)
 
     house = params.get("house", "")
     unit = params.get("unit", params.get("code", ""))
@@ -1381,7 +1483,7 @@ def _handle_device_event(
     event: DeviceEvent,
 ) -> None:
     """Handle a named-device state-change event."""
-    _LOGGER.debug(
+    _LOGGER.info(
         "Device event: id=%s method=%s value=%s",
         event.device_id,
         event.method,
@@ -1396,7 +1498,7 @@ def _handle_sensor_event(
     event: SensorEvent,
 ) -> None:
     """Handle a sensor reading event."""
-    _LOGGER.debug(
+    _LOGGER.info(
         "Sensor event: id=%s protocol=%s model=%s type=%s value=%s",
         event.sensor_id,
         event.protocol,
@@ -1406,12 +1508,34 @@ def _handle_sensor_event(
     )
     async_dispatcher_send(hass, SIGNAL_EVENT.format(entry.entry_id), event)
 
+    # Fire an HA bus event so it is visible in Developer Tools → Events
+    # (listen for "tellstick_local_event").
+    hass.bus.async_fire(
+        f"{DOMAIN}_event",
+        {
+            "type": "sensor",
+            "sensor_id": event.sensor_id,
+            "protocol": event.protocol or "",
+            "model": event.model or "",
+            "data_type": event.data_type,
+            "value": event.value or "",
+        },
+    )
+
     # Check if this sensor is already stored (known)
     stored_devices = entry.options.get(CONF_DEVICES, {})
     automatic_add = entry.options.get(CONF_AUTOMATIC_ADD, DEFAULT_AUTOMATIC_ADD)
     suffix = _SENSOR_SUFFIX.get(event.data_type)
     sensor_prefix = f"sensor_{event.sensor_id}_"
     is_known = any(uid.startswith(sensor_prefix) for uid in stored_devices)
+
+    if not suffix:
+        _LOGGER.warning(
+            "Sensor event data_type=%s has no suffix mapping — sensor ignored "
+            "(supported types: %s)",
+            event.data_type, list(_SENSOR_SUFFIX.keys()),
+        )
+        return
 
     if is_known:
         # Auto-persist this data_type if not already stored.  After a
@@ -1424,11 +1548,15 @@ def _handle_sensor_event(
         if suffix:
             sensor_uid = f"sensor_{event.sensor_id}_{suffix}"
             if sensor_uid not in stored_devices:
-                # Derive device name from existing companion entry
+                # Derive device name and group_sensor_id from existing
+                # companion entry so multi-probe grouping propagates to
+                # new data types automatically.
                 base_name = ""
+                group_sensor_id = None
                 for uid, cfg in stored_devices.items():
                     if uid.startswith(sensor_prefix):
                         base_name = cfg.get(CONF_DEVICE_NAME, "")
+                        group_sensor_id = cfg.get("group_sensor_id")
                         break
                 for s in _SENSOR_SUFFIX.values():
                     if base_name.lower().endswith(f" {s}"):
@@ -1436,14 +1564,17 @@ def _handle_sensor_event(
                         break
                 if not base_name:
                     base_name = f"TellStick sensor {event.sensor_id}"
-                existing_devices = dict(stored_devices)
-                existing_devices[sensor_uid] = {
+                new_entry: dict = {
                     CONF_DEVICE_NAME: f"{base_name} {suffix}",
                     CONF_DEVICE_PROTOCOL: event.protocol or "",
                     CONF_DEVICE_MODEL: event.model or "",
                     "sensor_id": event.sensor_id,
                     "data_type": event.data_type,
                 }
+                if group_sensor_id is not None:
+                    new_entry["group_sensor_id"] = group_sensor_id
+                existing_devices = dict(stored_devices)
+                existing_devices[sensor_uid] = new_entry
                 new_options = dict(entry.options)
                 new_options[CONF_DEVICES] = existing_devices
                 hass.config_entries.async_update_entry(
@@ -1461,6 +1592,10 @@ def _handle_sensor_event(
         ignored_uids = entry.options.get(CONF_IGNORED_UIDS, {})
         if sensor_uid not in discovered and sensor_uid not in ignored_uids:
             discovered.add(sensor_uid)
+            _LOGGER.info(
+                "Auto-adding sensor %s (protocol=%s model=%s type=%s)",
+                sensor_uid, event.protocol, event.model, event.data_type,
+            )
             existing_devices = dict(stored_devices)
             existing_devices[sensor_uid] = {
                 CONF_DEVICE_NAME: f"TellStick sensor {event.sensor_id} {suffix}",

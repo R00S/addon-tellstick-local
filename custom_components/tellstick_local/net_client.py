@@ -98,6 +98,12 @@ def _encode_any(t: Any) -> bytes:
         return _encode_string(t)
     if isinstance(t, dict):
         return _encode_dict(t)
+    if isinstance(t, (list, tuple)):
+        return b"%c%s%c" % (
+            _TAG_LIST,
+            b"".join(_encode_any(x) for x in t),
+            _TAG_END,
+        )
     raise NotImplementedError(f"Cannot encode type {type(t)!r}")
 
 
@@ -284,6 +290,705 @@ def _decode_sartano(data: int) -> dict | None:
     )
 
 
+def _decode_everflourish(data: int) -> dict | None:
+    """Decode everflourish selflearning raw data.
+
+    Port of molobrakos/tellsticknet/protocols/everflourish.py (MIT licence).
+    Ref: telldus-core/service/ProtocolEverflourish.cpp
+    """
+    house = (data & 0xFFFC00) >> 10
+    unit = ((data & 0x300) >> 8) + 1
+    method_nib = data & 0xF
+
+    if house > 16383 or not (1 <= unit <= 4):
+        return None
+
+    if method_nib == 0:
+        method = "turnoff"
+    elif method_nib == 15:
+        method = "turnon"
+    elif method_nib == 10:
+        method = "learn"
+    else:
+        return None
+
+    return dict(
+        _class="command", protocol="everflourish", model="selflearning",
+        house=house, unit=unit, method=method,
+    )
+
+
+# X10 house code lookup (from telldus-core/service/ProtocolX10.cpp).
+# Index is house letter offset (A=0..P=15), value is the 4-bit RF code.
+_X10_HOUSES = [6, 0xE, 2, 0xA, 1, 9, 5, 0xD, 7, 0xF, 3, 0xB, 0, 8, 4, 0xC]
+
+
+def _decode_x10(data: int) -> dict | None:
+    """Decode X10 codeswitch raw data.
+
+    Port of telldus-core/service/ProtocolX10.cpp ``decodeData``.
+    Test vectors from ProtocolX10Test.cpp:
+
+    >>> _decode_x10(0x609F00FF)
+    {'_class': 'command', 'protocol': 'x10', 'model': 'codeswitch', 'house': 'A', 'unit': 1, 'method': 'turnon'}
+    >>> _decode_x10(0x847B28D7)
+    {'_class': 'command', 'protocol': 'x10', 'model': 'codeswitch', 'house': 'E', 'unit': 11, 'method': 'turnoff'}
+    """
+    # Extract 4-bit raw house code from bits 31-28 (LSB-first order)
+    raw_house = 0
+    for i in range(4):
+        raw_house >>= 1
+        if (data >> (31 - i)) & 1:
+            raw_house |= 0x8
+
+    # Bit 27 must be 0
+    if (data >> 27) & 1:
+        return None
+
+    unit = 0
+    # Bit 26 → unit bit 3
+    if (data >> 26) & 1:
+        unit |= 1 << 3
+
+    # Bits 25, 24 must be 0
+    if (data >> 25) & 1 or (data >> 24) & 1:
+        return None
+
+    # Skip complement bytes — jump to bit 14
+    # Bit 14 → unit bit 2
+    if (data >> 14) & 1:
+        unit |= 1 << 2
+    # Bit 13 → method (0 = turnon, 1 = turnoff)
+    method_bit = (data >> 13) & 1
+    # Bit 12 → unit bit 0
+    if (data >> 12) & 1:
+        unit |= 1 << 0
+    # Bit 11 → unit bit 1
+    if (data >> 11) & 1:
+        unit |= 1 << 1
+
+    # Reverse-lookup raw_house → letter A-P
+    house_idx = -1
+    for idx, code in enumerate(_X10_HOUSES):
+        if code == raw_house:
+            house_idx = idx
+            break
+    if house_idx < 0:
+        return None
+
+    return dict(
+        _class="command", protocol="x10", model="codeswitch",
+        house=chr(ord("A") + house_idx), unit=unit + 1,
+        method="turnoff" if method_bit else "turnon",
+    )
+
+
+def _decode_hasta(data: int, model: str = "selflearning") -> dict | None:
+    """Decode hasta motorised-blind raw data (v1 selflearning + v2 selflearningv2).
+
+    Port of telldus-core/service/ProtocolHasta.cpp ``decodeData``.
+    Test vectors from ProtocolHastaTest.cpp:
+
+    >>> _decode_hasta(0xC671100, 'selflearning')
+    {'_class': 'command', 'protocol': 'hasta', 'model': 'selflearning', 'house': 26380, 'unit': 1, 'method': 'down'}
+    >>> _decode_hasta(0xC670100, 'selflearning')
+    {'_class': 'command', 'protocol': 'hasta', 'model': 'selflearning', 'house': 26380, 'unit': 1, 'method': 'up'}
+    >>> _decode_hasta(0x4B891F01, 'selflearningv2')
+    {'_class': 'command', 'protocol': 'hasta', 'model': 'selflearningv2', 'house': 19337, 'unit': 15, 'method': 'down'}
+    >>> _decode_hasta(0x4B89CF01, 'selflearningv2')
+    {'_class': 'command', 'protocol': 'hasta', 'model': 'selflearningv2', 'house': 19337, 'unit': 15, 'method': 'up'}
+    """
+    all_data = data >> 8
+    unit = all_data & 0xF
+    all_data >>= 4
+    method_code = all_data & 0xF
+    all_data >>= 4
+    house = all_data & 0xFFFF
+
+    is_v2 = model.lower().startswith("selflearningv2")
+
+    if not is_v2:
+        # v1: byte-swap house
+        house = ((house << 8) | (house >> 8)) & 0xFFFF
+        if method_code == 0:
+            method = "up"
+        elif method_code == 1:
+            method = "down"
+        elif method_code == 5:
+            method = "stop"
+        elif method_code == 4:
+            method = "learn"
+        else:
+            return None
+        model_str = "selflearning"
+    else:
+        # v2: no byte-swap
+        if method_code == 12:
+            method = "up"
+        elif method_code in (1, 8):
+            method = "down"
+        elif method_code == 5:
+            method = "stop"
+        elif method_code == 4:
+            method = "learn"
+        else:
+            return None
+        model_str = "selflearningv2"
+
+    if house < 1 or house > 65535 or unit < 1 or unit > 16:
+        return None
+
+    return dict(
+        _class="command", protocol="hasta", model=model_str,
+        house=house, unit=unit, method=method,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Sensor protocol decoders  (ported from molobrakos/tellsticknet/protocols/)
+# ---------------------------------------------------------------------------
+
+def _decode_fineoffset_sensor(data: int) -> dict | None:
+    """Decode fineoffset temperature/humidity sensor raw data.
+
+    Port of molobrakos/tellsticknet/protocols/fineoffset.py (MIT licence).
+    Ref: telldus-core/service/ProtocolFineoffset.cpp
+
+    The ZNet sends fineoffset sensor events as:
+      class:sensor, protocol:fineoffset, data:0x48801aff05
+    The data integer encodes sensor_id, temperature, and humidity.
+
+    >>> vals = _decode_fineoffset_sensor(0x48801aff05)['values']
+    >>> float([v for v in vals if v['name'] == 'temp'][0]['value'])
+    2.6
+    """
+    hex_str = "%010x" % int(data)
+    hex_str = hex_str[:-2]  # strip checksum byte
+
+    humidity = int(hex_str[-2:], 16)
+    hex_str = hex_str[:-2]
+
+    value = int(hex_str[-3:], 16)
+    temp = (value & 0x7FF) / 10
+    if (value >> 11) & 1:
+        temp = -temp
+    temp = round(temp, 1)
+
+    hex_str = hex_str[:-3]
+    sensor_id = int(hex_str, 16) & 0xFF
+
+    if humidity <= 100:
+        return dict(
+            sensorId=sensor_id,
+            model="temperaturehumidity",
+            values=[
+                {"name": "temp", "value": str(temp)},
+                {"name": "humidity", "value": str(humidity)},
+            ],
+        )
+    return dict(
+        sensorId=sensor_id,
+        model="temperature",
+        values=[{"name": "temp", "value": str(temp)}],
+    )
+
+
+def _decode_mandolyn_sensor(data: int) -> dict | None:
+    """Decode mandolyn/summerbird temperature/humidity sensor raw data.
+
+    Port of molobrakos/tellsticknet/protocols/mandolyn.py (MIT licence).
+    Ref: telldus-core/service/ProtocolMandolyn.cpp
+
+    >>> vals = _decode_mandolyn_sensor(0x134039c3)['values']
+    >>> float([v for v in vals if v['name'] == 'temp'][0]['value'])
+    7.8
+    """
+    value = int(data) >> 1
+    temp = ((value & 0x7FFF) - 6400) / 128
+    temp = round(temp, 1)
+
+    value >>= 15
+    humidity = value & 0x7F
+
+    value >>= 7
+    value >>= 3
+    channel = (value & 0x3) + 1
+
+    value >>= 2
+    house = value & 0xF
+
+    sensor_id = house * 10 + channel
+
+    result: dict = dict(
+        sensorId=sensor_id,
+        model="temperaturehumidity",
+        values=[
+            {"name": "temp", "value": str(temp)},
+            {"name": "humidity", "value": str(humidity)},
+        ],
+    )
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Oregon Scientific sensor sub-model decoders
+# Port of telldus-core/service/ProtocolOregon.cpp (GPL).
+# ZNet model field is the hex model code as a decimal integer:
+#   0xEA4C=59980, 0x1A2D=6701, 0xF824=63524, 0x1984=6532,
+#   0x1994=6548, 0x2914=10516, 0xC844=51268, 0xEC40=60480
+# ---------------------------------------------------------------------------
+
+# Oregon model hex → decimal mapping
+_OREGON_EA4C = 0xEA4C  # 59980 — temperature
+_OREGON_1A2D = 0x1A2D  # 6701  — temperature + humidity
+_OREGON_F824 = 0xF824  # 63524 — temperature + humidity
+_OREGON_1984 = 0x1984  # 6532  — wind
+_OREGON_1994 = 0x1994  # 6548  — wind (variant)
+_OREGON_2914 = 0x2914  # 10516 — rain
+_OREGON_C844 = 0xC844  # 51268 — pool thermometer
+_OREGON_EC40 = 0xEC40  # 60480 — pool thermometer (variant)
+
+
+def _decode_oregon_EA4C(data: int) -> dict | None:
+    """Decode Oregon EA4C temperature sensor.
+
+    >>> r = _decode_oregon_EA4C(0x004F300245EA4C20)
+    >>> r is not None and float([v for v in r['values'] if v['name'] == 'temp'][0]['value']) > -50
+    True
+    """
+    value = data
+
+    checksum = 0xE + 0xA + 0x4 + 0xC
+    checksum -= (value & 0xF) * 0x10
+    checksum -= 0xA
+    checksum &= 0xFF
+    value >>= 8
+
+    checksumw = (value >> 4) & 0xF
+    neg = bool(value & (1 << 3))
+    hundred = value & 3
+    checksum = (checksum + (value & 0xF)) & 0xFF
+    value >>= 8
+
+    temp2 = value & 0xF
+    temp1 = (value >> 4) & 0xF
+    checksum = (checksum + temp2 + temp1) & 0xFF
+    value >>= 8
+
+    temp3 = (value >> 4) & 0xF
+    checksum = (checksum + (value & 0xF) + temp3) & 0xFF
+    value >>= 8
+
+    checksum = (checksum + ((value >> 4) & 0xF) + (value & 0xF)) & 0xFF
+    address = value & 0xFF
+    value >>= 8
+
+    checksum = (checksum + ((value >> 4) & 0xF) + (value & 0xF)) & 0xFF
+
+    if (checksum & 0xF) != checksumw:
+        return None
+
+    temperature = ((hundred * 1000) + (temp1 * 100) + (temp2 * 10) + temp3) / 10.0
+    if neg:
+        temperature = -temperature
+    temperature = round(temperature, 1)
+
+    return dict(
+        sensorId=address,
+        model="EA4C",
+        values=[{"name": "temp", "value": str(temperature)}],
+    )
+
+
+def _decode_oregon_1A2D(data: int) -> dict | None:
+    """Decode Oregon 1A2D temperature + humidity sensor.
+
+    Port of telldus-core ProtocolOregon::decode1A2D.
+    Reference: molobrakos/tellsticknet/protocols/oregon.py (MIT licence).
+
+    >>> r = _decode_oregon_1A2D(0x201F242450443BDD)
+    >>> float([v for v in r['values'] if v['name'] == 'temp'][0]['value'])
+    24.2
+    >>> int([v for v in r['values'] if v['name'] == 'humidity'][0]['value'])
+    45
+    """
+    value = data
+    # Skip checksum2 byte
+    value >>= 8
+    checksum1 = value & 0xFF
+    value >>= 8
+
+    checksum = (((value >> 4) & 0xF) + (value & 0xF)) & 0xFF
+    hum1 = value & 0xF
+    value >>= 8
+
+    checksum = (checksum + ((value >> 4) & 0xF) + (value & 0xF)) & 0xFF
+    neg = bool(value & (1 << 3))
+    hum2 = (value >> 4) & 0xF
+    value >>= 8
+
+    checksum = (checksum + ((value >> 4) & 0xF) + (value & 0xF)) & 0xFF
+    temp2 = value & 0xF
+    temp1 = (value >> 4) & 0xF
+    value >>= 8
+
+    checksum = (checksum + ((value >> 4) & 0xF) + (value & 0xF)) & 0xFF
+    temp3 = (value >> 4) & 0xF
+    value >>= 8
+
+    checksum = (checksum + ((value >> 4) & 0xF) + (value & 0xF)) & 0xFF
+    address = value & 0xFF
+    value >>= 8
+
+    checksum = (checksum + ((value >> 4) & 0xF) + (value & 0xF)) & 0xFF
+    checksum = (checksum + 0x1 + 0xA + 0x2 + 0xD - 0xA) & 0xFF
+
+    if checksum != checksum1:
+        return None
+
+    temperature = ((temp1 * 100) + (temp2 * 10) + temp3) / 10.0
+    if neg:
+        temperature = -temperature
+    temperature = round(temperature, 1)
+    humidity = int((hum1 * 10) + hum2)
+
+    return dict(
+        sensorId=address,
+        model="1A2D",
+        values=[
+            {"name": "temp", "value": str(temperature)},
+            {"name": "humidity", "value": str(humidity)},
+        ],
+    )
+
+
+def _decode_oregon_F824(data: int) -> dict | None:
+    """Decode Oregon F824 temperature + humidity sensor.
+
+    Port of telldus-core ProtocolOregon::decodeF824.
+    """
+    value = data
+
+    value >>= 4  # skip crc nibble
+    msg_chk1 = value & 0xF
+    value >>= 4
+    msg_chk2 = value & 0xF
+    value >>= 4
+    unknown = value & 0xF
+    value >>= 4
+    hum1 = value & 0xF
+    value >>= 4
+    hum2 = value & 0xF
+    value >>= 4
+    neg = value & 0xF
+    value >>= 4
+    temp1 = value & 0xF
+    value >>= 4
+    temp2 = value & 0xF
+    value >>= 4
+    temp3 = value & 0xF
+    value >>= 4
+    battery = value & 0xF
+    value >>= 4
+    rollingcode = ((value >> 4) & 0xF) + (value & 0xF)
+    checksum = ((value >> 4) & 0xF) + (value & 0xF)
+    value >>= 8
+    channel = value & 0xF
+    checksum += (
+        unknown + hum1 + hum2 + neg + temp1 + temp2 + temp3
+        + battery + channel + 0xF + 0x8 + 0x2 + 0x4
+    )
+
+    if ((checksum >> 4) & 0xF) != msg_chk1 or (checksum & 0xF) != msg_chk2:
+        return None
+
+    temperature = ((temp1 * 100) + (temp2 * 10) + temp3) / 10.0
+    if neg:
+        temperature = -temperature
+    temperature = round(temperature, 1)
+    humidity = int((hum1 * 10) + hum2)
+
+    return dict(
+        sensorId=rollingcode,
+        model="F824",
+        values=[
+            {"name": "temp", "value": str(temperature)},
+            {"name": "humidity", "value": str(humidity)},
+        ],
+    )
+
+
+def _decode_oregon_1984(data: int, model_code: int) -> dict | None:
+    """Decode Oregon 1984/1994 wind sensor.
+
+    Port of telldus-core ProtocolOregon::decode1984.
+    """
+    value = data
+
+    value >>= 4  # skip crc nibble
+    msg_chk1 = value & 0xF
+    value >>= 4
+    msg_chk2 = value & 0xF
+    value >>= 4
+    avg1 = value & 0xF
+    value >>= 4
+    avg2 = value & 0xF
+    value >>= 4
+    avg3 = value & 0xF
+    value >>= 4
+    gust1 = value & 0xF
+    value >>= 4
+    gust2 = value & 0xF
+    value >>= 4
+    gust3 = value & 0xF
+    value >>= 4
+    unknown1 = value & 0xF
+    value >>= 4
+    unknown2 = value & 0xF
+    value >>= 4
+    direction = value & 0xF
+    value >>= 4
+    battery = value & 0xF
+    value >>= 4
+    rollingcode = ((value >> 4) & 0xF) + (value & 0xF)
+    checksum = ((value >> 4) & 0xF) + (value & 0xF)
+    value >>= 8
+    channel = value & 0xF
+    checksum += (
+        unknown1 + unknown2 + avg1 + avg2 + avg3
+        + gust1 + gust2 + gust3 + direction + battery + channel
+    )
+
+    if model_code == _OREGON_1984:
+        checksum += 0x1 + 0x9 + 0x8 + 0x4
+    else:
+        checksum += 0x1 + 0x9 + 0x9 + 0x4
+
+    if ((checksum >> 4) & 0xF) != msg_chk1 or (checksum & 0xF) != msg_chk2:
+        return None
+
+    avg = ((avg1 * 100) + (avg2 * 10) + avg3) / 10.0
+    gust = ((gust1 * 100) + (gust2 * 10) + gust3) / 10.0
+    direction_deg = round(22.5 * direction, 1)
+
+    return dict(
+        sensorId=rollingcode,
+        model="1984",
+        values=[
+            {"name": "wdir", "value": str(direction_deg)},
+            {"name": "wavg", "value": str(round(avg, 1))},
+            {"name": "wgust", "value": str(round(gust, 1))},
+        ],
+    )
+
+
+def _decode_oregon_2914(data: int) -> dict | None:
+    """Decode Oregon 2914 rain sensor.
+
+    Port of telldus-core ProtocolOregon::decode2914.
+    """
+    value = data
+
+    msg_chk1 = value & 0xF
+    value >>= 4
+    msg_chk2 = value & 0xF
+    value >>= 4
+    tot1 = value & 0xF
+    value >>= 4
+    tot2 = value & 0xF
+    value >>= 4
+    tot3 = value & 0xF
+    value >>= 4
+    tot4 = value & 0xF
+    value >>= 4
+    tot5 = value & 0xF
+    value >>= 4
+    tot6 = value & 0xF
+    value >>= 4
+    rate1 = value & 0xF
+    value >>= 4
+    rate2 = value & 0xF
+    value >>= 4
+    rate3 = value & 0xF
+    value >>= 4
+    rate4 = value & 0xF
+    value >>= 4
+    battery = value & 0xF
+    value >>= 4
+    rollingcode = ((value >> 4) & 0xF) + (value & 0xF)
+    checksum = ((value >> 4) & 0xF) + (value & 0xF)
+    value >>= 8
+    channel = value & 0xF
+    checksum += (
+        tot1 + tot2 + tot3 + tot4 + tot5 + tot6
+        + rate1 + rate2 + rate3 + rate4
+        + battery + channel + 0x2 + 0x9 + 0x1 + 0x4
+    )
+
+    if ((checksum >> 4) & 0xF) != msg_chk1 or (checksum & 0xF) != msg_chk2:
+        return None
+
+    total = (
+        (tot1 * 100000) + (tot2 * 10000) + (tot3 * 1000)
+        + (tot4 * 100) + (tot5 * 10) + tot6
+    ) / 1000.0 * 25.4
+    rate = ((rate1 * 1000) + (rate2 * 100) + (rate3 * 10) + rate4) / 100.0 * 25.4
+
+    return dict(
+        sensorId=rollingcode,
+        model="2914",
+        values=[
+            {"name": "rtot", "value": str(round(total, 1))},
+            {"name": "rrate", "value": str(round(rate, 1))},
+        ],
+    )
+
+
+def _decode_oregon_C844(data: int, model_code: int) -> dict | None:
+    """Decode Oregon C844/EC40 pool thermometer.
+
+    Port of telldus-core ProtocolOregon::decodeC844.
+    """
+    value = data
+
+    msg_chk1 = value & 0xF
+    value >>= 4
+    msg_chk2 = value & 0xF
+    value >>= 4
+    neg = value & 0xF
+    value >>= 4
+    temp1 = value & 0xF
+    value >>= 4
+    temp2 = value & 0xF
+    value >>= 4
+    temp3 = value & 0xF
+    value >>= 4
+    battery = value & 0xF
+    value >>= 4
+    rollingcode = ((value >> 4) & 0xF) + (value & 0xF)
+    checksum = ((value >> 4) & 0xF) + (value & 0xF)
+    value >>= 8
+    channel = value & 0xF
+    checksum += neg + temp1 + temp2 + temp3 + battery + channel
+
+    if model_code == _OREGON_C844:
+        checksum += 0xC + 0x8 + 0x4 + 0x4
+    else:
+        checksum += 0xE + 0xC + 0x4 + 0x0
+
+    if ((checksum >> 4) & 0xF) != msg_chk1 or (checksum & 0xF) != msg_chk2:
+        return None
+
+    temperature = ((temp1 * 100) + (temp2 * 10) + temp3) / 10.0
+    if neg:
+        temperature = -temperature
+    temperature = round(temperature, 1)
+
+    return dict(
+        sensorId=rollingcode,
+        model="C844",
+        values=[{"name": "temp", "value": str(temperature)}],
+    )
+
+
+def _decode_oregon_sensor(data: int, model: int | str) -> dict | None:
+    """Decode Oregon Scientific sensor raw data.
+
+    Port of telldus-core/service/ProtocolOregon.cpp (GPL).
+    ZNet sends model as integer (hex code in decimal, e.g. 0x1A2D = 6701)
+    or as hex string (e.g. "0x1A2D").
+
+    Supported sub-models:
+      EA4C (59980) — temperature
+      1A2D (6701)  — temperature + humidity
+      F824 (63524) — temperature + humidity
+      1984 (6532)  — wind
+      1994 (6548)  — wind (variant)
+      2914 (10516) — rain
+      C844 (51268) — pool thermometer
+      EC40 (60480) — pool thermometer (variant)
+
+    >>> r = _decode_oregon_sensor(0x201F242450443BDD, 6701)
+    >>> float([v for v in r['values'] if v['name'] == 'temp'][0]['value'])
+    24.2
+    >>> int([v for v in r['values'] if v['name'] == 'humidity'][0]['value'])
+    45
+    """
+    # Normalise model to integer
+    if isinstance(model, str):
+        try:
+            model_code = int(model, 0)  # handles "0x1A2D" and "6701"
+        except (ValueError, TypeError):
+            return None
+    else:
+        model_code = int(model)
+
+    if model_code == _OREGON_EA4C:
+        return _decode_oregon_EA4C(data)
+    if model_code == _OREGON_1A2D:
+        return _decode_oregon_1A2D(data)
+    if model_code == _OREGON_F824:
+        return _decode_oregon_F824(data)
+    if model_code in (_OREGON_1984, _OREGON_1994):
+        return _decode_oregon_1984(data, model_code)
+    if model_code == _OREGON_2914:
+        return _decode_oregon_2914(data)
+    if model_code in (_OREGON_C844, _OREGON_EC40):
+        return _decode_oregon_C844(data, model_code)
+
+    _LOGGER.debug(
+        "Oregon: unsupported model 0x%X (%d); raw data=0x%X",
+        model_code, model_code, data,
+    )
+    return None
+
+
+def _decode_sensor_event(packet: dict) -> dict | None:
+    """Decode a sensor event's raw data integer into sensor values.
+
+    The ZNet firmware sends sensor events as:
+      class:sensor, protocol:fineoffset, data:0x41B03B4DAA
+    The raw ``data`` integer must be decoded by protocol-specific decoders.
+    If the packet already contains a ``values`` list (e.g. from a future
+    firmware version), it is returned as-is.
+    """
+    # Already decoded (e.g. newer firmware or test fixture)
+    values = packet.get("values")
+    if values:
+        return packet
+
+    data = packet.get("data")
+    if not isinstance(data, int):
+        _LOGGER.debug("Net sensor: no data integer in packet %s", packet)
+        return None
+
+    protocol = packet.get("protocol", "")
+
+    if protocol == "fineoffset":
+        decoded = _decode_fineoffset_sensor(data)
+    elif protocol == "mandolyn":
+        decoded = _decode_mandolyn_sensor(data)
+    elif protocol == "oregon":
+        decoded = _decode_oregon_sensor(data, packet.get("model", ""))
+    else:
+        _LOGGER.debug(
+            "Net sensor: no decoder for protocol=%s; raw data=0x%X",
+            protocol, data,
+        )
+        return None
+
+    if decoded is None:
+        return None
+
+    # Merge decoded fields into the original packet
+    result = dict(packet)
+    result.update(decoded)
+    # Ensure the sensor id is present as "id" (for _event_dict_to_ha_events)
+    if "sensorId" in decoded:
+        result["id"] = decoded["sensorId"]
+    return result
+
+
 def _decode_rf_event(packet: dict) -> dict | None:
     """Resolve house/unit/method from the raw data integer in the packet."""
     protocol = packet.get("protocol", "")
@@ -309,9 +1014,16 @@ def _decode_rf_event(packet: dict) -> dict | None:
         decoded = _decode_waveman(data)
     elif protocol == "sartano":
         decoded = _decode_sartano(data)
+    elif protocol == "everflourish":
+        decoded = _decode_everflourish(data)
+    elif protocol == "x10":
+        decoded = _decode_x10(data)
+    elif protocol == "hasta":
+        decoded = _decode_hasta(data, model)
     else:
         _LOGGER.debug(
-            "Net: no decoder for protocol=%s model=%s; skipping event", protocol, model
+            "Net: no decoder for protocol=%s model=%s data=0x%X; skipping event",
+            protocol, model, data,
         )
         return None
 
@@ -331,6 +1043,11 @@ def _decode_rf_event(packet: dict) -> dict | None:
 _SENSOR_TYPE_MAP: dict[str, int] = {
     "temp": 1,       # TELLSTICK_TEMPERATURE
     "humidity": 2,   # TELLSTICK_HUMIDITY
+    "rrate": 4,      # TELLSTICK_RAINRATE
+    "rtot": 8,       # TELLSTICK_RAINTOTAL
+    "wdir": 16,      # TELLSTICK_WINDDIRECTION
+    "wavg": 32,      # TELLSTICK_WINDAVERAGE
+    "wgust": 64,     # TELLSTICK_WINDGUST
 }
 
 
@@ -345,8 +1062,16 @@ def _event_dict_to_ha_events(ev: dict) -> Iterator[Any]:
         values = ev.get("values") or []
         if isinstance(values, list):
             for entry in values:
+                # Our own decoders produce: {"name": "temp", "value": "15.6"}
+                # ZNet firmware pre-decoded values use: {"type": 1, "value": "15.6"}
+                stype_int: int | None = None
                 stype_name = entry.get("name", "")
-                stype_int = _SENSOR_TYPE_MAP.get(stype_name)
+                if stype_name:
+                    stype_int = _SENSOR_TYPE_MAP.get(stype_name)
+                if stype_int is None:
+                    raw_type = entry.get("type")
+                    if isinstance(raw_type, int) and raw_type in _SENSOR_TYPE_MAP.values():
+                        stype_int = raw_type
                 if stype_int is not None:
                     try:
                         yield SensorEvent(
@@ -579,7 +1304,7 @@ async def discover(timeout: float = 3.0) -> AsyncGenerator[tuple[str, str, str],
             _LOGGER.debug("Could not set up discovery socket: %s", err)
             return
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         try:
             await loop.sock_sendto(sock, b"D", ("<broadcast>", NET_DISCOVERY_PORT))
         except OSError as err:
@@ -651,6 +1376,9 @@ class TellStickNetController:
     _callbacks: list[Callable[[Any], None]] = field(
         default_factory=list, init=False, repr=False
     )
+    _raw_packet_callbacks: list[Callable[[dict], None]] = field(
+        default_factory=list, init=False, repr=False
+    )
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -667,6 +1395,7 @@ class TellStickNetController:
             # network — binding to a single interface would miss them.
             # This matches the molobrakos/tellsticknet reference implementation.
             sock.bind(("", NET_COMMAND_PORT))
+            _LOGGER.info("Net: bound to port %d for %s", NET_COMMAND_PORT, self.host)
         except OSError:
             _LOGGER.warning(
                 "Port %d already bound; using ephemeral port for %s",
@@ -678,6 +1407,7 @@ class TellStickNetController:
             sock.bind(("", 0))
         self._sock = sock
         await self._send_raw(encode_packet("reglistener"))
+        _LOGGER.info("Net: sent reglistener to %s:%d", self.host, NET_COMMAND_PORT)
 
     async def disconnect(self) -> None:
         """Cancel tasks and close the socket."""
@@ -707,6 +1437,15 @@ class TellStickNetController:
             self._callbacks.remove(callback)
         except ValueError:
             pass
+
+    def add_raw_packet_callback(self, callback: Callable[[dict], None]) -> None:
+        """Register a callback that receives EVERY decoded packet dict.
+
+        Unlike ``add_callback`` (which only fires for recognised protocol
+        events), this fires for every ``7:RawData`` packet received from the
+        ZNet — even when the protocol has no decoder.  Useful for debugging.
+        """
+        self._raw_packet_callbacks.append(callback)
 
     # ------------------------------------------------------------------
     # RF commands (same names as TellStickController)
@@ -766,7 +1505,7 @@ class TellStickNetController:
     async def _send_raw(self, data: bytes) -> None:
         if self._sock is None:
             raise OSError("Socket not connected")
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         await loop.sock_sendto(self._sock, data, (self.host, NET_COMMAND_PORT))
 
     async def _send_rf(
@@ -826,16 +1565,32 @@ class TellStickNetController:
     async def _event_loop(self) -> None:
         if self._sock is None:
             return
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
+        _LOGGER.info(
+            "Net: event listener started for %s (socket bound to port %s)",
+            self.host,
+            self._sock.getsockname()[1] if self._sock else "?",
+        )
+        packet_count = 0
         while True:
             try:
                 data, (src_ip, _port) = await asyncio.wait_for(
                     loop.sock_recvfrom(self._sock, 4096), timeout=70.0
                 )
                 if src_ip != self.host:
+                    _LOGGER.debug(
+                        "Net: ignoring packet from %s (expected %s)", src_ip, self.host
+                    )
                     continue
+                packet_count += 1
+                if packet_count <= 3:
+                    _LOGGER.info(
+                        "Net: received packet #%d from %s (%d bytes)",
+                        packet_count, src_ip, len(data),
+                    )
                 self._process_packet(data)
             except asyncio.TimeoutError:
+                _LOGGER.debug("Net: no packets from %s in 70s (waiting…)", self.host)
                 continue
             except asyncio.CancelledError:
                 break
@@ -848,11 +1603,30 @@ class TellStickNetController:
     def _process_packet(self, raw: bytes) -> None:
         args = decode_packet(raw)
         if not args:
+            _LOGGER.debug("Net: unrecognised packet from %s: %r", self.host, raw[:60])
             return
         event_class = args.get("class", args.get("_class", ""))
+        _LOGGER.debug(
+            "Net packet: class=%s protocol=%s model=%s data=%s",
+            event_class,
+            args.get("protocol", "?"),
+            args.get("model", "?"),
+            hex(args["data"]) if isinstance(args.get("data"), int) else args.get("data", "?"),
+        )
+
+        # Fire raw packet callbacks for EVERY decoded packet — even ones
+        # with no protocol decoder.  This lets __init__.py fire HA bus events
+        # so users can see ALL ZNet traffic in Developer Tools → Events.
+        self._dispatch_raw_packet(args)
+
         if event_class == "sensor":
-            for ev in _event_dict_to_ha_events(args):
+            # Decode the raw data integer into sensor values
+            decoded = _decode_sensor_event(args)
+            if decoded is None:
+                return
+            for ev in _event_dict_to_ha_events(decoded):
                 if ev is not None:
+                    _LOGGER.debug("Net sensor event: %s", ev)
                     self._dispatch(ev)
             return
         decoded = _decode_rf_event(args)
@@ -881,3 +1655,11 @@ class TellStickNetController:
                 cb(event)
             except Exception as exc:  # noqa: BLE001
                 _LOGGER.error("Net callback error: %s", exc)
+
+    def _dispatch_raw_packet(self, packet: dict) -> None:
+        """Notify raw packet callbacks with the decoded packet dict."""
+        for cb in list(self._raw_packet_callbacks):
+            try:
+                cb(packet)
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.error("Net raw packet callback error: %s", exc)
