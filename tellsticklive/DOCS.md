@@ -90,6 +90,84 @@ full pairing instructions and supported devices.
 
 ---
 
+## Reconfigure (change hostname without losing devices)
+
+If your TellStick app hostname changes — for example when switching between the
+stable (`addon-tellstick-local`) and dev (`addon-tellsticklive-roosfork`)
+channels — the integration would previously stop connecting. Deleting and
+re-creating the integration entry was the only workaround, and it meant losing
+all stored devices.
+
+The **Reconfigure** button lets you update the host and port without losing
+anything.
+
+**Where to find it:** Settings → Devices & Services → TellStick Local →
+three-dot menu (⋮) → **Reconfigure**
+
+**What it does:**
+- Opens a form pre-filled with the current host and port values
+- Validates the connection (Duo only; ZNet skips the live check)
+- Saves the new hostname and reloads the integration
+- All stored devices, entity IDs, and automations are preserved
+
+**Implemented in:** `config_flow.py` → `async_step_reconfigure`
+
+---
+
+## Move device between TellStick instances
+
+If you have a TellStick Duo and a TellStick Net/ZNet, you may want to move a
+device from one to the other — for example, to reassign a switch closer to a
+different unit. Previously, moving a device meant deleting and re-adding it,
+which created a new entity with a new `entity_id` and lost its state history.
+
+The **Move to another TellStick instance** option copies the device config to
+the target entry and updates the entity registry in place, so the `entity_id`
+and all state history are preserved.
+
+**Where to find it:** Settings → Devices & Services → TellStick Local →
+Configure (⚙) → Edit a device → select a device → **Manage device** →
+**Move to another TellStick instance**
+
+> This option only appears when more than one primary TellStick integration
+> entry exists.
+
+**What it does:**
+1. Shows a dropdown of available target TellStick instances
+2. Asks for confirmation (showing device name and target)
+3. Copies the device config to the target entry
+4. Updates the entity registry: `unique_id` and `config_entry_id` point to the
+   new entry — `entity_id` and state history unchanged
+5. Removes the device from the source entry
+6. Reloads both entries
+
+**Implemented in:** `config_flow.py` → `async_step_move_device` /
+`async_step_move_device_confirm`
+
+---
+
+## Manual device grouping
+
+By default every TellStick device gets its own HA device entry. If you have
+many devices in the same room you can group them under a single shared HA
+device so they appear together in the device list — for example, all five
+living-room switches as one **Living Room** device with five switch entities.
+
+**Where to find it:** Settings → Devices & Services → TellStick Local →
+Configure (⚙) → Edit a device → select a device → **Manage device** →
+**Group under a shared device**
+
+**What it does:**
+- Asks for a group name (e.g. `Living Room`)
+- All devices with the same group name share one HA device entry
+- Leave the field blank to remove the device from its group (standalone again)
+- Changes take effect after the integration reloads (done automatically)
+
+**Implemented in:** `config_flow.py` → `async_step_group_device`; applied at
+entity creation time in `entity.py`, `switch.py`, `light.py`, and `cover.py`
+
+---
+
 ## Mirror / range extender
 
 If you have a **second TellStick** (Duo or Net/ZNet), you can set it up as a
