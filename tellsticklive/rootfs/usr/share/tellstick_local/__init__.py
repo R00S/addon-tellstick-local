@@ -624,6 +624,24 @@ async def _setup_mirror_entry(
             _handle_event(hass, primary_entry, event)
 
     controller.add_callback(_mirror_event_callback)
+
+    # For Net/ZNet mirrors, also register the raw packet callback so that
+    # every ZNet packet fires a "tellstick_local_event" bus event — visible
+    # in Developer Tools → Events, just like a primary Net entry does.
+    if backend == BACKEND_NET and hasattr(controller, "add_raw_packet_callback"):
+
+        @callback
+        def _mirror_raw_packet_callback(packet: dict) -> None:
+            event_data: dict[str, Any] = {"type": "znet_raw_packet"}
+            for k, v in packet.items():
+                if isinstance(v, int) and k == "data":
+                    event_data[k] = hex(v)
+                else:
+                    event_data[k] = str(v) if not isinstance(v, (str, int, float, bool)) else v
+            hass.bus.async_fire(f"{DOMAIN}_event", event_data)
+
+        controller.add_raw_packet_callback(_mirror_raw_packet_callback)
+
     controller.start_event_listener()
 
     async def _on_hass_stop(_event: Any) -> None:
