@@ -218,6 +218,7 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
                 "Cannot send on command for %s: no telldusd device ID (UID mismatch?)",
                 self._device_uid,
             )
+        await self._async_mirror_command("turn_on")
         self._attr_is_on = True
         self.async_write_ha_state()
 
@@ -234,5 +235,6 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
                 "Cannot send off command for %s: no telldusd device ID (UID mismatch?)",
                 self._device_uid,
             )
+        await self._async_mirror_command("turn_off")
         self._attr_is_on = False
         self.async_write_ha_state()

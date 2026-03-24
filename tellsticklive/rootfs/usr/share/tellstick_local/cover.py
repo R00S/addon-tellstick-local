@@ -233,6 +233,7 @@ class TellStickCover(TellStickEntity, CoverEntity):
                 "Cannot send up command for %s: no telldusd device ID",
                 self._device_uid,
             )
+        await self._async_mirror_command("up")
         self._attr_is_closed = False
         self.async_write_ha_state()
 
@@ -245,6 +246,7 @@ class TellStickCover(TellStickEntity, CoverEntity):
                 "Cannot send down command for %s: no telldusd device ID",
                 self._device_uid,
             )
+        await self._async_mirror_command("down")
         self._attr_is_closed = True
         self.async_write_ha_state()
 
@@ -257,3 +259,4 @@ class TellStickCover(TellStickEntity, CoverEntity):
                 "Cannot send stop command for %s: no telldusd device ID",
                 self._device_uid,
             )
+        await self._async_mirror_command("stop")

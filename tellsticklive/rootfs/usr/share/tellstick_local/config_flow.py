@@ -46,6 +46,7 @@ from .const import (
     CONF_DEVICES,
     CONF_EVENT_PORT,
     CONF_IGNORED_UIDS,
+    CONF_MIRROR_OF,
     DEFAULT_AUTOMATIC_ADD,
     DEFAULT_COMMAND_PORT,
     DEFAULT_DETECT_SARTANO,
@@ -55,6 +56,7 @@ from .const import (
     DEVICE_CATALOG_MAP,
     DOMAIN,
     ENTRY_DEVICE_ID_MAP,
+    ENTRY_MIRRORS,
     ENTRY_TELLSTICK_CONTROLLER,
     PROTOCOL_MODEL_LABELS,
     PROTOCOL_MODEL_MAP,
@@ -355,6 +357,83 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # Net/ZNet specific state
         self._net_mac: str = ""
         self._net_discovered: list[tuple[str, str, str]] = []  # (ip, mac, raw)
+        # Pending entry data for mirror step (set before showing mirror_setup)
+        self._pending_backend: str = ""
+        self._pending_title: str = ""
+        self._pending_data: dict[str, Any] = {}
+        self._pending_options: dict[str, Any] = {}
+
+    def _get_existing_primary_entries(self) -> list[ConfigEntry]:
+        """Return existing non-mirror TellStick entries (any backend type)."""
+        return [
+            e
+            for e in self._async_current_entries()
+            if not e.data.get(CONF_MIRROR_OF)
+        ]
+
+    async def _async_create_or_mirror(
+        self,
+        title: str,
+        data: dict[str, Any],
+        options: dict[str, Any],
+    ) -> FlowResult:
+        """Create the entry directly or show the mirror step if primaries exist.
+
+        When there are existing non-mirror TellStick entries, the user gets the
+        option to set this new TellStick up as a mirror/range extender for one
+        of them.  The primary and mirror can be different backend types (e.g.
+        a Net/ZNet can mirror a Duo and vice versa).
+        """
+        primaries = self._get_existing_primary_entries()
+        if not primaries:
+            # No existing entries — create as standalone (no mirror option)
+            return self.async_create_entry(
+                title=title, data=data, options=options,
+            )
+
+        # Save pending entry data so mirror_setup can create the entry
+        self._pending_title = title
+        self._pending_data = data
+        self._pending_options = options
+        return await self.async_step_mirror_setup()
+
+    async def async_step_mirror_setup(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Ask if this TellStick should be a mirror/range extender."""
+        if user_input is not None:
+            mirror_of = user_input.get(CONF_MIRROR_OF, "")
+            if mirror_of:
+                # Set up as mirror — store mirror_of in entry data
+                self._pending_data[CONF_MIRROR_OF] = mirror_of
+                primary = self.hass.config_entries.async_get_entry(mirror_of)
+                primary_title = primary.title if primary else mirror_of
+                return self.async_create_entry(
+                    title=f"{self._pending_title} (mirror of {primary_title})",
+                    data=self._pending_data,
+                    options={},  # mirrors don't store devices
+                )
+            # Standalone — create without mirror_of
+            return self.async_create_entry(
+                title=self._pending_title,
+                data=self._pending_data,
+                options=self._pending_options,
+            )
+
+        primaries = self._get_existing_primary_entries()
+        mirror_options: dict[str, str] = {"": "— No, set up as standalone —"}
+        for entry in primaries:
+            mirror_options[entry.entry_id] = entry.title
+        return self.async_show_form(
+            step_id="mirror_setup",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_MIRROR_OF, default=""): vol.In(
+                        mirror_options
+                    ),
+                }
+            ),
+        )
 
     async def async_step_hassio(
         self, discovery_info: HassioServiceInfo
@@ -407,7 +486,7 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.exception("Unexpected error during connection validation")
                 errors["base"] = "unknown"
             else:
-                return self.async_create_entry(
+                return await self._async_create_or_mirror(
                     title="TellStick Duo",
                     data={
                         CONF_BACKEND: BACKEND_DUO,
@@ -415,9 +494,7 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_COMMAND_PORT: self._command_port,
                         CONF_EVENT_PORT: self._event_port,
                     },
-                    options={
-                        CONF_DEVICES: {},
-                    },
+                    options={CONF_DEVICES: {}},
                 )
 
         return self.async_show_form(
@@ -465,7 +542,7 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.exception("Unexpected error during connection validation")
                 errors["base"] = "unknown"
             else:
-                return self.async_create_entry(
+                return await self._async_create_or_mirror(
                     title=f"TellStick Duo ({host})",
                     data={
                         CONF_BACKEND: BACKEND_DUO,
@@ -473,9 +550,7 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_COMMAND_PORT: cmd_port,
                         CONF_EVENT_PORT: evt_port,
                     },
-                    options={
-                        CONF_DEVICES: {},
-                    },
+                    options={CONF_DEVICES: {}},
                 )
 
         return self.async_show_form(
@@ -597,16 +672,14 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     )
                     self._abort_if_unique_id_configured()
 
-                    return self.async_create_entry(
+                    return await self._async_create_or_mirror(
                         title=f"TellStick Net/ZNet ({self._host})",
                         data={
                             CONF_BACKEND: BACKEND_NET,
                             CONF_HOST: self._host,
                             "mac": self._net_mac,
                         },
-                        options={
-                            CONF_DEVICES: {},
-                        },
+                        options={CONF_DEVICES: {}},
                     )
 
         return self.async_show_form(
@@ -887,6 +960,19 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                 "Could not register discovered device %s with telldusd",
                                 device_uid,
                             )
+                    # Register on all mirror controllers too
+                    from . import _register_device_on_mirror  # noqa: PLC0415
+
+                    for mirror in entry_data.get(ENTRY_MIRRORS, []):
+                        await _register_device_on_mirror(
+                            mirror,
+                            device_uid,
+                            name,
+                            info.get("protocol", ""),
+                            info.get("model", ""),
+                            info.get("house", ""),
+                            info.get("unit", ""),
+                        )
             new_options = dict(entry.options)
             new_options[CONF_DEVICES] = existing_devices
             self.hass.config_entries.async_update_entry(
@@ -1865,6 +1951,20 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                     ENTRY_DEVICE_ID_MAP, {}
                 )
                 device_id_map[device_uid] = device_id_map_entry
+
+                # Register on all mirror controllers too
+                from . import _register_device_on_mirror  # noqa: PLC0415
+
+                for mirror in entry_data.get(ENTRY_MIRRORS, []):
+                    await _register_device_on_mirror(
+                        mirror,
+                        device_uid,
+                        self._new_device[CONF_DEVICE_NAME],
+                        self._new_device[CONF_DEVICE_PROTOCOL],
+                        self._new_device.get(CONF_DEVICE_MODEL, ""),
+                        self._new_device.get(CONF_DEVICE_HOUSE, ""),
+                        self._new_device.get(CONF_DEVICE_UNIT, ""),
+                    )
 
                 # Persist in entry.options[CONF_DEVICES]
                 existing_devices = dict(entry.options.get(CONF_DEVICES, {}))

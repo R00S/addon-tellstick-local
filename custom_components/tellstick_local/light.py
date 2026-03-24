@@ -230,8 +230,10 @@ class TellStickLight(TellStickEntity, LightEntity):
                 level = int(kwargs[ATTR_BRIGHTNESS])
                 await self._controller.dim(self._telldusd_device_id, level)
                 self._attr_brightness = level
+                await self._async_mirror_command("dim", level)
             else:
                 await self._controller.turn_on(self._telldusd_device_id)
+                await self._async_mirror_command("turn_on")
         else:
             _LOGGER.warning(
                 "Cannot send on command for %s: no telldusd device ID (UID mismatch?)",
@@ -249,5 +251,6 @@ class TellStickLight(TellStickEntity, LightEntity):
                 "Cannot send off command for %s: no telldusd device ID (UID mismatch?)",
                 self._device_uid,
             )
+        await self._async_mirror_command("turn_off")
         self._attr_is_on = False
         self.async_write_ha_state()
