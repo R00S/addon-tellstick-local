@@ -17,7 +17,11 @@ from homeassistant.helpers.issue_registry import (
     async_create_issue,
     async_delete_issue,
 )
-from homeassistant.config_entries import SOURCE_IGNORE, ConfigEntry
+from homeassistant.config_entries import (
+    SOURCE_IGNORE,
+    ConfigEntry,
+    ConfigEntryState,
+)
 from homeassistant.const import CONF_HOST, EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr, entity_registry as er
@@ -501,10 +505,11 @@ async def _register_mirror_devices(
                         name, protocol, model, house, unit,
                     )
                 mirror_device_id_map[device_uid] = telldusd_id
-            except Exception as err:  # noqa: BLE001
+            except Exception:  # noqa: BLE001
                 _LOGGER.warning(
-                    "Could not register device %s on mirror telldusd: %s",
-                    device_uid, err,
+                    "Could not register device %s on mirror telldusd",
+                    device_uid,
+                    exc_info=True,
                 )
 
     return mirror_device_id_map
@@ -540,8 +545,9 @@ async def _register_device_on_mirror(
             device_id_map[device_uid] = telldusd_id
         except Exception:  # noqa: BLE001
             _LOGGER.warning(
-                "Could not register device %s on mirror: %s",
+                "Could not register device %s on mirror %s",
                 device_uid, mirror.get("entry_id", "?"),
+                exc_info=True,
             )
     else:
         # Net/ZNet mirror: store param dict
@@ -605,7 +611,7 @@ async def _setup_mirror_entry(
     # and trigger device discovery.
     @callback
     def _mirror_event_callback(event: Any) -> None:
-        if primary_entry.state.recoverable:
+        if primary_entry.state is ConfigEntryState.LOADED:
             _handle_event(hass, primary_entry, event)
 
     controller.add_callback(_mirror_event_callback)

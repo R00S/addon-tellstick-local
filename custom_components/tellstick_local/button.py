@@ -142,5 +142,7 @@ class TellStickLearnButton(ButtonEntity):
                     await mirror["controller"].learn(mirror_device_id)
                 except Exception:  # noqa: BLE001
                     _LOGGER.warning(
-                        "Mirror learn command failed for %s", self._device_uid
+                        "Mirror learn command failed for %s",
+                        self._device_uid,
+                        exc_info=True,
                     )

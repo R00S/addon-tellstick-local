@@ -86,5 +86,7 @@ class TellStickEntity(RestoreEntity):
                 await method(mirror_device_id, *args)
             except Exception:  # noqa: BLE001
                 _LOGGER.warning(
-                    "Mirror command %s failed for %s", command, self._device_uid
+                    "Mirror command %s failed for %s",
+                    command, self._device_uid,
+                    exc_info=True,
                 )
