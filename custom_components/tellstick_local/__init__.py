@@ -1302,11 +1302,15 @@ def _handle_sensor_event(
         if suffix:
             sensor_uid = f"sensor_{event.sensor_id}_{suffix}"
             if sensor_uid not in stored_devices:
-                # Derive device name from existing companion entry
+                # Derive device name and group_sensor_id from existing
+                # companion entry so multi-probe grouping propagates to
+                # new data types automatically.
                 base_name = ""
+                group_sensor_id = None
                 for uid, cfg in stored_devices.items():
                     if uid.startswith(sensor_prefix):
                         base_name = cfg.get(CONF_DEVICE_NAME, "")
+                        group_sensor_id = cfg.get("group_sensor_id")
                         break
                 for s in _SENSOR_SUFFIX.values():
                     if base_name.lower().endswith(f" {s}"):
@@ -1314,14 +1318,17 @@ def _handle_sensor_event(
                         break
                 if not base_name:
                     base_name = f"TellStick sensor {event.sensor_id}"
-                existing_devices = dict(stored_devices)
-                existing_devices[sensor_uid] = {
+                new_entry: dict = {
                     CONF_DEVICE_NAME: f"{base_name} {suffix}",
                     CONF_DEVICE_PROTOCOL: event.protocol or "",
                     CONF_DEVICE_MODEL: event.model or "",
                     "sensor_id": event.sensor_id,
                     "data_type": event.data_type,
                 }
+                if group_sensor_id is not None:
+                    new_entry["group_sensor_id"] = group_sensor_id
+                existing_devices = dict(stored_devices)
+                existing_devices[sensor_uid] = new_entry
                 new_options = dict(entry.options)
                 new_options[CONF_DEVICES] = existing_devices
                 hass.config_entries.async_update_entry(

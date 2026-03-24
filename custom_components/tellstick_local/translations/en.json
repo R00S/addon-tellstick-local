@@ -70,13 +70,14 @@
       },
       "add_rf_device": {
         "title": "New 433 MHz device detected",
-        "description": "A 433 MHz device was detected via RF signal:\n\n- **Protocol:** {protocol}\n- **Model:** {model}\n- **House:** {house}\n- **Unit:** {unit}\n- **UID:** {device_uid}\n\nGive the device a name and click **Submit** to add it. You can also select an existing device to replace (e.g. after battery change), or check **Ignore** to hide it.",
+        "description": "A 433 MHz device was detected via RF signal:\n\n- **Protocol:** {protocol}\n- **Model:** {model}\n- **House:** {house}\n- **Unit:** {unit}\n- **UID:** {device_uid}\n\nGive the device a name and click **Submit** to add it.\n\nFor sensors you can also **add to an existing device** (e.g. indoor + outdoor probes of the same weather station) or **replace** an existing sensor (e.g. after battery change). Check **Ignore** to hide it.",
         "data": {
           "name": "Device name",
-          "replace_device": "Replace existing device",
+          "replace_device": "Existing device",
           "ignore": "Ignore this device"
         },
         "data_description": {
+          "replace_device": "Add as new device, add to an existing device (group), or replace an existing sensor (battery change).",
           "ignore": "Check to permanently hide this device. You can un-ignore it later from integration options."
         }
       }

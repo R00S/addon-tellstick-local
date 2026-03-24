@@ -81,6 +81,7 @@ async def async_setup_entry(
                 model=device_cfg.get(CONF_DEVICE_MODEL, ""),
                 sensor_id=sensor_id,
                 data_type=data_type,
+                group_sensor_id=device_cfg.get("group_sensor_id"),
             )
         )
     if stored_entities:
@@ -121,6 +122,7 @@ async def async_setup_entry(
             model=model,
             sensor_id=event.sensor_id,
             data_type=event.data_type,
+            group_sensor_id=stored_cfg.get("group_sensor_id"),
         )
         # Set initial value from the event that triggered creation.
         # SIGNAL_EVENT fires before SIGNAL_NEW_DEVICE in __init__.py, so
@@ -155,18 +157,27 @@ class TellStickSensor(TellStickEntity, SensorEntity):
         model: str,
         sensor_id: int,
         data_type: int,
+        group_sensor_id: int | None = None,
     ) -> None:
         """Initialize a TellStick sensor."""
         meta = _SENSOR_META.get(data_type)
         suffix, device_class, unit = meta if meta else (None, None, None)
 
-        # Entity name is just the measurement type ("Temperature" / "Humidity").
-        # With _attr_has_entity_name = True the HA frontend displays it as
-        # "{device name} Temperature", which is the standard HA pattern.
-        # Note: suffix is None only for unknown data_types, which are already
-        # filtered out by the _SENSOR_META check in async_setup_entry, so
-        # the fallback to `name` is purely defensive.
-        type_name = suffix.capitalize() if suffix else name
+        # When grouped under another sensor's device, the entity name
+        # should distinguish itself from the parent's entities (which
+        # already have a plain "Temperature" / "Humidity" name).
+        # Use the full user-provided name as the entity name so the UI
+        # shows e.g. "Outdoor temperature" next to "Temperature".
+        if group_sensor_id is not None and suffix:
+            if suffix and name.lower().endswith(f" {suffix}"):
+                type_name = name  # full name IS already descriptive
+            else:
+                type_name = name
+        else:
+            # Entity name is just the measurement type ("Temperature" /
+            # "Humidity").  With _attr_has_entity_name = True the HA
+            # frontend displays it as "{device name} Temperature".
+            type_name = suffix.capitalize() if suffix else name
 
         # Device name: strip the type suffix from the stored name so that
         # temperature and humidity entities share a consistent device name.
@@ -195,11 +206,14 @@ class TellStickSensor(TellStickEntity, SensorEntity):
         # Group temperature + humidity from the same physical sensor under one
         # HA device.  Use sensor_{sensor_id} (without the type suffix) as the
         # shared device identifier so both entities appear under one device.
+        # When group_sensor_id is set, the entity is placed under the target
+        # sensor's device (multi-probe weather stations sharing one device).
         # _attr_unique_id is still {entry_id}_sensor_{id}_{suffix} (unchanged)
         # so entity history and entity_ids are fully preserved.
+        device_sensor_id = group_sensor_id if group_sensor_id is not None else sensor_id
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{entry_id}_sensor_{sensor_id}")},
-            name=device_name,
+            identifiers={(DOMAIN, f"{entry_id}_sensor_{device_sensor_id}")},
+            name=device_name if group_sensor_id is None else None,
             model=f"{protocol}/{model}" if model else protocol,
         )
 
