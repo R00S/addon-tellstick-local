@@ -208,11 +208,21 @@ class TellStickSensor(TellStickEntity, SensorEntity):
         # _attr_unique_id is still {entry_id}_sensor_{id}_{suffix} (unchanged)
         # so entity history and entity_ids are fully preserved.
         device_sensor_id = group_sensor_id if group_sensor_id is not None else sensor_id
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{entry_id}_sensor_{device_sensor_id}")},
-            name=device_name if group_sensor_id is None else None,
-            model=f"{protocol}/{model}" if model else protocol,
-        )
+        # When grouped under another sensor's device, omit `name` entirely so
+        # HA's device registry does not overwrite the existing device name with
+        # None (which would show "unnamed device" in the UI).  Only set `name`
+        # when this entity owns the device (group_sensor_id is None).
+        if group_sensor_id is None:
+            self._attr_device_info = DeviceInfo(
+                identifiers={(DOMAIN, f"{entry_id}_sensor_{device_sensor_id}")},
+                name=device_name,
+                model=f"{protocol}/{model}" if model else protocol,
+            )
+        else:
+            self._attr_device_info = DeviceInfo(
+                identifiers={(DOMAIN, f"{entry_id}_sensor_{device_sensor_id}")},
+                model=f"{protocol}/{model}" if model else protocol,
+            )
 
         self._sensor_id = sensor_id
         self._data_type = data_type
