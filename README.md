@@ -51,28 +51,28 @@ YAML file editing.
 
 ### What you get
 
-| Capability                  | Description                                                                                                         |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **Auto install prompt**     | Install the app → HA automatically offers "Set up TellStick Local?"                                                 |
-| **Press-to-discover**       | Press any 433 MHz remote → device appears in HA (auto-add or discovery prompt)                                      |
-| **Add device button**       | Click "Add device" → choose "Add by brand" or "Add by protocol" → send pairing signal                               |
-| **Ignore unwanted devices** | Check "Ignore" on the discovery form to permanently hide false-positive detections                                  |
-| **Learn button per device** | Each switch/light device has a "Send learn signal" button on its device page                                        |
-| **Edit existing devices**   | Change name, house/unit codes, or sensor ID — with full entity history preserved                                    |
-| **Replace device (sensor)** | After battery replacement, reassign a new sensor ID to an existing device                                           |
-| **Group sensor probes**     | Multi-probe weather stations: group extra probes under one device for a clean UI                                    |
-| **Multi-select removal**    | Select and delete multiple devices at once from the integration options                                             |
-| **Per-device deletion**     | Delete any device from its device page ⋮ menu                                                                       |
-| **Device state info**       | Protocol, model, house code and unit code shown as entity state attributes                                          |
-| **GUI-only management**     | Add, rename, edit and remove devices via HA UI — no YAML, no restart                                                |
-| **Upgrade notifications**   | After an app update, HA shows a persistent notification to restart — go to **Settings → Developer tools → Restart** |
-| **Local push**              | RF events arrive in real time; no polling, no cloud                                                                 |
-| **Automations**             | Device triggers on any 433 MHz button press, usable directly in HA automations                                      |
-| **HA bus events**           | Every RF signal fires a `tellstick_local_event` on the HA bus — use in automations or Developer Tools               |
-| **Mirror / range extender** | Use a second TellStick as a mirror to extend RF coverage — all commands are replicated automatically                |
-| **Debug connection**        | Service action `tellstick_local.debug_connection` logs connection state and last events                             |
-| **Companion app**           | Identical UX in the HA Android/iOS app                                                                              |
-| **No Telldus Live required** | Zero cloud, zero account, zero internet dependency                                                                 |
+| Capability                   | Description                                                                                                         |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **Auto install prompt**      | Install the app → HA automatically offers "Set up TellStick Local?"                                                 |
+| **Press-to-discover**        | Press any 433 MHz remote → device appears in HA (auto-add or discovery prompt)                                      |
+| **Add device button**        | Click "Add device" → choose "Add by brand" or "Add by protocol" → send pairing signal                               |
+| **Ignore unwanted devices**  | Check "Ignore" on the discovery form to permanently hide false-positive detections                                  |
+| **Learn button per device**  | Each switch/light device has a "Send learn signal" button on its device page                                        |
+| **Edit existing devices**    | Change name, house/unit codes, or sensor ID — with full entity history preserved                                    |
+| **Replace device (sensor)**  | After battery replacement, reassign a new sensor ID to an existing device                                           |
+| **Group sensor probes**      | Multi-probe weather stations: group extra probes under one device for a clean UI                                    |
+| **Multi-select removal**     | Select and delete multiple devices at once from the integration options                                             |
+| **Per-device deletion**      | Delete any device from its device page ⋮ menu                                                                       |
+| **Device state info**        | Protocol, model, house code and unit code shown as entity state attributes                                          |
+| **GUI-only management**      | Add, rename, edit and remove devices via HA UI — no YAML, no restart                                                |
+| **Upgrade notifications**    | After an app update, HA shows a persistent notification to restart — go to **Settings → Developer tools → Restart** |
+| **Local push**               | RF events arrive in real time; no polling, no cloud                                                                 |
+| **Automations**              | Device triggers on any 433 MHz button press, usable directly in HA automations                                      |
+| **HA bus events**            | Every RF signal fires a `tellstick_local_event` on the HA bus — use in automations or Developer Tools               |
+| **Mirror / range extender**  | Use a second TellStick as a mirror to extend RF coverage — all commands are replicated automatically                |
+| **Debug connection**         | Service action `tellstick_local.debug_connection` logs connection state and last events                             |
+| **Companion app**            | Identical UX in the HA Android/iOS app                                                                              |
+| **No Telldus Live required** | Zero cloud, zero account, zero internet dependency                                                                  |
 
 ---
 
