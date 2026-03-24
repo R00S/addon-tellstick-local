@@ -55,6 +55,7 @@ async def async_setup_entry(
                 name=device_cfg.get(CONF_DEVICE_NAME, f"TellStick {device_uid}"),
                 protocol=device_cfg.get(CONF_DEVICE_PROTOCOL, ""),
                 model=device_cfg.get(CONF_DEVICE_MODEL, ""),
+                group_uid=device_cfg.get("group_uid") or None,
             )
         )
     if stored_entities:
@@ -80,6 +81,7 @@ async def async_setup_entry(
             name=name,
             protocol=params.get("protocol", ""),
             model=params.get("model", ""),
+            group_uid=stored.get("group_uid") or None,
         )
         async_add_entities([entity])
 
@@ -106,14 +108,21 @@ class TellStickLearnButton(ButtonEntity):
         name: str,
         protocol: str,
         model: str,
+        group_uid: str | None = None,
     ) -> None:
         """Initialize the learn button."""
         self._entry_id = entry_id
         self._device_uid = device_uid
         self._attr_unique_id = f"{entry_id}_{device_uid}_learn"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{entry_id}_{device_uid}")},
-        )
+        if group_uid:
+            self._attr_device_info = DeviceInfo(
+                identifiers={(DOMAIN, f"{entry_id}_group_{group_uid}")},
+                name=group_uid,
+            )
+        else:
+            self._attr_device_info = DeviceInfo(
+                identifiers={(DOMAIN, f"{entry_id}_{device_uid}")},
+            )
 
     async def async_press(self) -> None:
         """Send learn signal when pressed."""
