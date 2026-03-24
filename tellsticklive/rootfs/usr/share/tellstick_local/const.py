@@ -25,7 +25,11 @@ DOMAIN = "tellstick_local"
 #     2. custom_components/tellstick_local/const.py               (INTEGRATION_VERSION)
 #     3. tellsticklive/rootfs/usr/share/tellstick_local/manifest.json  ("version")
 #     4. tellsticklive/rootfs/usr/share/tellstick_local/const.py  (INTEGRATION_VERSION)
-INTEGRATION_VERSION = "2.5.1.0"
+
+
+
+INTEGRATION_VERSION = "3.0.0.0"
+
 
 # Backend type stored in config entry data
 CONF_BACKEND = "backend"
