@@ -22,7 +22,7 @@ from homeassistant.config_entries import (
     ConfigEntry,
     ConfigEntryState,
 )
-from homeassistant.const import CONF_HOST, EVENT_HOMEASSISTANT_STOP
+from homeassistant.const import CONF_HOST, EVENT_HOMEASSISTANT_STARTED, EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
@@ -651,6 +651,18 @@ async def _setup_mirror_entry(
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _on_hass_stop)
     )
 
+    # For Net/ZNet mirrors: re-send reglistener once HA has fully started.
+    if backend == BACKEND_NET:
+
+        async def _on_hass_started_mirror(_event: Any) -> None:
+            await controller.reconnect()
+
+        entry.async_on_unload(
+            hass.bus.async_listen_once(
+                EVENT_HOMEASSISTANT_STARTED, _on_hass_started_mirror
+            )
+        )
+
     # Register with the primary entry's data so entities can send
     # commands through the mirror.
     primary_data = hass.data.get(DOMAIN, {}).get(mirror_of)
@@ -872,6 +884,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.async_on_unload(
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _on_hass_stop)
     )
+
+    # For the Net backend: re-send reglistener once HA has fully started.
+    # After a HAOS restart the initial reglistener (sent in connect()) may be
+    # lost if the ZNet device is not yet reachable when HA boots.  Re-sending
+    # once all integrations have loaded ensures reliable event registration.
+    if backend == BACKEND_NET:
+
+        async def _on_hass_started(_event: Any) -> None:
+            await controller.reconnect()
+
+        entry.async_on_unload(
+            hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _on_hass_started)
+        )
 
     # Listen for options changes (reload only when automatic_add changes)
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))

@@ -28,6 +28,7 @@ class TellStickEntity(RestoreEntity):
         house: str = "",
         unit: str = "",
         manufacturer: str = "",
+        group_uid: str | None = None,
     ) -> None:
         """Initialize a TellStick entity."""
         self._entry_id = entry_id
@@ -38,18 +39,29 @@ class TellStickEntity(RestoreEntity):
         self._unit = unit
 
         self._attr_unique_id = f"{entry_id}_{device_uid}"
-        # Set name to None so HA treats this entity as the "main feature" of
-        # the device.  With _attr_has_entity_name=True and name=None, the
-        # friendly name is just the device name (e.g. "Boxarna"), rather than
-        # the duplicated "{device} {entity}" form (e.g. "Boxarna Boxarna").
-        # Sensor subclasses override this to set a type suffix ("Temperature").
-        self._attr_name = None
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{entry_id}_{device_uid}")},
-            name=name,
-            manufacturer=manufacturer or None,
-            model=f"{protocol}/{model}" if model else protocol,
-        )
+        if group_uid:
+            # Entity belongs to a shared group device.  The entity name is the
+            # device's own name; the HA device is identified by the group name.
+            # With _attr_has_entity_name=True, the frontend shows
+            # "{group_uid} {name}" (e.g. "Living Room Switch A").
+            self._attr_name = name
+            self._attr_device_info = DeviceInfo(
+                identifiers={(DOMAIN, f"{entry_id}_group_{group_uid}")},
+                name=group_uid,
+                manufacturer=manufacturer or None,
+            )
+        else:
+            # Standalone: entity IS the "main feature" of its own device.
+            # With _attr_has_entity_name=True and name=None, the friendly name
+            # is just the device name (e.g. "Boxarna"), not "Boxarna Boxarna".
+            # Sensor subclasses override this to set a type suffix ("Temperature").
+            self._attr_name = None
+            self._attr_device_info = DeviceInfo(
+                identifiers={(DOMAIN, f"{entry_id}_{device_uid}")},
+                name=name,
+                manufacturer=manufacturer or None,
+                model=f"{protocol}/{model}" if model else protocol,
+            )
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

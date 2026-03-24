@@ -91,6 +91,7 @@ async def async_setup_entry(
                 house=device_cfg.get(CONF_DEVICE_HOUSE, ""),
                 unit=device_cfg.get(CONF_DEVICE_UNIT, ""),
                 manufacturer=manufacturer,
+                group_uid=device_cfg.get("group_uid") or None,
             )
         )
     if stored_entities:
@@ -132,6 +133,7 @@ async def async_setup_entry(
             house=params.get("house", ""),
             unit=params.get("unit", params.get("code", "")),
             manufacturer=manufacturer,
+            group_uid=stored.get("group_uid") or None,
         )
         async_add_entities([entity])
 
@@ -158,6 +160,7 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
         house: str = "",
         unit: str = "",
         manufacturer: str = "",
+        group_uid: str | None = None,
     ) -> None:
         """Initialize a TellStick switch."""
         super().__init__(
@@ -169,6 +172,7 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
             house=house,
             unit=unit,
             manufacturer=manufacturer,
+            group_uid=group_uid,
         )
         self._controller = controller
         self._telldusd_device_id = device_id

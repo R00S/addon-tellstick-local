@@ -1122,6 +1122,81 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             },
         )
 
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Allow changing the connection settings of an existing entry.
+
+        Shown as "Reconfigure" in the config entry gear menu.  Lets users
+        update the hostname (or IP address) and ports without losing stored
+        device configuration — for example when switching between the stable
+        and dev channel add-ons, which have different Supervisor hostnames.
+        """
+        entry = self._get_reconfigure_entry()
+        backend = entry.data.get(CONF_BACKEND, BACKEND_DUO)
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            new_host = user_input[CONF_HOST].strip()
+            new_data = dict(entry.data)
+            new_data[CONF_HOST] = new_host
+            if backend == BACKEND_DUO:
+                new_data[CONF_COMMAND_PORT] = user_input[CONF_COMMAND_PORT]
+                new_data[CONF_EVENT_PORT] = user_input[CONF_EVENT_PORT]
+                try:
+                    await _validate_connection(
+                        new_host,
+                        user_input[CONF_COMMAND_PORT],
+                        user_input[CONF_EVENT_PORT],
+                    )
+                except (asyncio.TimeoutError, OSError):
+                    errors["base"] = "cannot_connect"
+                except Exception:  # noqa: BLE001
+                    _LOGGER.exception("Unexpected error during reconfigure validation")
+                    errors["base"] = "unknown"
+            if not errors:
+                # Update the unique_id to match the new host if it was
+                # host-based (set by async_step_hassio / async_step_duo).
+                old_host = entry.data.get(CONF_HOST, "")
+                old_cmd = entry.data.get(CONF_COMMAND_PORT, DEFAULT_COMMAND_PORT)
+                if entry.unique_id == f"{old_host}:{old_cmd}":
+                    new_cmd = new_data.get(CONF_COMMAND_PORT, DEFAULT_COMMAND_PORT)
+                    await self.async_set_unique_id(f"{new_host}:{new_cmd}")
+                    self._abort_if_unique_id_configured(
+                        updates={CONF_HOST: new_host}
+                    )
+                return self.async_update_reload_and_abort(
+                    entry, data=new_data, reason="reconfigure_successful"
+                )
+
+        current_host = entry.data.get(CONF_HOST, "")
+        if backend == BACKEND_DUO:
+            schema = vol.Schema(
+                {
+                    vol.Required(CONF_HOST, default=current_host): str,
+                    vol.Required(
+                        CONF_COMMAND_PORT,
+                        default=entry.data.get(
+                            CONF_COMMAND_PORT, DEFAULT_COMMAND_PORT
+                        ),
+                    ): vol.All(int, vol.Range(min=1, max=65535)),
+                    vol.Required(
+                        CONF_EVENT_PORT,
+                        default=entry.data.get(
+                            CONF_EVENT_PORT, DEFAULT_EVENT_PORT
+                        ),
+                    ): vol.All(int, vol.Range(min=1, max=65535)),
+                }
+            )
+        else:
+            schema = vol.Schema({vol.Required(CONF_HOST, default=current_host): str})
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=schema,
+            errors=errors,
+        )
+
     @staticmethod
     @callback
     def async_get_options_flow(
@@ -1145,6 +1220,16 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
     """Handle options for TellStick Local."""
 
     _edit_uid: str = ""
+    _move_target_entry_id: str = ""
+
+    def _get_other_primary_entries(self) -> list[ConfigEntry]:
+        """Return primary TellStick entries other than this one."""
+        return [
+            e
+            for e in self.hass.config_entries.async_entries(DOMAIN)
+            if e.entry_id != self.config_entry.entry_id
+            and not e.data.get(CONF_MIRROR_OF)
+        ]
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -1241,6 +1326,12 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
             name = _strip_sensor_suffix(name)
 
         menu_options = ["device_detail"]
+        # Allow moving to another instance when other primary entries exist
+        if self._get_other_primary_entries():
+            menu_options.append("move_device")
+        # Allow grouping for non-sensor devices
+        if not uid.startswith("sensor_"):
+            menu_options.append("group_device")
         menu_options.append("delete_device")
 
         return self.async_show_menu(
@@ -1404,6 +1495,176 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                 "device_uid": uid,
                 "protocol": protocol,
                 "model": model,
+            },
+        )
+
+    # -----------------------------------------------------------------
+    # Move device to another TellStick instance
+    # -----------------------------------------------------------------
+
+    async def async_step_move_device(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Select the target TellStick instance to move this device to."""
+        uid = self._edit_uid
+        devices = self.config_entry.options.get(CONF_DEVICES, {})
+        cfg = devices.get(uid, {})
+        name = cfg.get(CONF_DEVICE_NAME, uid)
+        if uid.startswith("sensor_"):
+            name = _strip_sensor_suffix(name)
+
+        if user_input is not None:
+            self._move_target_entry_id = user_input["target_entry"]
+            return await self.async_step_move_device_confirm()
+
+        primaries = self._get_other_primary_entries()
+        options: dict[str, str] = {e.entry_id: e.title for e in primaries}
+
+        return self.async_show_form(
+            step_id="move_device",
+            data_schema=vol.Schema(
+                {vol.Required("target_entry"): vol.In(options)}
+            ),
+            description_placeholders={"name": name},
+        )
+
+    async def async_step_move_device_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Confirm moving the device to the selected instance."""
+        uid = self._edit_uid
+        src_entry = self.config_entry
+        dst_entry_id = self._move_target_entry_id
+        dst_entry = self.hass.config_entries.async_get_entry(dst_entry_id)
+
+        src_devices = dict(src_entry.options.get(CONF_DEVICES, {}))
+        cfg = dict(src_devices.get(uid, {}))
+        name = cfg.get(CONF_DEVICE_NAME, uid)
+        if uid.startswith("sensor_"):
+            name = _strip_sensor_suffix(name)
+
+        if user_input is not None and dst_entry is not None:
+            dst_devices = dict(dst_entry.options.get(CONF_DEVICES, {}))
+
+            # Collect all UIDs to move (sensors: include companion entries)
+            uids_to_move = [uid]
+            if uid.startswith("sensor_"):
+                sensor_id = src_devices.get(uid, {}).get("sensor_id")
+                if sensor_id is not None:
+                    for o_uid, o_cfg in src_devices.items():
+                        if (
+                            o_uid != uid
+                            and o_uid.startswith("sensor_")
+                            and o_cfg.get("sensor_id") == sensor_id
+                        ):
+                            uids_to_move.append(o_uid)
+
+            # Copy device configs to destination and remove from source
+            for move_uid in uids_to_move:
+                dst_devices[move_uid] = src_devices.pop(move_uid, {})
+
+            # Update entity registry — change unique_id and config_entry_id
+            # so the entity keeps its entity_id and state history.
+            ent_reg = er.async_get(self.hass)
+            for ent in list(
+                er.async_entries_for_config_entry(ent_reg, src_entry.entry_id)
+            ):
+                for move_uid in uids_to_move:
+                    if ent.unique_id == f"{src_entry.entry_id}_{move_uid}":
+                        new_unique_id = f"{dst_entry_id}_{move_uid}"
+                        try:
+                            ent_reg.async_update_entity(
+                                ent.entity_id,
+                                new_unique_id=new_unique_id,
+                                config_entry_id=dst_entry_id,
+                            )
+                        except Exception:  # noqa: BLE001
+                            _LOGGER.warning(
+                                "Could not update entity registry for %s during move",
+                                ent.entity_id,
+                            )
+
+            # Persist updated options on both entries
+            new_src_opts = dict(src_entry.options)
+            new_src_opts[CONF_DEVICES] = src_devices
+            self.hass.config_entries.async_update_entry(
+                src_entry, options=new_src_opts
+            )
+            new_dst_opts = dict(dst_entry.options)
+            new_dst_opts[CONF_DEVICES] = dst_devices
+            self.hass.config_entries.async_update_entry(
+                dst_entry, options=new_dst_opts
+            )
+
+            # Reload both entries so entities are correctly placed
+            self.hass.async_create_task(
+                self.hass.config_entries.async_reload(src_entry.entry_id)
+            )
+            self.hass.async_create_task(
+                self.hass.config_entries.async_reload(dst_entry_id)
+            )
+            return self.async_abort(reason="device_moved")
+
+        dst_title = dst_entry.title if dst_entry else dst_entry_id
+        return self.async_show_form(
+            step_id="move_device_confirm",
+            description_placeholders={
+                "name": name,
+                "src": src_entry.title,
+                "dst": dst_title,
+            },
+        )
+
+    # -----------------------------------------------------------------
+    # Group device under a shared HA device
+    # -----------------------------------------------------------------
+
+    async def async_step_group_device(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Set or clear a device group for this device."""
+        uid = self._edit_uid
+        devices = dict(self.config_entry.options.get(CONF_DEVICES, {}))
+        cfg = dict(devices.get(uid, {}))
+        name = cfg.get(CONF_DEVICE_NAME, uid)
+
+        if user_input is not None:
+            group_uid = user_input.get("group_uid", "").strip()
+            if group_uid:
+                cfg["group_uid"] = group_uid
+            else:
+                cfg.pop("group_uid", None)
+            devices[uid] = cfg
+            new_options = dict(self.config_entry.options)
+            new_options[CONF_DEVICES] = devices
+            # Reload so the entity picks up the updated device_info grouping
+            self.hass.async_create_task(
+                self.hass.config_entries.async_reload(
+                    self.config_entry.entry_id
+                )
+            )
+            return self.async_create_entry(title="", data=new_options)
+
+        # Suggest existing group names from all devices for convenience
+        current_group = cfg.get("group_uid", "")
+        existing_groups: list[str] = sorted(
+            {
+                d_cfg["group_uid"]
+                for d_cfg in devices.values()
+                if d_cfg.get("group_uid")
+            }
+        )
+
+        return self.async_show_form(
+            step_id="group_device",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional("group_uid", default=current_group): str,
+                }
+            ),
+            description_placeholders={
+                "name": name,
+                "existing_groups": ", ".join(existing_groups) or "—",
             },
         )
 

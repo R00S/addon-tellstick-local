@@ -1429,6 +1429,24 @@ class TellStickNetController:
         self._event_task = asyncio.ensure_future(self._event_loop())
         self._reregister_task = asyncio.ensure_future(self._reregister_loop())
 
+    async def reconnect(self) -> None:
+        """Re-send reglistener without rebinding the socket.
+
+        Call this after HA has fully started to recover from a lost initial
+        registration (e.g. ZNet not reachable during early HAOS boot).
+        """
+        if self._sock is None:
+            return
+        try:
+            await self._send_raw(encode_packet("reglistener"))
+            _LOGGER.info(
+                "Net: re-sent reglistener to %s (post-start registration)", self.host
+            )
+        except OSError as err:
+            _LOGGER.warning(
+                "Net: post-start registration failed for %s: %s", self.host, err
+            )
+
     def add_callback(self, callback: Callable[[Any], None]) -> None:
         self._callbacks.append(callback)
 
@@ -1595,8 +1613,17 @@ class TellStickNetController:
             except asyncio.CancelledError:
                 break
             except OSError as err:
-                _LOGGER.warning("Net event error for %s: %s", self.host, err)
-                break
+                if self._sock is None:
+                    # Socket was closed intentionally by disconnect() — stop.
+                    break
+                # Transient network error (e.g. interface briefly down after
+                # HAOS restart).  Retry after a short delay instead of dying
+                # permanently, so events resume once the network recovers.
+                _LOGGER.warning(
+                    "Net event error for %s: %s — retrying in 5s", self.host, err
+                )
+                await asyncio.sleep(5)
+                continue
             except Exception as err:  # noqa: BLE001
                 _LOGGER.debug("Net: packet processing error: %s", err)
 
