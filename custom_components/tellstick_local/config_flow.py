@@ -69,6 +69,10 @@ SUBENTRY_TYPE_DEVICE = "device"
 
 _LOGGER = logging.getLogger(__name__)
 
+# Prefix used in the discovery dropdown to distinguish "Add to device"
+# selections from "Replace device" selections.
+_GROUP_PREFIX = "group_"
+
 STEP_USER_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_HOST, default=DEFAULT_HOST): str,
@@ -711,6 +715,50 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             name = user_input.get("name", default_name)
             replace_uid = user_input.get("replace_device", "")
 
+            if replace_uid.startswith(_GROUP_PREFIX):
+                # ── Add to existing device (group) ──────────────────
+                # The user wants this sensor to appear as an entity
+                # within an existing sensor device (e.g. indoor + outdoor
+                # probes of the same weather station).
+                target_uid = replace_uid[len(_GROUP_PREFIX):]
+                target_cfg = entry.options.get(CONF_DEVICES, {}).get(
+                    target_uid, {}
+                )
+                target_sensor_id = target_cfg.get("sensor_id")
+
+                existing_devices = dict(
+                    entry.options.get(CONF_DEVICES, {})
+                )
+                existing_devices[device_uid] = {
+                    CONF_DEVICE_NAME: name,
+                    CONF_DEVICE_PROTOCOL: info.get("protocol", ""),
+                    CONF_DEVICE_MODEL: info.get("model", ""),
+                    "sensor_id": info.get("sensor_id"),
+                    "data_type": info.get("data_type"),
+                    "group_sensor_id": target_sensor_id,
+                }
+                new_options = dict(entry.options)
+                new_options[CONF_DEVICES] = existing_devices
+                self.hass.config_entries.async_update_entry(
+                    entry, options=new_options
+                )
+
+                # Fire SIGNAL_NEW_DEVICE so the entity is created now
+                synthetic = SensorEvent(
+                    protocol=info.get("protocol", ""),
+                    model=info.get("model", ""),
+                    sensor_id=info.get("sensor_id", 0),
+                    data_type=info.get("data_type", 0),
+                    value="",
+                )
+                async_dispatcher_send(
+                    self.hass,
+                    SIGNAL_NEW_DEVICE.format(entry.entry_id),
+                    synthetic,
+                )
+
+                return self.async_abort(reason="device_added")
+
             if replace_uid:
                 # Replace existing device — migrate UID + preserve history
                 replace_cfg = dict(
@@ -961,9 +1009,14 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if compatible:
                 replace_options = {"": "— Add as new device —"}
                 for uid, cfg in compatible.items():
-                    replace_options[uid] = _build_device_label(
+                    label = _build_device_label(
                         uid, cfg, sensor_grouped=is_sensor
                     )
+                    if is_sensor:
+                        replace_options[f"{_GROUP_PREFIX}{uid}"] = (
+                            f"Add to: {label}"
+                        )
+                    replace_options[uid] = f"Replace: {label}"
                 schema_dict[
                     vol.Optional("replace_device", default="")
                 ] = vol.In(replace_options)
@@ -1627,8 +1680,8 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                 self.config_entry.entry_id, {}
             )
             discovered: set[str] = entry_data.get("_discovered_uids", set())
-            seen_proto_models: set[str] = entry_data.get(
-                "_discovered_protocol_models", set()
+            seen_proto_models: dict[str, float] = entry_data.get(
+                "_discovered_protocol_models", {}
             )
             for uid in to_unignore:
                 discovered.discard(uid)
@@ -1648,7 +1701,7 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                     # proto_model_key used in _fire_device_discovery is "{protocol}_{model}".
                     parts = uid.split("_", 2)
                     if len(parts) >= 2:
-                        seen_proto_models.discard(f"{parts[0]}_{parts[1]}")
+                        seen_proto_models.pop(f"{parts[0]}_{parts[1]}", None)
 
             return self.async_create_entry(title="", data=new_options)
 

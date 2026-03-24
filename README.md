@@ -5,8 +5,9 @@
 > Minor issues may remain. If you hit any problem, please [open an issue][issue].
 
 > [!WARNING]
-> **🔴 TellStick Net / ZNet — ALPHA** – Basic on/off commands and event reception work
-> for common protocols (arctech, everflourish). Many edge cases are untested. Do not
+> **🔴 TellStick Net / ZNet — ALPHA** – On/off commands and event reception work for
+> all major protocols (arctech, everflourish, waveman, sartano, x10, hasta) and all
+> sensor protocols (fineoffset, mandolyn, oregon). Many edge cases are untested. Do not
 > use in a production setup. Feedback and bug reports are very welcome.
 
 > [!CAUTION]
@@ -37,7 +38,7 @@ YAML file editing.
 > **Hardware support status:**
 >
 > - **TellStick Duo** (USB stick) — **Release Candidate.** Core features are working and well-tested.
-> - **TellStick Net / ZNet** (LAN device) — **ALPHA.** On/off and event reception work for arctech and everflourish. Many edge cases are untested. Not recommended for production.
+> - **TellStick Net / ZNet** (LAN device) — **ALPHA.** On/off and event reception work for all major protocols (arctech, everflourish, waveman, sartano, x10, hasta). Sensor decoding works for fineoffset, mandolyn, and oregon. Many edge cases are untested. Not recommended for production.
 
 > **Terminology note:** HAOS 2026.2 renamed "Add-ons" to "Apps" in the UI. Both names
 > refer to the same Supervisor-managed Docker container.
@@ -57,6 +58,7 @@ YAML file editing.
 | **Learn button per device** | Each switch/light device has a "Send learn signal" button on its device page                                        |
 | **Edit existing devices**   | Change name, house/unit codes, or sensor ID — with full entity history preserved                                    |
 | **Replace device (sensor)** | After battery replacement, reassign a new sensor ID to an existing device                                           |
+| **Group sensor probes**     | Multi-probe weather stations: group extra probes under one device for a clean UI                                    |
 | **Multi-select removal**    | Select and delete multiple devices at once from the integration options                                             |
 | **Per-device deletion**     | Delete any device from its device page ⋮ menu                                                                       |
 | **Device state info**       | Protocol, model, house code and unit code shown as entity state attributes                                          |
@@ -64,6 +66,8 @@ YAML file editing.
 | **Upgrade notifications**   | After an app update, HA shows a persistent notification to restart — go to **Settings → Developer tools → Restart** |
 | **Local push**              | RF events arrive in real time; no polling, no cloud                                                                 |
 | **Automations**             | Device triggers on any 433 MHz button press, usable directly in HA automations                                      |
+| **HA bus events**           | Every RF signal fires a `tellstick_local_event` on the HA bus — use in automations or Developer Tools               |
+| **Debug connection**        | Service action `tellstick_local.debug_connection` logs connection state and last events                             |
 | **Companion app**           | Identical UX in the HA Android/iOS app                                                                              |
 | **No Telldus Live**         | Zero cloud, zero account, zero internet dependency                                                                  |
 
@@ -194,6 +198,21 @@ View and change parameters for any existing device:
 > **"Replace existing device"** dropdown. Select the old device to migrate its
 > entity ID and history to the new sensor ID in one step.
 
+### Grouping multi-probe sensors
+
+Weather stations with multiple probes (e.g. an indoor + outdoor temperature
+sensor) report each probe with a different sensor ID. By default each probe
+creates a separate device in Home Assistant. You can group them under one
+device for a cleaner UI:
+
+1. When the second probe is discovered, the discovery form shows:
+   - **"— Add as new device —"** (default — creates a separate device)
+   - **"Add to: _Outdoor station_"** — adds this probe's entities under the
+     existing sensor device
+2. Select **"Add to: …"** and give the probe a descriptive name (e.g.
+   "Probe 2 temperature")
+3. Both probes now appear as entities under the same device card
+
 ### Pre-configuring devices in the app YAML
 
 If you need a TX-only device available immediately (e.g. a Brateck projector
@@ -256,7 +275,7 @@ each protocol supports.
 | -------------- | -------------- | ----------------------------------------------------------------------------------------------- |
 | `arctech`      | Switch / Light | Nexa, Proove, KlikAanKlikUit, Intertechno, HomeEasy, Chacon, CoCo, Kappa, Bye Bye Standby, Elro |
 | `everflourish` | Switch         | GAO, Everflourish, Rusta                                                                        |
-| `hasta`        | Cover          | Hasta, Rollertrol motorised blinds                                                              |
+| `hasta`        | Cover          | Hasta (v1 + v2), Rollertrol motorised blinds (UP/DOWN/STOP)                                     |
 | `mandolyn`     | Sensor         | Mandolyn / Summerbird (temperature/humidity)                                                    |
 | `sartano`      | Switch         | Sartano, Brennenstuhl, Rusta, Elro (**opt-in** — see note below)                                |
 | `waveman`      | Switch         | Waveman                                                                                         |
@@ -311,6 +330,80 @@ These devices must be added via **Method B** (Add device → Add by brand or Add
 
 ---
 
+## Events for automations (`tellstick_local_event`)
+
+Every RF signal received by the TellStick fires a **`tellstick_local_event`** on the
+Home Assistant event bus. You can listen to these events in automations, scripts, or
+in **Developer Tools → Events** (enter `tellstick_local_event` and click **Start
+listening**).
+
+### Device events (remote button presses)
+
+Fired whenever a 433 MHz command signal is received — even from devices that are
+not registered in Home Assistant.
+
+| Field        | Example                          | Description                                                                           |
+| ------------ | -------------------------------- | ------------------------------------------------------------------------------------- |
+| `type`       | `turned_on` / `turned_off`       | Action type (`turned_on`, `turned_off`, `up`, `down`, `stop`, `bell`, `learn`, `dim`) |
+| `device_uid` | `arctech_selflearning_2673666_1` | Stable identifier built from protocol/model/house/unit                                |
+| `protocol`   | `arctech`                        | RF protocol name                                                                      |
+| `model`      | `selflearning`                   | Device model                                                                          |
+| `house`      | `2673666`                        | House code                                                                            |
+| `unit`       | `1`                              | Unit number                                                                           |
+
+> **Multi-protocol note:** One physical button press can fire 2–3 events with
+> different protocols (e.g. arctech + everflourish + waveman). This is normal.
+> Filter on `device_uid` in your automation trigger to match only the correct one.
+
+**Example automation trigger** (YAML mode):
+
+```yaml
+trigger:
+  - platform: event
+    event_type: tellstick_local_event
+    event_data:
+      type: turned_on
+      device_uid: arctech_selflearning_2673666_1
+```
+
+### Sensor events (temperature, humidity, etc.)
+
+Fired when a wireless sensor sends a reading.
+
+| Field       | Example               | Description                                                                           |
+| ----------- | --------------------- | ------------------------------------------------------------------------------------- |
+| `type`      | `sensor`              | Always `sensor`                                                                       |
+| `sensor_id` | `135`                 | Integer sensor ID                                                                     |
+| `protocol`  | `fineoffset`          | Sensor protocol                                                                       |
+| `model`     | `temperaturehumidity` | Sensor model string                                                                   |
+| `data_type` | `1`                   | 1=temp, 2=humidity, 4=rain_rate, 8=rain_total, 16=wind_dir, 32=wind_avg, 64=wind_gust |
+| `value`     | `21.3`                | Sensor reading                                                                        |
+
+### ZNet raw packets (debugging)
+
+When using the ZNet backend, every decoded UDP packet also fires with
+`type: znet_raw_packet`, including unrecognized protocols. Useful for
+debugging unknown device traffic.
+
+---
+
+## Debugging
+
+### Developer Tools → Events
+
+Go to **Developer Tools → Events**, enter `tellstick_local_event`, and click
+**Start listening**. Every RF signal received by the TellStick will appear in
+the event log with all decoded parameters. This is the easiest way to verify
+that the TellStick is receiving signals.
+
+### Debug connection service
+
+Call the **`tellstick_local.debug_connection`** service (from **Developer Tools →
+Services**) to log the current connection state and recent event counts to the
+Home Assistant log.
+
+---
+
 ## Troubleshooting
 
 ### "A notification appeared saying restart is required"
@@ -333,8 +426,10 @@ and run the manual setup flow.
 
 1. Check that **Automatically add new devices** is enabled in the integration options
    (Configure → Settings → enable toggle)
-2. Open the app log — raw RF events should appear when a button is pressed
-3. Confirm the TellStick Duo USB stick is connected:
+2. Go to **Developer Tools → Events**, listen for `tellstick_local_event` — if events
+   appear when you press buttons, the TellStick is receiving signals correctly
+3. Open the app log — raw RF events should appear when a button is pressed
+4. Confirm the TellStick Duo USB stick is connected:
    **Settings → Apps → TellStick Local → Hardware**
 
 ### "Receiver did not learn the code during teach"

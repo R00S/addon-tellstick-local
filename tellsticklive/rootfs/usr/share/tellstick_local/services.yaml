@@ -1,0 +1,7 @@
+debug_connection:
+  name: Debug connection
+  description: >-
+    Check if the TellStick Local integration is loaded and the connection to
+    telldusd (Duo) or ZNet is alive. The result is shown as a persistent
+    notification and logged at INFO level. Use this from Developer Tools →
+    Actions to verify the integration is working.
