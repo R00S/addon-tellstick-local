@@ -1043,6 +1043,11 @@ def _decode_rf_event(packet: dict) -> dict | None:
 _SENSOR_TYPE_MAP: dict[str, int] = {
     "temp": 1,       # TELLSTICK_TEMPERATURE
     "humidity": 2,   # TELLSTICK_HUMIDITY
+    "rrate": 4,      # TELLSTICK_RAINRATE
+    "rtot": 8,       # TELLSTICK_RAINTOTAL
+    "wdir": 16,      # TELLSTICK_WINDDIRECTION
+    "wavg": 32,      # TELLSTICK_WINDAVERAGE
+    "wgust": 64,     # TELLSTICK_WINDGUST
 }
 
 

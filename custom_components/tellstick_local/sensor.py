@@ -122,6 +122,15 @@ async def async_setup_entry(
             sensor_id=event.sensor_id,
             data_type=event.data_type,
         )
+        # Set initial value from the event that triggered creation.
+        # SIGNAL_EVENT fires before SIGNAL_NEW_DEVICE in __init__.py, so
+        # the entity misses the first value update.  Without this, the
+        # entity shows "unavailable" until the next sensor reading.
+        if event.value is not None:
+            try:
+                entity._attr_native_value = float(event.value)
+            except (ValueError, TypeError):
+                entity._attr_native_value = event.value
         async_add_entities([entity])
 
     # Always listen for new sensor signals — __init__.py gates new discovery
