@@ -15,12 +15,13 @@ It exists because HAOS only allows USB hardware passthrough to Supervisor-manage
 containers — a custom integration has no USB access. The app handles the hardware;
 the **TellStick Local** integration handles everything in the HA UI.
 
-> **TellStick Net / ZNet users:** You do **not** need this app. The companion
-> integration connects directly to the Net/ZNet over your local network (UDP port
-> 42314) — no Supervisor app required. Install the integration via HACS or from
-> the [GitHub repository](https://github.com/R00S/addon-tellstick-local), then go
-> to **Settings → Devices & Services → Add Integration → TellStick Local** and
-> choose **TellStick Net / ZNet**.
+> **TellStick Net / ZNet users:** You do **not** need a TellStick Duo USB stick.
+> Install this app from the HAOS app store — it automatically copies the
+> **TellStick Local** integration into `/config/custom_components/`. Once HA
+> restarts, go to **Settings → Devices & Services → Add Integration →
+> TellStick Local** and choose **TellStick Net / ZNet**. The app container itself
+> does nothing without a Duo, but the integration is what you need, and this app
+> is how it gets installed.
 
 **Acknowledgments:**
 
