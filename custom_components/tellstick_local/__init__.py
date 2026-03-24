@@ -883,7 +883,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Mirror entries store themselves in _pending_mirrors when their
     # primary isn't ready yet; we pick them up here.
     pending: list[dict[str, Any]] = (
-        hass.data.get(DOMAIN, {}).pop("_pending_mirrors", [])
+        hass.data.setdefault(DOMAIN, {}).pop("_pending_mirrors", [])
     )
     primary_data = hass.data[DOMAIN][entry.entry_id]
     for mirror_info in pending:
