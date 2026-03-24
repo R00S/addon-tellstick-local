@@ -1,12 +1,15 @@
 """Base entity for TellStick Local integration."""
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import DOMAIN
+from .const import DOMAIN, ENTRY_MIRRORS
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class TellStickEntity(RestoreEntity):
@@ -61,3 +64,29 @@ class TellStickEntity(RestoreEntity):
         if self._unit:
             attrs["unit"] = self._unit
         return attrs
+
+    async def _async_mirror_command(self, command: str, *args: Any) -> None:
+        """Send a command to all mirror controllers for this device.
+
+        Mirror TellStick entries share the primary's devices and replicate
+        commands.  The device_id argument is resolved from each mirror's
+        device_id_map, so callers pass only additional arguments
+        (e.g. brightness level for ``dim``).
+        """
+        if not self.hass:
+            return
+        entry_data = self.hass.data.get(DOMAIN, {}).get(self._entry_id, {})
+        mirrors: list[dict[str, Any]] = entry_data.get(ENTRY_MIRRORS, [])
+        for mirror in mirrors:
+            mirror_device_id = mirror["device_id_map"].get(self._device_uid)
+            if mirror_device_id is None:
+                continue
+            try:
+                method = getattr(mirror["controller"], command)
+                await method(mirror_device_id, *args)
+            except Exception:  # noqa: BLE001
+                _LOGGER.warning(
+                    "Mirror command %s failed for %s",
+                    command, self._device_uid,
+                    exc_info=True,
+                )
