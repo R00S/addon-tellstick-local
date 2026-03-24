@@ -225,13 +225,15 @@ a Duo and vice versa.
 
 **How to set up:**
 
-1. Connect and start your second TellStick (Duo or Net/ZNet)
-2. Go to **Settings → Devices & Services → Add Integration → TellStick Local**
-3. Pick the hardware type (Duo or Net/ZNet) and enter its connection details
-4. On the **"Mirror / range extender"** step, select the primary TellStick entry
+1. Make sure the primary TellStick is already set up in HA
+2. Connect and start your second TellStick (Duo or Net/ZNet)
+3. Go to **Settings → Devices & Services → TellStick Local** and click
+   **Add Hub** on the integration card
+4. Choose the hardware type (Duo or Net/ZNet) and enter its connection details
+5. On the **"Mirror / range extender"** step, select the primary TellStick
    from the dropdown (or choose **"— No, set up as standalone —"** if you don't
    want mirroring)
-5. Click **Submit** — the mirror is set up
+6. Click **Submit** — the mirror is set up
 
 The mirror entry appears in Devices & Services as _"TellStick (mirror of Primary)"_.
 It has no devices of its own — all devices belong to the primary. When you turn on a
