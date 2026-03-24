@@ -39,6 +39,8 @@ YAML file editing.
 >
 > - **TellStick Duo** (USB stick) — **Release Candidate.** Core features are working and well-tested.
 > - **TellStick Net / ZNet** (LAN device) — **ALPHA.** On/off and event reception work for all major protocols (arctech, everflourish, waveman, sartano, x10, hasta). Sensor decoding works for fineoffset, mandolyn, and oregon. Many edge cases are untested. Not recommended for production.
+>
+> **No Telldus Live required:** This integration communicates with the Net/ZNet via local UDP — no cloud account needed. If you also use Telldus Live on the same device, the two do not interfere — both work simultaneously.
 
 > **Terminology note:** HAOS 2026.2 renamed "Add-ons" to "Apps" in the UI. Both names
 > refer to the same Supervisor-managed Docker container.
@@ -244,6 +246,10 @@ primary and the device updates in HA as usual.
 > **Cross-backend mirroring:** A Duo (USB) can mirror a Net/ZNet (LAN) and vice
 > versa. This is useful when you have a TellStick Duo plugged into your HAOS server
 > and a TellStick Net in a different part of the house.
+
+> **No Telldus Live required (Net/ZNet):** This integration talks to the Net/ZNet
+> locally — no cloud account needed. If you also use Telldus Live on the same
+> device, the two do not interfere — both work simultaneously.
 
 > **Limitations:** The mirror step is only offered when at least one standalone
 > TellStick entry already exists. You cannot set up a mirror without a primary.

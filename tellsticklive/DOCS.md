@@ -105,6 +105,10 @@ vice versa.
 The mirror appears as _"TellStick (mirror of Primary)"_ in Devices & Services.
 It shares the primary's devices — no separate device management needed.
 
+> **No Telldus Live required (Net/ZNet):** This integration talks to the Net/ZNet
+> locally — no cloud account needed. If you also use Telldus Live on the same
+> device, the two do not interfere — both work simultaneously.
+
 ---
 
 ## Optional: pre-configure devices
