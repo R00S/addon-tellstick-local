@@ -67,7 +67,7 @@ YAML file editing.
 | **Local push**              | RF events arrive in real time; no polling, no cloud                                                                 |
 | **Automations**             | Device triggers on any 433 MHz button press, usable directly in HA automations                                      |
 | **HA bus events**           | Every RF signal fires a `tellstick_local_event` on the HA bus — use in automations or Developer Tools               |
-| **Debug connection**        | Service action `tellstick_local.debug_connection` logs connection state and last events                              |
+| **Debug connection**        | Service action `tellstick_local.debug_connection` logs connection state and last events                             |
 | **Companion app**           | Identical UX in the HA Android/iOS app                                                                              |
 | **No Telldus Live**         | Zero cloud, zero account, zero internet dependency                                                                  |
 
@@ -342,14 +342,14 @@ listening**).
 Fired whenever a 433 MHz command signal is received — even from devices that are
 not registered in Home Assistant.
 
-| Field        | Example                            | Description                                          |
-| ------------ | ---------------------------------- | ---------------------------------------------------- |
-| `type`       | `turned_on` / `turned_off`         | Action type (`turned_on`, `turned_off`, `up`, `down`, `stop`, `bell`, `learn`, `dim`) |
-| `device_uid` | `arctech_selflearning_2673666_1`   | Stable identifier built from protocol/model/house/unit |
-| `protocol`   | `arctech`                          | RF protocol name                                     |
-| `model`      | `selflearning`                     | Device model                                         |
-| `house`      | `2673666`                          | House code                                           |
-| `unit`       | `1`                                | Unit number                                          |
+| Field        | Example                          | Description                                                                           |
+| ------------ | -------------------------------- | ------------------------------------------------------------------------------------- |
+| `type`       | `turned_on` / `turned_off`       | Action type (`turned_on`, `turned_off`, `up`, `down`, `stop`, `bell`, `learn`, `dim`) |
+| `device_uid` | `arctech_selflearning_2673666_1` | Stable identifier built from protocol/model/house/unit                                |
+| `protocol`   | `arctech`                        | RF protocol name                                                                      |
+| `model`      | `selflearning`                   | Device model                                                                          |
+| `house`      | `2673666`                        | House code                                                                            |
+| `unit`       | `1`                              | Unit number                                                                           |
 
 > **Multi-protocol note:** One physical button press can fire 2–3 events with
 > different protocols (e.g. arctech + everflourish + waveman). This is normal.
@@ -370,14 +370,14 @@ trigger:
 
 Fired when a wireless sensor sends a reading.
 
-| Field       | Example           | Description                                |
-| ----------- | ----------------- | ------------------------------------------ |
-| `type`      | `sensor`          | Always `sensor`                            |
-| `sensor_id` | `135`             | Integer sensor ID                          |
-| `protocol`  | `fineoffset`      | Sensor protocol                            |
-| `model`     | `temperaturehumidity` | Sensor model string                    |
-| `data_type` | `1`               | 1=temp, 2=humidity, 4=rain_rate, 8=rain_total, 16=wind_dir, 32=wind_avg, 64=wind_gust |
-| `value`     | `21.3`            | Sensor reading                             |
+| Field       | Example               | Description                                                                           |
+| ----------- | --------------------- | ------------------------------------------------------------------------------------- |
+| `type`      | `sensor`              | Always `sensor`                                                                       |
+| `sensor_id` | `135`                 | Integer sensor ID                                                                     |
+| `protocol`  | `fineoffset`          | Sensor protocol                                                                       |
+| `model`     | `temperaturehumidity` | Sensor model string                                                                   |
+| `data_type` | `1`                   | 1=temp, 2=humidity, 4=rain_rate, 8=rain_total, 16=wind_dir, 32=wind_avg, 64=wind_gust |
+| `value`     | `21.3`                | Sensor reading                                                                        |
 
 ### ZNet raw packets (debugging)
 
