@@ -1,9 +1,11 @@
 # Home Assistant: TellStick Local
 
 > [!NOTE]
-> **✅ v3.0 — TellStick Duo + Net/ZNet + Mirror/Range Extender**
-> This release adds full **TellStick Net / ZNet** support and the
-> **Mirror / Range Extender** feature alongside an improved TellStick Duo experience.
+> **✅ v3.1 — TellStick Duo + Net/ZNet + Mirror/Range Extender + Device Grouping**
+> This release adds full **TellStick Net / ZNet** support, the
+> **Mirror / Range Extender** feature, **manual device grouping** (group any
+> switches, lights, or covers under a shared HA device), and an improved
+> TellStick Duo experience.
 > If you hit any problem, please [open an issue][issue].
 
 > [!WARNING]
@@ -27,7 +29,7 @@
 
 Local-only TellStick Duo and TellStick Net/ZNet support for Home Assistant – no cloud, no YAML, full GUI.
 
-**v3.0 highlights:** TellStick Net / ZNet support · Mirror / range extender · full GUI device management · all 433 MHz protocols
+**v3.1 highlights:** TellStick Net / ZNet support · Mirror / range extender · full GUI device management · all 433 MHz protocols · manual device grouping
 
 ---
 
@@ -68,6 +70,7 @@ Live account, and no YAML file editing.
 | **Edit existing devices**    | Change name, house/unit codes, or sensor ID — with full entity history preserved                                    |
 | **Replace device (sensor)**  | After battery replacement, reassign a new sensor ID to an existing device                                           |
 | **Group sensor probes**      | Multi-probe weather stations: group extra probes under one device for a clean UI                                    |
+| **Group any devices**        | Group switches, lights, or covers from the same room under one shared HA device — via Configure → Edit → Manage device |
 | **Multi-select removal**     | Select and delete multiple devices at once from the integration options                                             |
 | **Per-device deletion**      | Delete any device from its device page ⋮ menu                                                                       |
 | **Device state info**        | Protocol, model, house code and unit code shown as entity state attributes                                          |
@@ -222,6 +225,26 @@ device for a cleaner UI:
 2. Select **"Add to: …"** and give the probe a descriptive name (e.g.
    "Probe 2 temperature")
 3. Both probes now appear as entities under the same device card
+
+### Grouping any device under a shared HA device
+
+All device types — switches, lights, covers — can be grouped under a single shared
+HA device. This is useful when several remotes or sockets belong to the same room
+and you want them to appear as one device card instead of many.
+
+1. Go to **Settings → Devices & Services → TellStick Local**
+2. Click **Configure** (⚙ icon) → **Edit a device**
+3. Select the device you want to group
+4. Choose **Manage device → Group under a shared device**
+5. Enter a group name (e.g. `Living Room`) — all devices with the same name are
+   grouped together
+6. Leave the field blank to remove the device from its group (back to standalone)
+
+The integration reloads automatically after saving. The original per-device HA
+device card disappears and all its entities appear under the shared group device.
+
+> **Learn button:** The "Send learn signal" button moves with the device — after
+> grouping it lives on the shared group device card, not the original device card.
 
 ### Mirror / range extender
 

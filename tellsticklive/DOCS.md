@@ -1,7 +1,7 @@
 # TellStick Local
 
 Local TellStick Duo service for Home Assistant — no cloud, no Telldus Live.
-**v3.0:** TellStick Net / ZNet support and Mirror / Range Extender added to the companion integration.
+**v3.1:** TellStick Net / ZNet support, Mirror / Range Extender, and manual device grouping added to the companion integration.
 
 ## About
 
@@ -162,9 +162,12 @@ Configure (⚙) → Edit a device → select a device → **Manage device** →
 - All devices with the same group name share one HA device entry
 - Leave the field blank to remove the device from its group (standalone again)
 - Changes take effect after the integration reloads (done automatically)
+- The **"Send learn signal"** button moves with the device — after grouping it
+  appears on the shared group device card, not the original device card
 
 **Implemented in:** `config_flow.py` → `async_step_group_device`; applied at
-entity creation time in `entity.py`, `switch.py`, `light.py`, and `cover.py`
+entity creation time in `entity.py`, `switch.py`, `light.py`, `cover.py`, and
+`button.py`
 
 ---
 
