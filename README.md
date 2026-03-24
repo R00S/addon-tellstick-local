@@ -67,6 +67,7 @@ YAML file editing.
 | **Local push**              | RF events arrive in real time; no polling, no cloud                                                                 |
 | **Automations**             | Device triggers on any 433 MHz button press, usable directly in HA automations                                      |
 | **HA bus events**           | Every RF signal fires a `tellstick_local_event` on the HA bus — use in automations or Developer Tools               |
+| **Mirror / range extender** | Use a second TellStick as a mirror to extend RF coverage — all commands are replicated automatically                |
 | **Debug connection**        | Service action `tellstick_local.debug_connection` logs connection state and last events                             |
 | **Companion app**           | Identical UX in the HA Android/iOS app                                                                              |
 | **No Telldus Live**         | Zero cloud, zero account, zero internet dependency                                                                  |
@@ -212,6 +213,39 @@ device for a cleaner UI:
 2. Select **"Add to: …"** and give the probe a descriptive name (e.g.
    "Probe 2 temperature")
 3. Both probes now appear as entities under the same device card
+
+### Mirror / range extender
+
+If your 433 MHz coverage does not reach every room, you can use a **second
+TellStick** as a mirror (range extender) for the first one. The mirror
+replicates every on/off/dim command sent to the primary TellStick's devices and
+forwards any RF events it receives back to the primary for device discovery and
+state updates. This works across backend types — a TellStick Net/ZNet can mirror
+a Duo and vice versa.
+
+**How to set up:**
+
+1. Connect and start your second TellStick (Duo or Net/ZNet)
+2. Go to **Settings → Devices & Services → Add Integration → TellStick Local**
+3. Pick the hardware type (Duo or Net/ZNet) and enter its connection details
+4. On the **"Mirror / range extender"** step, select the primary TellStick entry
+   from the dropdown (or choose **"— No, set up as standalone —"** if you don't
+   want mirroring)
+5. Click **Submit** — the mirror is set up
+
+The mirror entry appears in Devices & Services as _"TellStick (mirror of Primary)"_.
+It has no devices of its own — all devices belong to the primary. When you turn on a
+switch, the command is sent through both the primary and the mirror simultaneously.
+When someone presses a remote near the mirror, the signal is forwarded to the
+primary and the device updates in HA as usual.
+
+> **Cross-backend mirroring:** A Duo (USB) can mirror a Net/ZNet (LAN) and vice
+> versa. This is useful when you have a TellStick Duo plugged into your HAOS server
+> and a TellStick Net in a different part of the house.
+
+> **Limitations:** The mirror step is only offered when at least one standalone
+> TellStick entry already exists. You cannot set up a mirror without a primary.
+> Mirror entries do not load their own platform entities — they only forward.
 
 ### Pre-configuring devices in the app YAML
 

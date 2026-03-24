@@ -81,6 +81,31 @@ full pairing instructions and supported devices.
 
 ---
 
+## Mirror / range extender
+
+If you have a **second TellStick** (Duo or Net/ZNet), you can set it up as a
+**mirror** to extend RF coverage. The mirror replicates all commands sent to
+the primary TellStick's devices and forwards received RF events back to the
+primary for device detection and state updates.
+
+This works across backend types — a TellStick Net/ZNet can mirror a Duo and
+vice versa.
+
+### How to set up
+
+1. Make sure the primary TellStick is already set up in HA
+2. Connect and start your second TellStick
+3. Go to **Settings → Devices & Services → Add Integration → TellStick Local**
+4. Choose the hardware type and enter its connection details
+5. On the **"Mirror / range extender"** step, select the primary TellStick
+   from the dropdown
+6. Click **Submit**
+
+The mirror appears as _"TellStick (mirror of Primary)"_ in Devices & Services.
+It shares the primary's devices — no separate device management needed.
+
+---
+
 ## Optional: pre-configure devices
 
 You only need this if you want to control a TX-only device (one that cannot send
