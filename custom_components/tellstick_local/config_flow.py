@@ -69,6 +69,10 @@ SUBENTRY_TYPE_DEVICE = "device"
 
 _LOGGER = logging.getLogger(__name__)
 
+# Prefix used in the discovery dropdown to distinguish "Add to device"
+# selections from "Replace device" selections.
+_GROUP_PREFIX = "group_"
+
 STEP_USER_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_HOST, default=DEFAULT_HOST): str,
@@ -711,12 +715,12 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             name = user_input.get("name", default_name)
             replace_uid = user_input.get("replace_device", "")
 
-            if replace_uid.startswith("group_"):
+            if replace_uid.startswith(_GROUP_PREFIX):
                 # ── Add to existing device (group) ──────────────────
                 # The user wants this sensor to appear as an entity
                 # within an existing sensor device (e.g. indoor + outdoor
                 # probes of the same weather station).
-                target_uid = replace_uid[6:]  # strip "group_" prefix
+                target_uid = replace_uid[len(_GROUP_PREFIX):]
                 target_cfg = entry.options.get(CONF_DEVICES, {}).get(
                     target_uid, {}
                 )
@@ -1009,7 +1013,7 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         uid, cfg, sensor_grouped=is_sensor
                     )
                     if is_sensor:
-                        replace_options[f"group_{uid}"] = (
+                        replace_options[f"{_GROUP_PREFIX}{uid}"] = (
                             f"Add to: {label}"
                         )
                     replace_options[uid] = f"Replace: {label}"

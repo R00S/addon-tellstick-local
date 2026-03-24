@@ -168,11 +168,8 @@ class TellStickSensor(TellStickEntity, SensorEntity):
         # already have a plain "Temperature" / "Humidity" name).
         # Use the full user-provided name as the entity name so the UI
         # shows e.g. "Outdoor temperature" next to "Temperature".
-        if group_sensor_id is not None and suffix:
-            if suffix and name.lower().endswith(f" {suffix}"):
-                type_name = name  # full name IS already descriptive
-            else:
-                type_name = name
+        if group_sensor_id is not None:
+            type_name = name
         else:
             # Entity name is just the measurement type ("Temperature" /
             # "Humidity").  With _attr_has_entity_name = True the HA
