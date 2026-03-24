@@ -1,14 +1,15 @@
 # Home Assistant: TellStick Local
 
 > [!NOTE]
-> **🟡 TellStick Duo — Release Candidate** – Core features are working and well-tested.
-> Minor issues may remain. If you hit any problem, please [open an issue][issue].
+> **✅ v3.0 — TellStick Duo + Net/ZNet + Mirror/Range Extender**
+> This release adds full **TellStick Net / ZNet** support and the
+> **Mirror / Range Extender** feature alongside an improved TellStick Duo experience.
+> If you hit any problem, please [open an issue][issue].
 
 > [!WARNING]
-> **🔴 TellStick Net / ZNet — ALPHA** – On/off commands and event reception work for
-> all major protocols (arctech, everflourish, waveman, sartano, x10, hasta) and all
-> sensor protocols (fineoffset, mandolyn, oregon). Many edge cases are untested. Do not
-> use in a production setup. Feedback and bug reports are very welcome.
+> **🟡 TellStick Net / ZNet — Beta** – On/off commands, event reception, and sensor
+> decoding work for all major protocols. A wide range of scenarios has been tested, but
+> edge cases may remain. Feedback and bug reports are very welcome.
 
 > [!CAUTION]
 > **⛔ Luxorparts / Cleverio 50969, 50970, 50972 — NOT WORKING** – These 1000W sockets
@@ -26,21 +27,27 @@
 
 Local-only TellStick Duo and TellStick Net/ZNet support for Home Assistant – no cloud, no YAML, full GUI.
 
+**v3.0 highlights:** TellStick Net / ZNet support · Mirror / range extender · full GUI device management · all 433 MHz protocols
+
 ---
 
 ## About
 
-This project makes **TellStick Duo** and **TellStick Net/ZNet** devices work in Home Assistant OS exactly
-like other 433 MHz receivers (e.g. RFXtrx) — controlled entirely through the HA GUI
-and the Home Assistant companion app, with no cloud, no Telldus Live account, and no
-YAML file editing.
+This project makes **TellStick Duo** (USB) and **TellStick Net / ZNet** (LAN) devices
+work in Home Assistant OS exactly like other 433 MHz receivers (e.g. RFXtrx) — controlled
+entirely through the HA GUI and the Home Assistant companion app, with no cloud, no Telldus
+Live account, and no YAML file editing.
 
 > **Hardware support status:**
 >
-> - **TellStick Duo** (USB stick) — **Release Candidate.** Core features are working and well-tested.
-> - **TellStick Net / ZNet** (LAN device) — **ALPHA.** On/off and event reception work for all major protocols (arctech, everflourish, waveman, sartano, x10, hasta). Sensor decoding works for fineoffset, mandolyn, and oregon. Many edge cases are untested. Not recommended for production.
->
-> **No Telldus Live required:** This integration communicates with the Net/ZNet via local UDP — no cloud account needed.
+> - **TellStick Duo** (USB stick) — **Stable.** Core features are working and well-tested.
+> - **TellStick Net / ZNet** (LAN device) — **Beta.** On/off and event reception work for all
+>   major protocols (arctech, everflourish, waveman, sartano, x10, hasta, brateck). Sensor
+>   decoding works for fineoffset, mandolyn, and oregon. Some edge cases may remain.
+>   No Telldus Live account needed — the integration talks to the Net/ZNet via local UDP.
+> - **Mirror / range extender** — **Stable.** Use a second TellStick (any mix of Duo / Net /
+>   ZNet) to extend 433 MHz coverage. Commands are replicated to both hardware units; events
+>   received by either unit are forwarded to the primary.
 
 > **Terminology note:** HAOS 2026.2 renamed "Add-ons" to "Apps" in the UI. Both names
 > refer to the same Supervisor-managed Docker container.
@@ -78,7 +85,7 @@ YAML file editing.
 
 ## Prerequisites
 
-- **Hardware:** TellStick Duo USB stick connected to the HAOS machine
+- **Hardware:** TellStick Duo (USB), TellStick Net, or TellStick ZNet connected or reachable
 - **Software:** Home Assistant OS with **HA Core 2025.2 or later**
 
 > **Why 2025.2?** The "Add device" button on the integration card uses the
@@ -564,4 +571,4 @@ See [LICENSE.md](LICENSE.md) and [NOTICE](NOTICE) for full details.
 [github-actions]: https://github.com/R00S/addon-tellstick-local/actions
 [issue]: https://github.com/R00S/addon-tellstick-local/issues
 [maintenance-shield]: https://img.shields.io/maintenance/yes/2026.svg
-[project-stage-shield]: https://img.shields.io/badge/project%20stage-RC-yellow.svg
+[project-stage-shield]: https://img.shields.io/badge/project%20stage-stable-brightgreen.svg
