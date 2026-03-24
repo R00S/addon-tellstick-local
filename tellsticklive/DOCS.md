@@ -255,7 +255,9 @@ Learn and on/off signals sent via TellStick Duo or TellStick Net/ZNet are not
 acknowledged by these receivers. Telldus Live controls them successfully via ZNet,
 but the exact signal path it uses is not accessible through our interface.
 
-If you have one of these devices and find a working approach, please
+Further investigation would require an **RTL-SDR USB dongle** to capture and
+analyse the raw RF signal from the original remote. If you have an RTL-SDR
+and find a working approach, please
 [open an issue](https://github.com/R00S/addon-tellstick-local/issues).
 
 ---
