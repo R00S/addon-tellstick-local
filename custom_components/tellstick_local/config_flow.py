@@ -432,7 +432,7 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="mirror_setup",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_MIRROR_OF, default=""): vol.In(
+                    vol.Optional(CONF_MIRROR_OF, default=""): vol.In(
                         mirror_options
                     ),
                 }
