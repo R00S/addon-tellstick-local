@@ -24,6 +24,7 @@ from .const import (
     CONF_DEVICES,
     DOMAIN,
     ENTRY_DEVICE_ID_MAP,
+    ENTRY_MIRRORS,
     ENTRY_TELLSTICK_CONTROLLER,
     SIGNAL_NEW_DEVICE,
 )
@@ -132,3 +133,16 @@ class TellStickLearnButton(ButtonEntity):
 
         _LOGGER.debug("Sending learn signal for %s (id/dict %s)", self._device_uid, device_or_id)
         await controller.learn(device_or_id)
+
+        # Also send learn signal to all mirrors
+        for mirror in entry_data.get(ENTRY_MIRRORS, []):
+            mirror_device_id = mirror["device_id_map"].get(self._device_uid)
+            if mirror_device_id is not None:
+                try:
+                    await mirror["controller"].learn(mirror_device_id)
+                except Exception:  # noqa: BLE001
+                    _LOGGER.warning(
+                        "Mirror learn command failed for %s",
+                        self._device_uid,
+                        exc_info=True,
+                    )

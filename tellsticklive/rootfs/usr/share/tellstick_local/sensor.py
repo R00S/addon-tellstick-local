@@ -13,7 +13,9 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import DEGREE, PERCENTAGE, UnitOfLength, UnitOfSpeed, UnitOfTemperature, UnitOfVolumetricFlux
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers import entity_registry as er
 
 from .client import SensorEvent
 from .const import (
@@ -79,6 +81,7 @@ async def async_setup_entry(
                 model=device_cfg.get(CONF_DEVICE_MODEL, ""),
                 sensor_id=sensor_id,
                 data_type=data_type,
+                group_sensor_id=device_cfg.get("group_sensor_id"),
             )
         )
     if stored_entities:
@@ -93,11 +96,24 @@ async def async_setup_entry(
         suffix, _, _ = _SENSOR_META[event.data_type]
         uid = f"sensor_{event.sensor_id}_{suffix}"
         if uid in known:
-            return
+            # Guard: if the entity was deleted in this session without a
+            # reload (delete + re-add same session), `uid` stays in `known`
+            # but the entity is gone from the registry.  Check and allow
+            # re-creation.  Issue #33.
+            unique_id = f"{entry.entry_id}_{uid}"
+            if er.async_get(hass).async_get_entity_id("sensor", DOMAIN, unique_id) is not None:
+                return  # entity still active — skip duplicate
+            known.discard(uid)  # entity was deleted — fall through to create
         known.add(uid)
         protocol = event.protocol or ""
         model = event.model or ""
-        name = f"TellStick sensor {event.sensor_id} {suffix}"
+        # Use stored name from entry options when available (e.g. after
+        # discovery Add flow sets a user-provided name).  Fall back to
+        # the default sensor name.
+        stored_cfg = entry.options.get(CONF_DEVICES, {}).get(uid, {})
+        name = stored_cfg.get(
+            CONF_DEVICE_NAME, f"TellStick sensor {event.sensor_id} {suffix}"
+        )
         entity = TellStickSensor(
             entry_id=entry.entry_id,
             device_uid=uid,
@@ -106,7 +122,17 @@ async def async_setup_entry(
             model=model,
             sensor_id=event.sensor_id,
             data_type=event.data_type,
+            group_sensor_id=stored_cfg.get("group_sensor_id"),
         )
+        # Set initial value from the event that triggered creation.
+        # SIGNAL_EVENT fires before SIGNAL_NEW_DEVICE in __init__.py, so
+        # the entity misses the first value update.  Without this, the
+        # entity shows "unavailable" until the next sensor reading.
+        if event.value is not None:
+            try:
+                entity._attr_native_value = float(event.value)
+            except (ValueError, TypeError):
+                entity._attr_native_value = event.value
         async_add_entities([entity])
 
     # Always listen for new sensor signals — __init__.py gates new discovery
@@ -131,18 +157,75 @@ class TellStickSensor(TellStickEntity, SensorEntity):
         model: str,
         sensor_id: int,
         data_type: int,
+        group_sensor_id: int | None = None,
     ) -> None:
         """Initialize a TellStick sensor."""
+        meta = _SENSOR_META.get(data_type)
+        suffix, device_class, unit = meta if meta else (None, None, None)
+
+        # When grouped under another sensor's device, the entity name
+        # should distinguish itself from the parent's entities (which
+        # already have a plain "Temperature" / "Humidity" name).
+        # Use the full user-provided name as the entity name so the UI
+        # shows e.g. "Outdoor temperature" next to "Temperature".
+        if group_sensor_id is not None:
+            type_name = name
+        else:
+            # Entity name is just the measurement type ("Temperature" /
+            # "Humidity").  With _attr_has_entity_name = True the HA
+            # frontend displays it as "{device name} Temperature".
+            type_name = suffix.capitalize() if suffix else name
+
+        # Device name: strip the type suffix from the stored name so that
+        # temperature and humidity entities share a consistent device name.
+        # e.g. "TellStick sensor 202 temperature" → "TellStick sensor 202"
+        if suffix and name.lower().endswith(f" {suffix}"):
+            device_name = name[: -(len(suffix) + 1)]
+        else:
+            device_name = name
+
         super().__init__(
             entry_id=entry_id,
             device_uid=device_uid,
-            name=name,
+            name=type_name,
             protocol=protocol,
             model=model,
         )
+
+        # Explicitly set the entity name and the suggested object_id so HA
+        # generates a clean entity_id like "sensor.living_room_temperature"
+        # rather than inheriting a mangled or doubled name.  With
+        # _attr_has_entity_name=True the frontend displays "{device} {type}",
+        # but the entity_id comes from suggested_object_id.  Issue #33.
+        self._attr_name = type_name
+        self._attr_suggested_object_id = f"{device_name} {type_name}".lower()
+
+        # Group temperature + humidity from the same physical sensor under one
+        # HA device.  Use sensor_{sensor_id} (without the type suffix) as the
+        # shared device identifier so both entities appear under one device.
+        # When group_sensor_id is set, the entity is placed under the target
+        # sensor's device (multi-probe weather stations sharing one device).
+        # _attr_unique_id is still {entry_id}_sensor_{id}_{suffix} (unchanged)
+        # so entity history and entity_ids are fully preserved.
+        device_sensor_id = group_sensor_id if group_sensor_id is not None else sensor_id
+        # When grouped under another sensor's device, omit `name` entirely so
+        # HA's device registry does not overwrite the existing device name with
+        # None (which would show "unnamed device" in the UI).  Only set `name`
+        # when this entity owns the device (group_sensor_id is None).
+        if group_sensor_id is None:
+            self._attr_device_info = DeviceInfo(
+                identifiers={(DOMAIN, f"{entry_id}_sensor_{device_sensor_id}")},
+                name=device_name,
+                model=f"{protocol}/{model}" if model else protocol,
+            )
+        else:
+            self._attr_device_info = DeviceInfo(
+                identifiers={(DOMAIN, f"{entry_id}_sensor_{device_sensor_id}")},
+                model=f"{protocol}/{model}" if model else protocol,
+            )
+
         self._sensor_id = sensor_id
         self._data_type = data_type
-        _, device_class, unit = _SENSOR_META.get(data_type, (None, None, None))
         self._attr_device_class = device_class
         self._attr_native_unit_of_measurement = unit
 

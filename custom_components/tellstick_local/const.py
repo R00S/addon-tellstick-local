@@ -25,7 +25,7 @@ DOMAIN = "tellstick_local"
 #     2. custom_components/tellstick_local/const.py               (INTEGRATION_VERSION)
 #     3. tellsticklive/rootfs/usr/share/tellstick_local/manifest.json  ("version")
 #     4. tellsticklive/rootfs/usr/share/tellstick_local/const.py  (INTEGRATION_VERSION)
-INTEGRATION_VERSION = "2.4.13.11"
+INTEGRATION_VERSION = "2.5.0.4"
 
 # Backend type stored in config entry data
 CONF_BACKEND = "backend"
@@ -42,6 +42,9 @@ CONF_COMMAND_PORT = "command_port"
 CONF_EVENT_PORT = "event_port"
 CONF_AUTOMATIC_ADD = "automatic_add"
 CONF_DETECT_SARTANO = "detect_sartano"
+# Mirror / range extender: stored in the mirror entry's data dict.
+# Value is the entry_id of the primary TellStick that this entry mirrors.
+CONF_MIRROR_OF = "mirror_of"
 # Device storage keys (in entry.options["devices"])
 CONF_DEVICES = "devices"
 CONF_DEVICE_PROTOCOL = "protocol"
@@ -99,6 +102,8 @@ PLATFORMS = ["button", "cover", "switch", "light", "sensor"]
 # Entry data keys
 ENTRY_TELLSTICK_CONTROLLER = "controller"
 ENTRY_DEVICE_ID_MAP = "device_id_map"
+# Runtime list of mirror controllers (populated by mirror entries at setup)
+ENTRY_MIRRORS = "_mirrors"
 
 # Signal for new device discovery
 SIGNAL_NEW_DEVICE = DOMAIN + "_new_device_{}"

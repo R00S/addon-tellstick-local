@@ -68,6 +68,13 @@
           "mac": "MAC address for identification (optional)."
         }
       },
+      "mirror_setup": {
+        "title": "Mirror / range extender",
+        "description": "Would you like this TellStick to act as a **mirror / range extender** for an existing TellStick?\n\nA mirror replicates all commands sent to the primary TellStick's devices, extending RF coverage. It also forwards received RF signals back to the primary for device detection.\n\nThe mirror does not have its own devices — it shares the primary's.",
+        "data": {
+          "mirror_of": "Use as mirror of"
+        }
+      },
       "add_rf_device": {
         "title": "New 433 MHz device detected",
         "description": "A 433 MHz device was detected via RF signal:\n\n- **Protocol:** {protocol}\n- **Model:** {model}\n- **House:** {house}\n- **Unit:** {unit}\n- **UID:** {device_uid}\n\nGive the device a name and click **Submit** to add it.\n\nFor sensors you can also **add to an existing device** (e.g. indoor + outdoor probes of the same weather station) or **replace** an existing sensor (e.g. after battery change). Check **Ignore** to hide it.",

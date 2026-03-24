@@ -81,6 +81,36 @@ full pairing instructions and supported devices.
 
 ---
 
+## Mirror / range extender
+
+If you have a **second TellStick** (Duo or Net/ZNet), you can set it up as a
+**mirror** to extend RF coverage. The mirror replicates all commands sent to
+the primary TellStick's devices and forwards received RF events back to the
+primary for device detection and state updates.
+
+This works across backend types — a TellStick Net/ZNet can mirror a Duo and
+vice versa.
+
+### How to set up
+
+1. Make sure the primary TellStick is already set up in HA
+2. Connect and start your second TellStick
+3. Go to **Settings → Devices & Services → TellStick Local** and click
+   **Add Hub** on the integration card
+4. Choose the hardware type and enter its connection details
+5. On the **"Mirror / range extender"** step, select the primary TellStick
+   from the dropdown
+6. Click **Submit**
+
+The mirror appears as _"TellStick (mirror of Primary)"_ in Devices & Services.
+It shares the primary's devices — no separate device management needed.
+
+> **No Telldus Live required (Net/ZNet):** This integration talks to the Net/ZNet
+> locally — no cloud account needed. If you also use Telldus Live on the same
+> device, the two do not interfere — both work simultaneously.
+
+---
+
 ## Optional: pre-configure devices
 
 You only need this if you want to control a TX-only device (one that cannot send
@@ -225,7 +255,9 @@ Learn and on/off signals sent via TellStick Duo or TellStick Net/ZNet are not
 acknowledged by these receivers. Telldus Live controls them successfully via ZNet,
 but the exact signal path it uses is not accessible through our interface.
 
-If you have one of these devices and find a working approach, please
+Further investigation would require an **RTL-SDR USB dongle** to capture and
+analyse the raw RF signal from the original remote. If you have an RTL-SDR
+and find a working approach, please
 [open an issue](https://github.com/R00S/addon-tellstick-local/issues).
 
 ---

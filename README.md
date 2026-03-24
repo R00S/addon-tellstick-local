@@ -39,6 +39,8 @@ YAML file editing.
 >
 > - **TellStick Duo** (USB stick) — **Release Candidate.** Core features are working and well-tested.
 > - **TellStick Net / ZNet** (LAN device) — **ALPHA.** On/off and event reception work for all major protocols (arctech, everflourish, waveman, sartano, x10, hasta). Sensor decoding works for fineoffset, mandolyn, and oregon. Many edge cases are untested. Not recommended for production.
+>
+> **No Telldus Live required:** This integration communicates with the Net/ZNet via local UDP — no cloud account needed.
 
 > **Terminology note:** HAOS 2026.2 renamed "Add-ons" to "Apps" in the UI. Both names
 > refer to the same Supervisor-managed Docker container.
@@ -49,27 +51,28 @@ YAML file editing.
 
 ### What you get
 
-| Capability                  | Description                                                                                                         |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **Auto install prompt**     | Install the app → HA automatically offers "Set up TellStick Local?"                                                 |
-| **Press-to-discover**       | Press any 433 MHz remote → device appears in HA (auto-add or discovery prompt)                                      |
-| **Add device button**       | Click "Add device" → choose "Add by brand" or "Add by protocol" → send pairing signal                               |
-| **Ignore unwanted devices** | Check "Ignore" on the discovery form to permanently hide false-positive detections                                  |
-| **Learn button per device** | Each switch/light device has a "Send learn signal" button on its device page                                        |
-| **Edit existing devices**   | Change name, house/unit codes, or sensor ID — with full entity history preserved                                    |
-| **Replace device (sensor)** | After battery replacement, reassign a new sensor ID to an existing device                                           |
-| **Group sensor probes**     | Multi-probe weather stations: group extra probes under one device for a clean UI                                    |
-| **Multi-select removal**    | Select and delete multiple devices at once from the integration options                                             |
-| **Per-device deletion**     | Delete any device from its device page ⋮ menu                                                                       |
-| **Device state info**       | Protocol, model, house code and unit code shown as entity state attributes                                          |
-| **GUI-only management**     | Add, rename, edit and remove devices via HA UI — no YAML, no restart                                                |
-| **Upgrade notifications**   | After an app update, HA shows a persistent notification to restart — go to **Settings → Developer tools → Restart** |
-| **Local push**              | RF events arrive in real time; no polling, no cloud                                                                 |
-| **Automations**             | Device triggers on any 433 MHz button press, usable directly in HA automations                                      |
-| **HA bus events**           | Every RF signal fires a `tellstick_local_event` on the HA bus — use in automations or Developer Tools               |
-| **Debug connection**        | Service action `tellstick_local.debug_connection` logs connection state and last events                             |
-| **Companion app**           | Identical UX in the HA Android/iOS app                                                                              |
-| **No Telldus Live**         | Zero cloud, zero account, zero internet dependency                                                                  |
+| Capability                   | Description                                                                                                         |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **Auto install prompt**      | Install the app → HA automatically offers "Set up TellStick Local?"                                                 |
+| **Press-to-discover**        | Press any 433 MHz remote → device appears in HA (auto-add or discovery prompt)                                      |
+| **Add device button**        | Click "Add device" → choose "Add by brand" or "Add by protocol" → send pairing signal                               |
+| **Ignore unwanted devices**  | Check "Ignore" on the discovery form to permanently hide false-positive detections                                  |
+| **Learn button per device**  | Each switch/light device has a "Send learn signal" button on its device page                                        |
+| **Edit existing devices**    | Change name, house/unit codes, or sensor ID — with full entity history preserved                                    |
+| **Replace device (sensor)**  | After battery replacement, reassign a new sensor ID to an existing device                                           |
+| **Group sensor probes**      | Multi-probe weather stations: group extra probes under one device for a clean UI                                    |
+| **Multi-select removal**     | Select and delete multiple devices at once from the integration options                                             |
+| **Per-device deletion**      | Delete any device from its device page ⋮ menu                                                                       |
+| **Device state info**        | Protocol, model, house code and unit code shown as entity state attributes                                          |
+| **GUI-only management**      | Add, rename, edit and remove devices via HA UI — no YAML, no restart                                                |
+| **Upgrade notifications**    | After an app update, HA shows a persistent notification to restart — go to **Settings → Developer tools → Restart** |
+| **Local push**               | RF events arrive in real time; no polling, no cloud                                                                 |
+| **Automations**              | Device triggers on any 433 MHz button press, usable directly in HA automations                                      |
+| **HA bus events**            | Every RF signal fires a `tellstick_local_event` on the HA bus — use in automations or Developer Tools               |
+| **Mirror / range extender**  | Use a second TellStick as a mirror to extend RF coverage — all commands are replicated automatically                |
+| **Debug connection**         | Service action `tellstick_local.debug_connection` logs connection state and last events                             |
+| **Companion app**            | Identical UX in the HA Android/iOS app                                                                              |
+| **No Telldus Live required** | Zero cloud, zero account, zero internet dependency                                                                  |
 
 ---
 
@@ -212,6 +215,45 @@ device for a cleaner UI:
 2. Select **"Add to: …"** and give the probe a descriptive name (e.g.
    "Probe 2 temperature")
 3. Both probes now appear as entities under the same device card
+
+### Mirror / range extender
+
+If your 433 MHz coverage does not reach every room, you can use a **second
+TellStick** as a mirror (range extender) for the first one. The mirror
+replicates every on/off/dim command sent to the primary TellStick's devices and
+forwards any RF events it receives back to the primary for device discovery and
+state updates. This works across backend types — a TellStick Net/ZNet can mirror
+a Duo and vice versa.
+
+**How to set up:**
+
+1. Make sure the primary TellStick is already set up in HA
+2. Connect and start your second TellStick (Duo or Net/ZNet)
+3. Go to **Settings → Devices & Services → TellStick Local** and click
+   **Add Hub** on the integration card
+4. Choose the hardware type (Duo or Net/ZNet) and enter its connection details
+5. On the **"Mirror / range extender"** step, select the primary TellStick
+   from the dropdown (or choose **"— No, set up as standalone —"** if you don't
+   want mirroring)
+6. Click **Submit** — the mirror is set up
+
+The mirror entry appears in Devices & Services as _"TellStick (mirror of Primary)"_.
+It has no devices of its own — all devices belong to the primary. When you turn on a
+switch, the command is sent through both the primary and the mirror simultaneously.
+When someone presses a remote near the mirror, the signal is forwarded to the
+primary and the device updates in HA as usual.
+
+> **Cross-backend mirroring:** A Duo (USB) can mirror a Net/ZNet (LAN) and vice
+> versa. This is useful when you have a TellStick Duo plugged into your HAOS server
+> and a TellStick Net in a different part of the house.
+
+> **No Telldus Live required (Net/ZNet):** This integration talks to the Net/ZNet
+> locally — no cloud account needed. If you also use Telldus Live on the same
+> device, the two do not interfere — both work simultaneously.
+
+> **Limitations:** The mirror step is only offered when at least one standalone
+> TellStick entry already exists. You cannot set up a mirror without a primary.
+> Mirror entries do not load their own platform entities — they only forward.
 
 ### Pre-configuring devices in the app YAML
 
@@ -483,7 +525,9 @@ internal command path on the ZNet hardware that is not exposed via the UDP
 productiontest interface.
 
 **These models have been removed from the "Add by brand" picker** to avoid
-confusion. If you find a working approach, please [open an issue][issue].
+confusion. Further investigation would require an **RTL-SDR USB dongle** to
+capture and analyse the raw RF signal from the original remote. If you have
+an RTL-SDR and find a working approach, please [open an issue][issue].
 
 ---
 

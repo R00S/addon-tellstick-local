@@ -530,6 +530,419 @@ def _decode_mandolyn_sensor(data: int) -> dict | None:
     return result
 
 
+# ---------------------------------------------------------------------------
+# Oregon Scientific sensor sub-model decoders
+# Port of telldus-core/service/ProtocolOregon.cpp (GPL).
+# ZNet model field is the hex model code as a decimal integer:
+#   0xEA4C=59980, 0x1A2D=6701, 0xF824=63524, 0x1984=6532,
+#   0x1994=6548, 0x2914=10516, 0xC844=51268, 0xEC40=60480
+# ---------------------------------------------------------------------------
+
+# Oregon model hex → decimal mapping
+_OREGON_EA4C = 0xEA4C  # 59980 — temperature
+_OREGON_1A2D = 0x1A2D  # 6701  — temperature + humidity
+_OREGON_F824 = 0xF824  # 63524 — temperature + humidity
+_OREGON_1984 = 0x1984  # 6532  — wind
+_OREGON_1994 = 0x1994  # 6548  — wind (variant)
+_OREGON_2914 = 0x2914  # 10516 — rain
+_OREGON_C844 = 0xC844  # 51268 — pool thermometer
+_OREGON_EC40 = 0xEC40  # 60480 — pool thermometer (variant)
+
+
+def _decode_oregon_EA4C(data: int) -> dict | None:
+    """Decode Oregon EA4C temperature sensor.
+
+    >>> r = _decode_oregon_EA4C(0x004F300245EA4C20)
+    >>> r is not None and float([v for v in r['values'] if v['name'] == 'temp'][0]['value']) > -50
+    True
+    """
+    value = data
+
+    checksum = 0xE + 0xA + 0x4 + 0xC
+    checksum -= (value & 0xF) * 0x10
+    checksum -= 0xA
+    checksum &= 0xFF
+    value >>= 8
+
+    checksumw = (value >> 4) & 0xF
+    neg = bool(value & (1 << 3))
+    hundred = value & 3
+    checksum = (checksum + (value & 0xF)) & 0xFF
+    value >>= 8
+
+    temp2 = value & 0xF
+    temp1 = (value >> 4) & 0xF
+    checksum = (checksum + temp2 + temp1) & 0xFF
+    value >>= 8
+
+    temp3 = (value >> 4) & 0xF
+    checksum = (checksum + (value & 0xF) + temp3) & 0xFF
+    value >>= 8
+
+    checksum = (checksum + ((value >> 4) & 0xF) + (value & 0xF)) & 0xFF
+    address = value & 0xFF
+    value >>= 8
+
+    checksum = (checksum + ((value >> 4) & 0xF) + (value & 0xF)) & 0xFF
+
+    if (checksum & 0xF) != checksumw:
+        return None
+
+    temperature = ((hundred * 1000) + (temp1 * 100) + (temp2 * 10) + temp3) / 10.0
+    if neg:
+        temperature = -temperature
+    temperature = round(temperature, 1)
+
+    return dict(
+        sensorId=address,
+        model="EA4C",
+        values=[{"name": "temp", "value": str(temperature)}],
+    )
+
+
+def _decode_oregon_1A2D(data: int) -> dict | None:
+    """Decode Oregon 1A2D temperature + humidity sensor.
+
+    Port of telldus-core ProtocolOregon::decode1A2D.
+    Reference: molobrakos/tellsticknet/protocols/oregon.py (MIT licence).
+
+    >>> r = _decode_oregon_1A2D(0x201F242450443BDD)
+    >>> float([v for v in r['values'] if v['name'] == 'temp'][0]['value'])
+    24.2
+    >>> int([v for v in r['values'] if v['name'] == 'humidity'][0]['value'])
+    45
+    """
+    value = data
+    # Skip checksum2 byte
+    value >>= 8
+    checksum1 = value & 0xFF
+    value >>= 8
+
+    checksum = (((value >> 4) & 0xF) + (value & 0xF)) & 0xFF
+    hum1 = value & 0xF
+    value >>= 8
+
+    checksum = (checksum + ((value >> 4) & 0xF) + (value & 0xF)) & 0xFF
+    neg = bool(value & (1 << 3))
+    hum2 = (value >> 4) & 0xF
+    value >>= 8
+
+    checksum = (checksum + ((value >> 4) & 0xF) + (value & 0xF)) & 0xFF
+    temp2 = value & 0xF
+    temp1 = (value >> 4) & 0xF
+    value >>= 8
+
+    checksum = (checksum + ((value >> 4) & 0xF) + (value & 0xF)) & 0xFF
+    temp3 = (value >> 4) & 0xF
+    value >>= 8
+
+    checksum = (checksum + ((value >> 4) & 0xF) + (value & 0xF)) & 0xFF
+    address = value & 0xFF
+    value >>= 8
+
+    checksum = (checksum + ((value >> 4) & 0xF) + (value & 0xF)) & 0xFF
+    checksum = (checksum + 0x1 + 0xA + 0x2 + 0xD - 0xA) & 0xFF
+
+    if checksum != checksum1:
+        return None
+
+    temperature = ((temp1 * 100) + (temp2 * 10) + temp3) / 10.0
+    if neg:
+        temperature = -temperature
+    temperature = round(temperature, 1)
+    humidity = int((hum1 * 10) + hum2)
+
+    return dict(
+        sensorId=address,
+        model="1A2D",
+        values=[
+            {"name": "temp", "value": str(temperature)},
+            {"name": "humidity", "value": str(humidity)},
+        ],
+    )
+
+
+def _decode_oregon_F824(data: int) -> dict | None:
+    """Decode Oregon F824 temperature + humidity sensor.
+
+    Port of telldus-core ProtocolOregon::decodeF824.
+    """
+    value = data
+
+    value >>= 4  # skip crc nibble
+    msg_chk1 = value & 0xF
+    value >>= 4
+    msg_chk2 = value & 0xF
+    value >>= 4
+    unknown = value & 0xF
+    value >>= 4
+    hum1 = value & 0xF
+    value >>= 4
+    hum2 = value & 0xF
+    value >>= 4
+    neg = value & 0xF
+    value >>= 4
+    temp1 = value & 0xF
+    value >>= 4
+    temp2 = value & 0xF
+    value >>= 4
+    temp3 = value & 0xF
+    value >>= 4
+    battery = value & 0xF
+    value >>= 4
+    rollingcode = ((value >> 4) & 0xF) + (value & 0xF)
+    checksum = ((value >> 4) & 0xF) + (value & 0xF)
+    value >>= 8
+    channel = value & 0xF
+    checksum += (
+        unknown + hum1 + hum2 + neg + temp1 + temp2 + temp3
+        + battery + channel + 0xF + 0x8 + 0x2 + 0x4
+    )
+
+    if ((checksum >> 4) & 0xF) != msg_chk1 or (checksum & 0xF) != msg_chk2:
+        return None
+
+    temperature = ((temp1 * 100) + (temp2 * 10) + temp3) / 10.0
+    if neg:
+        temperature = -temperature
+    temperature = round(temperature, 1)
+    humidity = int((hum1 * 10) + hum2)
+
+    return dict(
+        sensorId=rollingcode,
+        model="F824",
+        values=[
+            {"name": "temp", "value": str(temperature)},
+            {"name": "humidity", "value": str(humidity)},
+        ],
+    )
+
+
+def _decode_oregon_1984(data: int, model_code: int) -> dict | None:
+    """Decode Oregon 1984/1994 wind sensor.
+
+    Port of telldus-core ProtocolOregon::decode1984.
+    """
+    value = data
+
+    value >>= 4  # skip crc nibble
+    msg_chk1 = value & 0xF
+    value >>= 4
+    msg_chk2 = value & 0xF
+    value >>= 4
+    avg1 = value & 0xF
+    value >>= 4
+    avg2 = value & 0xF
+    value >>= 4
+    avg3 = value & 0xF
+    value >>= 4
+    gust1 = value & 0xF
+    value >>= 4
+    gust2 = value & 0xF
+    value >>= 4
+    gust3 = value & 0xF
+    value >>= 4
+    unknown1 = value & 0xF
+    value >>= 4
+    unknown2 = value & 0xF
+    value >>= 4
+    direction = value & 0xF
+    value >>= 4
+    battery = value & 0xF
+    value >>= 4
+    rollingcode = ((value >> 4) & 0xF) + (value & 0xF)
+    checksum = ((value >> 4) & 0xF) + (value & 0xF)
+    value >>= 8
+    channel = value & 0xF
+    checksum += (
+        unknown1 + unknown2 + avg1 + avg2 + avg3
+        + gust1 + gust2 + gust3 + direction + battery + channel
+    )
+
+    if model_code == _OREGON_1984:
+        checksum += 0x1 + 0x9 + 0x8 + 0x4
+    else:
+        checksum += 0x1 + 0x9 + 0x9 + 0x4
+
+    if ((checksum >> 4) & 0xF) != msg_chk1 or (checksum & 0xF) != msg_chk2:
+        return None
+
+    avg = ((avg1 * 100) + (avg2 * 10) + avg3) / 10.0
+    gust = ((gust1 * 100) + (gust2 * 10) + gust3) / 10.0
+    direction_deg = round(22.5 * direction, 1)
+
+    return dict(
+        sensorId=rollingcode,
+        model="1984",
+        values=[
+            {"name": "wdir", "value": str(direction_deg)},
+            {"name": "wavg", "value": str(round(avg, 1))},
+            {"name": "wgust", "value": str(round(gust, 1))},
+        ],
+    )
+
+
+def _decode_oregon_2914(data: int) -> dict | None:
+    """Decode Oregon 2914 rain sensor.
+
+    Port of telldus-core ProtocolOregon::decode2914.
+    """
+    value = data
+
+    msg_chk1 = value & 0xF
+    value >>= 4
+    msg_chk2 = value & 0xF
+    value >>= 4
+    tot1 = value & 0xF
+    value >>= 4
+    tot2 = value & 0xF
+    value >>= 4
+    tot3 = value & 0xF
+    value >>= 4
+    tot4 = value & 0xF
+    value >>= 4
+    tot5 = value & 0xF
+    value >>= 4
+    tot6 = value & 0xF
+    value >>= 4
+    rate1 = value & 0xF
+    value >>= 4
+    rate2 = value & 0xF
+    value >>= 4
+    rate3 = value & 0xF
+    value >>= 4
+    rate4 = value & 0xF
+    value >>= 4
+    battery = value & 0xF
+    value >>= 4
+    rollingcode = ((value >> 4) & 0xF) + (value & 0xF)
+    checksum = ((value >> 4) & 0xF) + (value & 0xF)
+    value >>= 8
+    channel = value & 0xF
+    checksum += (
+        tot1 + tot2 + tot3 + tot4 + tot5 + tot6
+        + rate1 + rate2 + rate3 + rate4
+        + battery + channel + 0x2 + 0x9 + 0x1 + 0x4
+    )
+
+    if ((checksum >> 4) & 0xF) != msg_chk1 or (checksum & 0xF) != msg_chk2:
+        return None
+
+    total = (
+        (tot1 * 100000) + (tot2 * 10000) + (tot3 * 1000)
+        + (tot4 * 100) + (tot5 * 10) + tot6
+    ) / 1000.0 * 25.4
+    rate = ((rate1 * 1000) + (rate2 * 100) + (rate3 * 10) + rate4) / 100.0 * 25.4
+
+    return dict(
+        sensorId=rollingcode,
+        model="2914",
+        values=[
+            {"name": "rtot", "value": str(round(total, 1))},
+            {"name": "rrate", "value": str(round(rate, 1))},
+        ],
+    )
+
+
+def _decode_oregon_C844(data: int, model_code: int) -> dict | None:
+    """Decode Oregon C844/EC40 pool thermometer.
+
+    Port of telldus-core ProtocolOregon::decodeC844.
+    """
+    value = data
+
+    msg_chk1 = value & 0xF
+    value >>= 4
+    msg_chk2 = value & 0xF
+    value >>= 4
+    neg = value & 0xF
+    value >>= 4
+    temp1 = value & 0xF
+    value >>= 4
+    temp2 = value & 0xF
+    value >>= 4
+    temp3 = value & 0xF
+    value >>= 4
+    battery = value & 0xF
+    value >>= 4
+    rollingcode = ((value >> 4) & 0xF) + (value & 0xF)
+    checksum = ((value >> 4) & 0xF) + (value & 0xF)
+    value >>= 8
+    channel = value & 0xF
+    checksum += neg + temp1 + temp2 + temp3 + battery + channel
+
+    if model_code == _OREGON_C844:
+        checksum += 0xC + 0x8 + 0x4 + 0x4
+    else:
+        checksum += 0xE + 0xC + 0x4 + 0x0
+
+    if ((checksum >> 4) & 0xF) != msg_chk1 or (checksum & 0xF) != msg_chk2:
+        return None
+
+    temperature = ((temp1 * 100) + (temp2 * 10) + temp3) / 10.0
+    if neg:
+        temperature = -temperature
+    temperature = round(temperature, 1)
+
+    return dict(
+        sensorId=rollingcode,
+        model="C844",
+        values=[{"name": "temp", "value": str(temperature)}],
+    )
+
+
+def _decode_oregon_sensor(data: int, model: int | str) -> dict | None:
+    """Decode Oregon Scientific sensor raw data.
+
+    Port of telldus-core/service/ProtocolOregon.cpp (GPL).
+    ZNet sends model as integer (hex code in decimal, e.g. 0x1A2D = 6701)
+    or as hex string (e.g. "0x1A2D").
+
+    Supported sub-models:
+      EA4C (59980) — temperature
+      1A2D (6701)  — temperature + humidity
+      F824 (63524) — temperature + humidity
+      1984 (6532)  — wind
+      1994 (6548)  — wind (variant)
+      2914 (10516) — rain
+      C844 (51268) — pool thermometer
+      EC40 (60480) — pool thermometer (variant)
+
+    >>> r = _decode_oregon_sensor(0x201F242450443BDD, 6701)
+    >>> float([v for v in r['values'] if v['name'] == 'temp'][0]['value'])
+    24.2
+    >>> int([v for v in r['values'] if v['name'] == 'humidity'][0]['value'])
+    45
+    """
+    # Normalise model to integer
+    if isinstance(model, str):
+        try:
+            model_code = int(model, 0)  # handles "0x1A2D" and "6701"
+        except (ValueError, TypeError):
+            return None
+    else:
+        model_code = int(model)
+
+    if model_code == _OREGON_EA4C:
+        return _decode_oregon_EA4C(data)
+    if model_code == _OREGON_1A2D:
+        return _decode_oregon_1A2D(data)
+    if model_code == _OREGON_F824:
+        return _decode_oregon_F824(data)
+    if model_code in (_OREGON_1984, _OREGON_1994):
+        return _decode_oregon_1984(data, model_code)
+    if model_code == _OREGON_2914:
+        return _decode_oregon_2914(data)
+    if model_code in (_OREGON_C844, _OREGON_EC40):
+        return _decode_oregon_C844(data, model_code)
+
+    _LOGGER.debug(
+        "Oregon: unsupported model 0x%X (%d); raw data=0x%X",
+        model_code, model_code, data,
+    )
+    return None
+
+
 def _decode_sensor_event(packet: dict) -> dict | None:
     """Decode a sensor event's raw data integer into sensor values.
 
@@ -555,6 +968,8 @@ def _decode_sensor_event(packet: dict) -> dict | None:
         decoded = _decode_fineoffset_sensor(data)
     elif protocol == "mandolyn":
         decoded = _decode_mandolyn_sensor(data)
+    elif protocol == "oregon":
+        decoded = _decode_oregon_sensor(data, packet.get("model", ""))
     else:
         _LOGGER.debug(
             "Net sensor: no decoder for protocol=%s; raw data=0x%X",
@@ -628,6 +1043,11 @@ def _decode_rf_event(packet: dict) -> dict | None:
 _SENSOR_TYPE_MAP: dict[str, int] = {
     "temp": 1,       # TELLSTICK_TEMPERATURE
     "humidity": 2,   # TELLSTICK_HUMIDITY
+    "rrate": 4,      # TELLSTICK_RAINRATE
+    "rtot": 8,       # TELLSTICK_RAINTOTAL
+    "wdir": 16,      # TELLSTICK_WINDDIRECTION
+    "wavg": 32,      # TELLSTICK_WINDAVERAGE
+    "wgust": 64,     # TELLSTICK_WINDGUST
 }
 
 

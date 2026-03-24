@@ -17,7 +17,11 @@ from homeassistant.helpers.issue_registry import (
     async_create_issue,
     async_delete_issue,
 )
-from homeassistant.config_entries import SOURCE_IGNORE, ConfigEntry
+from homeassistant.config_entries import (
+    SOURCE_IGNORE,
+    ConfigEntry,
+    ConfigEntryState,
+)
 from homeassistant.const import CONF_HOST, EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr, entity_registry as er
@@ -44,10 +48,12 @@ from .const import (
     CONF_DEVICES,
     CONF_EVENT_PORT,
     CONF_IGNORED_UIDS,
+    CONF_MIRROR_OF,
     DEFAULT_AUTOMATIC_ADD,
     DEFAULT_DETECT_SARTANO,
     DOMAIN,
     ENTRY_DEVICE_ID_MAP,
+    ENTRY_MIRRORS,
     ENTRY_TELLSTICK_CONTROLLER,
     INTEGRATION_VERSION,
     PLATFORMS,
@@ -188,6 +194,10 @@ async def _check_version_mismatch(hass: HomeAssistant) -> None:
         disk_version = json.loads(raw).get("version", "")
     except (FileNotFoundError, json.JSONDecodeError, KeyError, OSError) as exc:
         _LOGGER.debug("Could not read on-disk manifest for version check: %s", exc)
+        # Clear any stale issue/notification — if we can't verify a mismatch,
+        # assume it's resolved so users don't see stale alerts after restart.
+        async_delete_issue(hass, DOMAIN, _ISSUE_RESTART)
+        pn_async_dismiss(hass, _ISSUE_RESTART)
         return
 
     if not disk_version or disk_version == INTEGRATION_VERSION:
@@ -202,13 +212,6 @@ async def _check_version_mismatch(hass: HomeAssistant) -> None:
         disk_version,
         INTEGRATION_VERSION,
     )
-    # PARKED: Still no repair issue. No more dev time must be spent on this until
-    # copilot agents have fixed these issues:
-    #   - agents guessing instead of doing research
-    #   - agents reimplementing already failed code
-    #   - agents not reading prompts
-    #   - agents taking shortcuts to shortsightedly save tokens, creating a lot more
-    #     load by failing
     async_create_issue(
         hass,
         DOMAIN,
@@ -461,6 +464,200 @@ async def _import_app_configured_devices(
     hass.config_entries.async_update_entry(entry, options=new_options)
 
 
+# ---------------------------------------------------------------------------
+# Mirror / range extender helpers
+# ---------------------------------------------------------------------------
+
+async def _register_mirror_devices(
+    primary_entry: ConfigEntry,
+    mirror_backend: str,
+    mirror_controller: Any,
+) -> dict[str, Any]:
+    """Register the primary's devices on a mirror controller.
+
+    Returns a device_id_map for the mirror.  The primary and mirror can be
+    different backend types (Duo ↔ Net/ZNet), so the device_id values differ:
+    - Duo mirror: integer telldusd IDs (devices registered via add_device)
+    - Net mirror: param dicts (protocol/model/house/unit)
+    """
+    mirror_device_id_map: dict[str, Any] = {}
+    stored_devices: dict[str, Any] = primary_entry.options.get(CONF_DEVICES, {})
+
+    for device_uid, device_cfg in stored_devices.items():
+        if device_uid.startswith("sensor_"):
+            continue
+
+        protocol = device_cfg.get(CONF_DEVICE_PROTOCOL, "")
+        model = device_cfg.get(CONF_DEVICE_MODEL, "")
+        house = device_cfg.get(CONF_DEVICE_HOUSE, "")
+        unit = device_cfg.get(CONF_DEVICE_UNIT, "")
+        name = device_cfg.get(CONF_DEVICE_NAME, device_uid)
+
+        if mirror_backend == BACKEND_NET:
+            # Net/ZNet mirror: store param dict (no telldusd registration)
+            mirror_device_id_map[device_uid] = {
+                CONF_DEVICE_PROTOCOL: protocol,
+                CONF_DEVICE_MODEL: model,
+                CONF_DEVICE_HOUSE: house,
+                CONF_DEVICE_UNIT: unit,
+            }
+        else:
+            # Duo mirror: register device with the mirror's telldusd
+            try:
+                params = device_cfg.get("params")
+                if params:
+                    telldusd_id = await mirror_controller.add_device(
+                        name, protocol, model, params,
+                    )
+                else:
+                    telldusd_id = await mirror_controller.find_or_add_device(
+                        name, protocol, model, house, unit,
+                    )
+                mirror_device_id_map[device_uid] = telldusd_id
+            except Exception:  # noqa: BLE001
+                _LOGGER.warning(
+                    "Could not register device %s on mirror telldusd",
+                    device_uid,
+                    exc_info=True,
+                )
+
+    return mirror_device_id_map
+
+
+async def _register_device_on_mirror(
+    mirror: dict[str, Any],
+    device_uid: str,
+    name: str,
+    protocol: str,
+    model: str,
+    house: str,
+    unit: str,
+) -> None:
+    """Register a single newly-added device on one mirror controller.
+
+    Called when the primary auto-adds or manually adds a device after setup.
+    Determines the mirror's backend type by checking the controller type and
+    updates the mirror's device_id_map accordingly.
+    """
+    ctrl = mirror["controller"]
+    device_id_map: dict[str, Any] = mirror["device_id_map"]
+
+    # Detect backend from controller type — avoids storing backend string
+    # in the mirror_info dict.  TellStickController (Duo) has add_device;
+    # TellStickNetController (Net) does not.
+    if hasattr(ctrl, "find_or_add_device"):
+        # Duo mirror: register with telldusd
+        try:
+            telldusd_id = await ctrl.find_or_add_device(
+                name, protocol, model, house, unit,
+            )
+            device_id_map[device_uid] = telldusd_id
+        except Exception:  # noqa: BLE001
+            _LOGGER.warning(
+                "Could not register device %s on mirror %s",
+                device_uid, mirror.get("entry_id", "?"),
+                exc_info=True,
+            )
+    else:
+        # Net/ZNet mirror: store param dict
+        device_id_map[device_uid] = {
+            CONF_DEVICE_PROTOCOL: protocol,
+            CONF_DEVICE_MODEL: model,
+            CONF_DEVICE_HOUSE: house,
+            CONF_DEVICE_UNIT: unit,
+        }
+
+
+async def _setup_mirror_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    mirror_of: str,
+    backend: str,
+    controller: Any,
+    device_id_map: dict[str, Any],
+) -> bool:
+    """Set up a mirror/range extender entry.
+
+    A mirror TellStick:
+    - Connects its own controller (Duo or Net — can differ from the primary)
+    - Registers the primary's devices on its own hardware
+    - Forwards received RF events to the primary entry's event handler
+    - Does NOT load platforms (no entities of its own)
+
+    The primary and mirror can be different backend types (e.g. a Net/ZNet can
+    mirror a Duo and vice versa).
+    """
+    primary_entry = hass.config_entries.async_get_entry(mirror_of)
+    if primary_entry is None:
+        _LOGGER.error(
+            "Mirror entry %s references primary %s which does not exist",
+            entry.entry_id, mirror_of,
+        )
+        return False
+
+    # Register primary's devices on the mirror's controller
+    mirror_device_id_map = await _register_mirror_devices(
+        primary_entry, backend, controller,
+    )
+
+    # Store minimal runtime data for the mirror entry (needed for unload)
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
+        ENTRY_TELLSTICK_CONTROLLER: controller,
+        ENTRY_DEVICE_ID_MAP: mirror_device_id_map,
+        "_is_mirror": True,
+        "_mirror_of": mirror_of,
+    }
+
+    mirror_info: dict[str, Any] = {
+        "controller": controller,
+        "device_id_map": mirror_device_id_map,
+        "entry_id": entry.entry_id,
+        "mirror_of": mirror_of,
+    }
+
+    # Forward events from the mirror to the primary's event handler,
+    # so RF signals received by the mirror also update primary's entities
+    # and trigger device discovery.
+    @callback
+    def _mirror_event_callback(event: Any) -> None:
+        if primary_entry.state is ConfigEntryState.LOADED:
+            _handle_event(hass, primary_entry, event)
+
+    controller.add_callback(_mirror_event_callback)
+    controller.start_event_listener()
+
+    async def _on_hass_stop(_event: Any) -> None:
+        await controller.disconnect()
+
+    entry.async_on_unload(
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _on_hass_stop)
+    )
+
+    # Register with the primary entry's data so entities can send
+    # commands through the mirror.
+    primary_data = hass.data.get(DOMAIN, {}).get(mirror_of)
+    if primary_data is not None:
+        primary_data.setdefault(ENTRY_MIRRORS, []).append(mirror_info)
+        _LOGGER.info(
+            "Mirror %s (%s) attached to primary %s",
+            entry.entry_id, entry.title, primary_entry.title,
+        )
+    else:
+        # Primary not loaded yet — store in a pending list.
+        # The primary will pick this up in its own async_setup_entry.
+        pending = hass.data.setdefault(DOMAIN, {}).setdefault(
+            "_pending_mirrors", []
+        )
+        pending.append(mirror_info)
+        _LOGGER.info(
+            "Mirror %s queued (primary %s not yet loaded)",
+            entry.entry_id, mirror_of,
+        )
+
+    # Mirror entries do NOT load platforms — they have no entities of their own.
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up TellStick Local from a config entry."""
 
@@ -486,13 +683,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     backend = entry.data.get(CONF_BACKEND, BACKEND_DUO)
     host = entry.data[CONF_HOST]
+    mirror_of = entry.data.get(CONF_MIRROR_OF)
 
     # --- One-time title migration ---
     # Older versions used generic titles ("TellStick Local", "TellStick Local (host)",
     # "TellStick Net (host)").  Migrate to hub-specific titles so users can
     # immediately tell which entry controls which hardware, especially important
     # when both a Duo and a Net/ZNet are configured simultaneously.
-    _migrate_entry_title(hass, entry, backend, host)
+    if not mirror_of:
+        _migrate_entry_title(hass, entry, backend, host)
 
     if backend == BACKEND_NET:
         # --- TellStick Net / ZNet UDP backend ---
@@ -576,6 +775,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 )
         do_app_import = True
 
+    # ------------------------------------------------------------------
+    # Mirror / range extender entry — register with primary and return
+    # ------------------------------------------------------------------
+    if mirror_of:
+        return await _setup_mirror_entry(
+            hass, entry, mirror_of, backend, controller, device_id_map
+        )
+
     # Clean up orphan subentry records left by older versions of the
     # integration.  We no longer create subentries because they cause the
     # HA frontend to show a confusing "Devices that don't belong in a
@@ -590,6 +797,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         ENTRY_TELLSTICK_CONTROLLER: controller,
         ENTRY_DEVICE_ID_MAP: device_id_map,
+        ENTRY_MIRRORS: [],
         # Track UIDs for which discovery flows have been fired this session
         # to avoid flooding the UI with duplicate notifications.
         "_discovered_uids": set(),
@@ -671,6 +879,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
+    # Attach any mirror entries that loaded before this primary.
+    # Mirror entries store themselves in _pending_mirrors when their
+    # primary isn't ready yet; we pick them up here.
+    pending: list[dict[str, Any]] = (
+        hass.data.setdefault(DOMAIN, {}).pop("_pending_mirrors", [])
+    )
+    primary_data = hass.data[DOMAIN][entry.entry_id]
+    for mirror_info in pending:
+        if mirror_info["mirror_of"] == entry.entry_id:
+            primary_data[ENTRY_MIRRORS].append(mirror_info)
+            _LOGGER.info(
+                "Attached pending mirror %s to primary %s",
+                mirror_info["entry_id"],
+                entry.entry_id,
+            )
+
     # Register the debug_connection action (service) so users can verify
     # the integration is loaded and the connection is alive from
     # Developer Tools → Actions → tellstick_local.debug_connection.
@@ -718,7 +942,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
 
         hass.services.async_register(DOMAIN, "debug_connection", _handle_debug_connection)
-
     return True
 
 
@@ -736,10 +959,28 @@ async def _async_options_updated(
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
+    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
+    is_mirror = entry_data.get("_is_mirror", False)
+
+    if is_mirror:
+        # Mirror entry: disconnect controller, remove from primary's mirrors list
+        mirror_data = hass.data[DOMAIN].pop(entry.entry_id, {})
+        ctrl: Any = mirror_data.get(ENTRY_TELLSTICK_CONTROLLER)
+        if ctrl:
+            await ctrl.disconnect()
+        # Remove from primary's mirror list
+        mirror_of = mirror_data.get("_mirror_of", "")
+        primary_data = hass.data.get(DOMAIN, {}).get(mirror_of, {})
+        mirrors: list[dict[str, Any]] = primary_data.get(ENTRY_MIRRORS, [])
+        primary_data[ENTRY_MIRRORS] = [
+            m for m in mirrors if m.get("entry_id") != entry.entry_id
+        ]
+        return True
+
     ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if ok:
         entry_data = hass.data[DOMAIN].pop(entry.entry_id, {})
-        ctrl: Any = entry_data.get(ENTRY_TELLSTICK_CONTROLLER)
+        ctrl = entry_data.get(ENTRY_TELLSTICK_CONTROLLER)
         if ctrl:
             await ctrl.disconnect()
     return ok
@@ -1224,6 +1465,11 @@ def _auto_add_device(
                         "Could not register auto-added device %s with telldusd",
                         device_uid,
                     )
+        # Register on all mirror controllers too
+        for mirror in entry_data.get(ENTRY_MIRRORS, []):
+            await _register_device_on_mirror(
+                mirror, device_uid, name, protocol, model, house, unit,
+            )
         async_dispatcher_send(
             hass, SIGNAL_NEW_DEVICE.format(entry.entry_id), event
         )
