@@ -44,6 +44,20 @@
           "event_port": "TCP port for TellStick events (default: 50801)."
         }
       },
+      "reconfigure": {
+        "title": "Update connection settings",
+        "description": "Update the hostname (or IP address) and ports for this TellStick entry.\n\nThis is useful when switching between the **stable** and **dev** channels — each channel has a different add-on hostname (e.g. `e9305338-tellsticklive` vs `abc12345-tellstick-local`).\n\nYour stored devices and settings are preserved.",
+        "data": {
+          "host": "Host",
+          "command_port": "Command port",
+          "event_port": "Event port"
+        },
+        "data_description": {
+          "host": "Hostname of the TellStick add-on. Check the app log for the `use host:` line to find the correct value.",
+          "command_port": "TCP port for TellStick commands (default: 50800).",
+          "event_port": "TCP port for TellStick events (default: 50801)."
+        }
+      },
       "net_discovery": {
         "title": "Discover TellStick Net / ZNet",
         "description": "Searching for TellStick Net devices on your local network…\n\nIf a device was found, select it from the dropdown. Otherwise enter the IP address of your TellStick Net / ZNet manually.",
@@ -99,7 +113,8 @@
       "device_added": "Device added successfully! It will appear in your device list.",
       "device_replaced": "Device replaced successfully! The existing entity now uses the new device ID. History and entity ID are preserved.",
       "device_ignored": "Device ignored. It will no longer appear as discovered. You can un-ignore it from the integration options.",
-      "entry_not_found": "TellStick Local integration not found. Please set it up first."
+      "entry_not_found": "TellStick Local integration not found. Please set it up first.",
+      "reconfigure_successful": "Connection settings updated. The integration will reconnect using the new hostname."
     }
   },
   "options": {
@@ -132,6 +147,8 @@
         "menu_options": {
           "device_detail": "Edit device",
           "teach_device": "Send learn signal",
+          "move_device": "Move to another TellStick instance",
+          "group_device": "Group under a shared device",
           "delete_device": "Delete device"
         }
       },
@@ -151,6 +168,27 @@
       "teach_device": {
         "title": "Send learn signal",
         "description": "This will send a learn/pairing signal for **{name}** ({protocol}/{model}).\n\nPut your 433 MHz receiver in **learn mode** now, then click **Submit**."
+      },
+      "move_device": {
+        "title": "Move to another instance",
+        "description": "Move **{name}** to a different TellStick instance.\n\nThe entity keeps its existing entity ID and state history.",
+        "data": {
+          "target_entry": "Target TellStick instance"
+        }
+      },
+      "move_device_confirm": {
+        "title": "Confirm move",
+        "description": "Move **{name}** from **{src}** to **{dst}**?\n\nThe entity ID and state history are preserved. The integration will reload to apply the change."
+      },
+      "group_device": {
+        "title": "Group under a shared device",
+        "description": "Group **{name}** with other devices under a shared Home Assistant device.\n\nAll devices with the same group name appear as entities under one device in Devices & Services.\n\nExisting groups: **{existing_groups}**\n\nLeave blank to remove from group (standalone device).",
+        "data": {
+          "group_uid": "Group name"
+        },
+        "data_description": {
+          "group_uid": "Enter a group name (e.g. \"Living Room\"). All devices with the same name share one HA device. Leave blank to ungroup."
+        }
       },
       "delete_device": {
         "title": "Delete device",
@@ -178,7 +216,8 @@
     "abort": {
       "no_devices": "No devices to manage.",
       "no_ignored": "No ignored devices.",
-      "teach_sent": "Learn signal sent successfully! If the receiver was in learn mode, it should now be paired."
+      "teach_sent": "Learn signal sent successfully! If the receiver was in learn mode, it should now be paired.",
+      "device_moved": "Device moved successfully. Both TellStick instances will reload to apply the change."
     }
   },
   "config_subentries": {
