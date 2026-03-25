@@ -2385,6 +2385,13 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                     entry, options=new_options
                 )
 
+                # Mark device as discovered so that any pending deferred RF
+                # echo events (from the TellStick Duo receiving its own learn
+                # signal back) are skipped by _process_unknown_event instead
+                # of running _auto_add_device and issuing a redundant
+                # async_update_entry that can disable the entities in HA 2026.3+.
+                entry_data.setdefault("_discovered_uids", set()).add(device_uid)
+
                 # Dispatch a synthetic RawDeviceEvent so platforms create the
                 # entity immediately.  Use the RF-normalized model name so
                 # the UID built from the event matches the one in device_id_map.

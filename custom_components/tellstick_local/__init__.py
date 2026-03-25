@@ -1374,6 +1374,21 @@ def _process_unknown_event(
     if entry_data is None:
         return
 
+    # Re-check stored devices: the device may have been manually added (via
+    # the "Add 433 device" flow) during the 0.3 s deferral window.  This
+    # happens when the TellStick Duo receives its own transmitted learn
+    # signal back (RF loopback echo).  At the time the echo arrived the
+    # device was unknown, so the deferred path was taken.  By the time we
+    # get here the add flow has completed and the device is known.  Running
+    # _auto_add_device / _fire_device_discovery on an already-known device
+    # causes a redundant async_update_entry that can disable the entities in
+    # HA 2026.3+.
+    if device_uid in entry.options.get(CONF_DEVICES, {}):
+        # Mark as discovered so future echoes are treated as known-device
+        # events and route directly to SIGNAL_EVENT (state updates).
+        entry_data.setdefault("_discovered_uids", set()).add(device_uid)
+        return
+
     # Sartano/codeswitch opt-in: skip auto-detection of sartano protocol
     # unless the user has explicitly enabled it.  telldusd cross-decodes
     # arctech signals as sartano phantoms; this is the simplest workaround.
