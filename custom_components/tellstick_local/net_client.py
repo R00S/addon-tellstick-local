@@ -1200,10 +1200,12 @@ def _encode_arctech_command(
 # ---------------------------------------------------------------------------
 # Everflourish TX encoding
 # The ZNet firmware has ProtocolEverflourish registered in
-# Protocol.protocolInstance() (rf433/src/rf433/Protocol.py).  We send a
-# native protocol dict — the same pattern that works for arctech — so the
-# ZNet firmware invokes its own ProtocolEverflourish.stringForMethod()
-# internally, which is the proven code path.
+# Protocol.protocolInstance().  We send a native protocol dict — the same
+# pattern that works for arctech.  Unlike arctech (which uses
+# intParameter('unit', 0, 15), 0-indexed), ProtocolEverflourish uses
+# intParameter('unit', 1, 4) — a 1-indexed range.  The firmware does NOT
+# add 1 to the unit; it passes our value straight to intParameter.
+# Therefore we must send 1-indexed units (NOT subtract 1).
 # ---------------------------------------------------------------------------
 
 def _encode_everflourish_command(
@@ -1211,13 +1213,18 @@ def _encode_everflourish_command(
 ) -> dict | None:
     """Return a native protocol dict for an everflourish UDP 'send' command.
 
-    The ZNet firmware (productiontest/Server.py CommandHandler.handleSend):
-      protocol.setModel(msg['model'])               ← 'model' key required
-      protocol.setParameters({'house': msg['house'],
-                               'unit':  msg['unit'] + 1})  ← firmware adds 1
-    ProtocolEverflourish.stringForMethod then does intParameter('unit',1,4)-1.
-    So we must send unit 0-indexed (same as arctech) — the firmware +1 makes
-    it 1-indexed before the protocol subtracts 1 back to 0-indexed.
+    The ZNet firmware passes the dict values directly to ProtocolEverflourish,
+    which calls ``intParameter('unit', 1, 4)`` — a 1-indexed range.  Unlike
+    ProtocolNexa (arctech) which uses ``intParameter('unit', 0, 15)`` (0-indexed),
+    everflourish expects 1-indexed units.  The ZNet firmware does NOT add 1 to
+    the unit (consistent with how arctech works: we send 0-indexed there and
+    the firmware passes it straight to intParameter(0, 15)).
+
+    Encoding contract:
+      widget unit 1 → send 1 → intParameter(1,1,4)=1 → unit_code=0 → decoded unit=1
+      widget unit 2 → send 2 → intParameter(2,1,4)=2 → unit_code=1 → decoded unit=2
+      widget unit 3 → send 3 → intParameter(3,1,4)=3 → unit_code=2 → decoded unit=3
+      widget unit 4 → send 4 → intParameter(4,1,4)=4 → unit_code=3 → decoded unit=4
     """
     method_int = _METHOD_INT.get(method_name)
     if method_int is None:
@@ -1228,14 +1235,14 @@ def _encode_everflourish_command(
         _LOGGER.warning("Everflourish: non-integer house %r", house)
         return None
     try:
-        unit0 = max(0, min(3, int(unit) - 1))  # 1-indexed → 0-indexed; firmware adds 1
+        unit1 = max(1, min(4, int(unit)))  # keep 1-indexed; firmware passes to intParameter(1,4)
     except (TypeError, ValueError):
-        unit0 = 0
+        unit1 = 1
     return OrderedDict(
         protocol="everflourish",
         model="selflearning",   # required: firmware calls msg['model'] → KeyError without it
         house=house_int,
-        unit=unit0,
+        unit=unit1,
         method=method_int,
     )
 
