@@ -504,6 +504,17 @@ and run the manual setup flow.
 4. Confirm the TellStick Duo USB stick is connected:
    **Settings → Apps → TellStick Local → Hardware**
 
+> **TellStick Net / ZNet in a separate VLAN or subnet:** The ZNet pushes RF events
+> to the HA host on **UDP port 42314**. If that port is blocked by a firewall, no
+> devices will appear. Also note that UDP broadcasts do not cross VLANs — if you had
+> to type the ZNet IP manually during setup (instead of it being auto-discovered), your
+> network is isolated enough that return traffic is likely blocked too. Allow UDP 42314
+> from the ZNet to the HA host to fix this.
+>
+> **Thermometers / wireless sensors:** These broadcast automatically on a timer — you
+> do not need to press a button. Just wait a few minutes after setup and they should
+> appear on their own.
+
 ### "Receiver did not learn the code during teach"
 
 1. Make sure the receiver was in learn mode _before_ clicking Submit
