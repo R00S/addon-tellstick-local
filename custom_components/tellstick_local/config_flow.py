@@ -1318,6 +1318,12 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Show options menu."""
+        # Mirror entries inherit all settings from their primary — they have no
+        # devices and no settings of their own.  Direct the user to configure
+        # the primary entry instead.
+        if self.config_entry.data.get(CONF_MIRROR_OF):
+            return self.async_abort(reason="mirror_no_settings")
+
         devices = self.config_entry.options.get(CONF_DEVICES, {})
         ignored = self.config_entry.options.get(CONF_IGNORED_UIDS, {})
         menu_options = ["settings"]

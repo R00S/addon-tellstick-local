@@ -217,7 +217,8 @@
       "no_devices": "No devices to manage.",
       "no_ignored": "No ignored devices.",
       "teach_sent": "Learn signal sent successfully! If the receiver was in learn mode, it should now be paired.",
-      "device_moved": "Device moved successfully. Both TellStick instances will reload to apply the change."
+      "device_moved": "Device moved successfully. Both TellStick instances will reload to apply the change.",
+      "mirror_no_settings": "This TellStick is configured as a mirror — it inherits all settings from the primary entry. To change settings, open the primary TellStick entry instead."
     }
   },
   "config_subentries": {
