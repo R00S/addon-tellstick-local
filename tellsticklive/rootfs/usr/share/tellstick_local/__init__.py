@@ -22,6 +22,7 @@ from homeassistant.config_entries import (
     ConfigEntry,
     ConfigEntryState,
 )
+from homeassistant import config_entries
 from homeassistant.const import CONF_HOST, EVENT_HOMEASSISTANT_STARTED, EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr, entity_registry as er
@@ -686,6 +687,65 @@ async def _setup_mirror_entry(
 
     # Mirror entries do NOT load platforms — they have no entities of their own.
     return True
+
+
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    """Run a one-shot UDP discovery scan once HA is fully started.
+
+    For users who already have at least one TellStick config entry (e.g. a
+    Duo), this fires after startup and discovers any unconfigured Net/ZNet
+    devices on the LAN, showing them in the 'Discovered' section without any
+    manual action.
+
+    New users with NO existing entries rely on the DHCP discovery matchers in
+    manifest.json instead (HA monitors DHCP traffic independently of whether
+    this function runs).
+    """
+    @callback
+    def _schedule_scan(_event: Any) -> None:
+        hass.async_create_task(_async_scan_for_net_devices(hass))
+
+    hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _schedule_scan)
+    return True
+
+
+async def _async_scan_for_net_devices(hass: HomeAssistant) -> None:
+    """Broadcast UDP discovery and trigger config flows for unconfigured devices."""
+    try:
+        from .net_client import discover  # noqa: PLC0415
+    except Exception:  # noqa: BLE001
+        return
+
+    try:
+        async for ip, mac, product in discover(timeout=3.0):
+            # Skip devices that are already configured as a Net entry.
+            already_configured = any(
+                e.data.get(CONF_BACKEND) == BACKEND_NET
+                and e.data.get(CONF_HOST) == ip
+                for e in hass.config_entries.async_entries(DOMAIN)
+            )
+            if already_configured:
+                _LOGGER.debug("Net scan: %s already configured, skipping", ip)
+                continue
+
+            _LOGGER.info(
+                "Net scan: found unconfigured %s at %s (MAC %s), starting discovery flow",
+                product, ip, mac,
+            )
+            hass.async_create_task(
+                hass.config_entries.flow.async_init(
+                    DOMAIN,
+                    context={"source": config_entries.SOURCE_INTEGRATION_DISCOVERY},
+                    data={
+                        "type": "net_hardware",
+                        "ip": ip,
+                        "mac": mac,
+                        "product": product,
+                    },
+                )
+            )
+    except Exception:  # noqa: BLE001
+        _LOGGER.debug("Net UDP discovery scan failed (non-fatal)", exc_info=True)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

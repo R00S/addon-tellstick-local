@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import secrets
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
 
@@ -26,6 +26,8 @@ from homeassistant.helpers import (
 )
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+if TYPE_CHECKING:
+    from homeassistant.helpers.service_info.dhcp import DhcpServiceInfo
 from homeassistant.helpers.service_info.hassio import HassioServiceInfo
 from homeassistant.const import CONF_HOST
 from homeassistant.data_entry_flow import FlowResult
@@ -74,6 +76,14 @@ _LOGGER = logging.getLogger(__name__)
 # Prefix used in the discovery dropdown to distinguish "Add to device"
 # selections from "Replace device" selections.
 _GROUP_PREFIX = "group_"
+
+
+def _normalize_mac(mac: str) -> str:
+    """Return MAC address as uppercase hex without colons (e.g. 'ACCA5401E27A').
+
+    Accepts both 'AC:CA:54:01:E2:7A' (DHCP) and 'ACCA5401E27A' (UDP discovery).
+    """
+    return mac.replace(":", "").upper()
 
 STEP_USER_SCHEMA = vol.Schema(
     {
@@ -360,6 +370,7 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._rf_discovery: dict[str, Any] = {}
         # Net/ZNet specific state
         self._net_mac: str = ""
+        self._net_product: str = ""
         self._net_discovered: list[tuple[str, str, str]] = []  # (ip, mac, raw)
         # Pending entry data for mirror step (set before showing mirror_setup)
         self._pending_backend: str = ""
@@ -511,6 +522,72 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             },
             errors=errors,
         )
+
+    # -----------------------------------------------------------------
+    # Network discovery: DHCP and active UDP scan
+    # -----------------------------------------------------------------
+
+    async def async_step_dhcp(self, discovery_info: DhcpServiceInfo) -> FlowResult:
+        """Handle DHCP discovery of a TellStick Net / ZNet device.
+
+        Triggered automatically by HA when it sees a DHCP lease matching
+        the hostname pattern 'telldus-tellstick-net*' or the Telldus MAC
+        OUI (AC:CA:54).  Pre-fills the IP and MAC and routes to
+        async_step_net_confirm so the user just clicks Submit.
+        """
+        ip = discovery_info.ip
+        mac = _normalize_mac(discovery_info.macaddress)
+
+        # Deduplicate at the flow level (prevents two simultaneous flows for
+        # the same device, e.g. one from hostname match + one from MAC match).
+        await self.async_set_unique_id(f"net_{ip}_{mac or ip}")
+        self._abort_if_unique_id_configured()
+
+        # Also abort if an entry created before DHCP support has the same IP
+        # but a different unique_id format (e.g. no MAC stored).
+        for existing in self._async_current_entries():
+            if (
+                existing.data.get(CONF_BACKEND) == BACKEND_NET
+                and existing.data.get(CONF_HOST) == ip
+            ):
+                return self.async_abort(reason="already_configured")
+
+        self._host = ip
+        self._net_mac = mac
+        self._net_product = discovery_info.hostname or "TellStick Net/ZNet"
+        self.context["title_placeholders"] = {
+            "name": f"{self._net_product} ({ip})"
+        }
+        return await self.async_step_net_confirm()
+
+    async def async_step_net_hardware_discovery(
+        self, discovery_info: dict[str, Any]
+    ) -> FlowResult:
+        """Handle active UDP scan discovery of a TellStick Net / ZNet device.
+
+        Called from async_step_integration_discovery when
+        ``discovery_info["type"] == "net_hardware"``.  Pre-fills IP/MAC
+        and routes to async_step_net_confirm.
+        """
+        ip: str = discovery_info["ip"]
+        mac: str = _normalize_mac(discovery_info.get("mac", ""))
+        product: str = discovery_info.get("product", "TellStick Net/ZNet")
+
+        await self.async_set_unique_id(f"net_{ip}_{mac or ip}")
+        self._abort_if_unique_id_configured()
+
+        for existing in self._async_current_entries():
+            if (
+                existing.data.get(CONF_BACKEND) == BACKEND_NET
+                and existing.data.get(CONF_HOST) == ip
+            ):
+                return self.async_abort(reason="already_configured")
+
+        self._host = ip
+        self._net_mac = mac
+        self._net_product = product
+        self.context["title_placeholders"] = {"name": f"{product} ({ip})"}
+        return await self.async_step_net_confirm()
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -708,12 +785,18 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_integration_discovery(
         self, discovery_info: dict[str, Any]
     ) -> FlowResult:
-        """Handle discovery of a new 433 MHz device via RF signal.
+        """Handle discovery — Net/ZNet hardware found, or new 433 MHz RF device.
 
-        Fired by __init__._handle_raw_event / _handle_sensor_event when an
-        unknown device sends an RF signal.  Shows in the 'Discovered' section
-        of Settings → Devices & Services, just like BLE devices.
+        - ``type == "net_hardware"``: fired by the startup UDP scan in
+          async_setup when an unconfigured TellStick Net/ZNet is found.
+          Routes to async_step_net_hardware_discovery → net_confirm.
+        - Any other type: fired by __init__._handle_raw_event /
+          _handle_sensor_event when an unknown 433 MHz device sends an RF
+          signal.  Shows in the 'Discovered' section just like BLE devices.
         """
+        if discovery_info.get("type") == "net_hardware":
+            return await self.async_step_net_hardware_discovery(discovery_info)
+
         self._rf_discovery = discovery_info
         device_uid = discovery_info["device_uid"]
 
@@ -1235,6 +1318,12 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Show options menu."""
+        # Mirror entries inherit all settings from their primary — they have no
+        # devices and no settings of their own.  Direct the user to configure
+        # the primary entry instead.
+        if self.config_entry.data.get(CONF_MIRROR_OF):
+            return self.async_abort(reason="mirror_no_settings")
+
         devices = self.config_entry.options.get(CONF_DEVICES, {})
         ignored = self.config_entry.options.get(CONF_IGNORED_UIDS, {})
         menu_options = ["settings"]
