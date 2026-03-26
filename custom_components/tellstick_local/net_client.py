@@ -1656,6 +1656,11 @@ class TellStickNetController:
                 return -1
             send_kwargs = dict(S=rf_packet)  # raw pulse-train bytes
         else:
+            # WARNING: This generic path sends a native protocol dict which is
+            # SILENTLY DROPPED by TellStick Net v1 firmware for all non-arctech
+            # protocols.  Each protocol that users report broken on ZNet needs
+            # its own raw pulse-train encoder (like everflourish above).
+            # See docs/ZNET_PROTOCOL_PORTING_GUIDE.md for the porting pattern.
             send_kwargs = dict(
                 _encode_generic_command(protocol, model, house, unit, method_name)
             )

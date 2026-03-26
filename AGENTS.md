@@ -204,6 +204,21 @@ Source: `Protocol::getProtocolInstance()` in `service/Protocol.cpp`.
 These protocols have only `static decodeData()` and are NOT in
 `getProtocolInstance()`. Do NOT add them to `TX_PROTOCOLS`.
 
+### 🛑 ZNet firmware constraint — raw pulse bytes required for non-arctech TX
+
+The TellStick Net v1 firmware (`tellstick-net/firmware/tellsticknet.c`) only
+handles `arctech/selflearning` natively via protocol dict.  **ALL other
+protocols require raw pulse-train bytes via the `S` key.**  Native protocol
+dicts for non-arctech protocols are **silently dropped** by the firmware.
+
+Currently only `arctech` (on/off/learn via native dict, dim via raw bytes) and
+`everflourish` (all commands via raw bytes) have working ZNet TX encoders.
+All other TX protocols fall through to `_encode_generic_command()` which sends
+a native dict — **this will silently fail on ZNet hardware.**
+
+See `docs/ZNET_PROTOCOL_PORTING_GUIDE.md` for the step-by-step porting pattern
+and status of each protocol.
+
 ### Protocol → HA entity type
 
 | Protocol       | HA entity              | Commands     | Notes                                                                                                                      |
