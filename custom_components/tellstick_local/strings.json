@@ -232,7 +232,7 @@
           "menu_options": {
             "by_brand": "Add by brand",
             "by_protocol": "Add by protocol",
-            "by_protocol_raw": "Add by protocol (raw pulse — reliable)",
+            "by_protocol_raw": "Add by protocol (raw pulse)",
             "by_protocol_native": "Add by protocol (TellStick native — experimental)"
           }
         },
@@ -254,7 +254,7 @@
         },
         "by_protocol_raw": {
           "title": "Add by protocol (raw pulse)",
-          "description": "These protocols have **raw pulse-train encoders** that bypass all ZNet firmware bugs. Reliable on all TellStick Net hardware versions.\n\nPick the protocol and model, then give it a name.",
+          "description": "These protocols use **raw pulse-train encoders** that bypass ZNet firmware bugs. Not yet tested on real hardware.\n\nPick the protocol and model, then give it a name.",
           "data": {
             "name": "Device name",
             "device_type": "Protocol and model"
