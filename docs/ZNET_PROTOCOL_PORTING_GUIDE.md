@@ -4,10 +4,29 @@
 > TellStick Net/ZNet backend.  The same pattern that fixed everflourish (issue #85)
 > applies to **every non-arctech protocol**.
 
-## Background: Why Protocols Fail on ZNet
+## Background: Why Protocols Need Raw Pulse Bytes
 
-The TellStick Net v1 firmware (`tellstick-net/firmware/tellsticknet.c`)
-handles external UDP "send" commands with **exactly two code paths**:
+### Hardware versions and their firmware
+
+There are three TellStick Net hardware products.  They all speak the **same
+local UDP protocol** (port 30303 discovery, port 42314 commands/events), but
+their send-command handling differs:
+
+| Product           | Discovery name    | Firmware        | Send handling                         |
+| ----------------- | ----------------- | --------------- | ------------------------------------- |
+| TellStick Net     | `TellStickNet`    | C (`tellsticknet.c`) | Only arctech natively + raw `S` bytes |
+| TellStick Net v2  | `TellstickNetV2`  | Python (`tellstick-server`) | Full protocol stack + raw `S` bytes |
+| TellStick ZNet    | `TellstickZnet`   | Python (`tellstick-server`) | Full protocol stack + raw `S` bytes |
+
+Source: firmware binary `tellstick-znet-lite-v2-1.3.2.bin` in this repo,
+extracted and decompiled from SquashFS rootfs.
+
+### TellStick Net v1 (C firmware)
+
+The original TellStick Net v1 runs a C firmware on a PIC microcontroller.
+Source: `telldus/tellstick-net/firmware/tellsticknet.c`.
+
+Its `send()` function has **exactly two code paths**:
 
 ```
 Path 1:  protocol dict with protocol=arctech AND model=selflearning
@@ -21,6 +40,66 @@ Path 3:  anything else → SILENTLY DROPPED ❌
 
 This means **only arctech selflearning on/off/learn** works via native dict.
 All other protocols and arctech dim MUST use raw pulse-train bytes.
+
+### TellStick Net v2 / ZNet (Python firmware)
+
+The v2 and ZNet run Linux (OpenWrt) with the `tellstick-server` Python daemon.
+The RF chip (connected via USB serial) is driven by the Python `Adapter` class.
+
+The local UDP "send" handler (`productiontest/Server.py :: CommandHandler.handleSend`)
+routes through the **full Python protocol stack**:
+
+```python
+# From decompiled ZNet v2 firmware (productiontest/Server.py):
+@staticmethod
+def handleSend(msg):
+    protocol = Protocol.protocolInstance(msg['protocol'])
+    protocol.setModel(msg['model'])
+    protocol.setParameters({'house': msg['house'], 'unit': msg['unit'] + 1})
+    msg = protocol.stringForMethod(msg['method'], None)
+    CommandHandler.rf433.dev.queue(RF433Msg('S', msg['S'], {}))
+```
+
+This means **ALL protocols are theoretically supported** via native dict on
+v2/ZNet — `Protocol.protocolInstance()` includes arctech, everflourish, brateck,
+comen, fuhaote, hasta, ikea, risingsun, sartano, silvanchip, upm, waveman,
+x10, yidong, and kangtai.
+
+**However, the handleSend() has bugs that make native dicts unreliable:**
+
+1. **Unit offset bug**: `msg['unit'] + 1` — the handler adds 1 to unit before
+   calling `setParameters()`, but the protocol encoders already handle
+   1-indexed unit values internally via `intParameter('unit', 1, N) - 1`.
+   This double-offset causes commands to target the wrong unit.
+
+2. **Limited parameter passthrough**: Only `house` and `unit` are passed to
+   `setParameters()`.  Protocols that need `code`, `system`, `units`, `fade`,
+   or other parameters (sartano, fuhaote, ikea, etc.) will fail silently.
+
+3. **No R/P prefix passthrough**: `handleSend()` always passes `{}` as
+   prefixes to `RF433Msg`, ignoring `R` (repeat) and `P` (pause) values
+   that some protocols require (e.g. hasta needs R=10, P=25).
+
+### Why raw S bytes is the correct approach for ALL versions
+
+Raw pulse-train bytes (`S` key) work on **every** TellStick Net hardware
+version because they bypass all protocol dispatch:
+
+- On **v1**: The C firmware's `rfSend()` plays back the bytes directly
+- On **v2/ZNet**: The Python `Adapter.__send()` writes bytes directly to
+  the RF chip via serial
+
+This avoids:
+- The v1 firmware's arctech-only limitation
+- The v2 `handleSend()` unit offset bug
+- The v2 `handleSend()` missing parameter passthrough
+- Any firmware-specific protocol encoding differences
+
+The raw S bytes approach is what the tellstick-server ITSELF uses internally
+when sending device commands: `DeviceNode._command()` calls
+`protocol.stringForMethod()` → gets `{'S': raw_bytes}` → sends to RF chip
+via `RF433Msg('S', msg['S'], prefixes)`.  We do exactly the same thing, just
+from our Python code instead of the firmware's Python code.
 
 ## Current Status of Each TX Protocol
 
@@ -46,9 +125,10 @@ All other protocols and arctech dim MUST use raw pulse-train bytes.
   `yidong` extends `ProtocolSartano` — it reuses sartano's `stringForCode()`.
 
 > **Note:** The Duo backend (telldusd + socat TCP) handles all protocols
-> natively — the issue is ONLY with the Net/ZNet UDP backend.  Protocols that
-> no user has reported broken don't need to be ported urgently, but they WILL
-> fail if/when someone tries them on a ZNet.
+> natively — the issue is ONLY with the Net/ZNet UDP backend.  On ZNet v2,
+> native dicts theoretically work through the Python protocol stack, but the
+> `handleSend()` bugs (unit offset, missing parameters) make them unreliable.
+> Raw S bytes is the safe universal approach for all versions.
 
 ## How to Port a Protocol — Step by Step
 

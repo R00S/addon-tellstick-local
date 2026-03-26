@@ -1200,17 +1200,21 @@ def _encode_arctech_command(
 # ---------------------------------------------------------------------------
 # Everflourish TX encoding
 #
-# The TellStick Net v1 firmware (tellstick-net/firmware/tellsticknet.c) only
-# handles arctech/selflearning natively when receiving a protocol dict via
-# the "send" UDP command.  ALL other protocols are silently dropped.  The
-# firmware's only other code path is raw pulse-train bytes via the "S" key.
+# The local UDP "send" command is handled differently by each firmware:
 #
-# Therefore we MUST generate raw pulse-train bytes ourselves — the same
-# approach used for arctech dim.  The encoding is ported from the ZNet
-# firmware's ProtocolEverflourish.stringForMethod():
+# - TellStick Net v1 (C firmware, tellsticknet.c): only handles
+#   arctech/selflearning natively.  ALL other protocols silently dropped.
+#
+# - TellStick Net v2 / ZNet (Python firmware, tellstick-server): routes
+#   through the full protocol stack, BUT handleSend() has bugs (unit+1
+#   offset, limited parameter passthrough, no R/P prefixes).
+#
+# Raw pulse-train bytes via the "S" key work on ALL versions and bypass
+# all firmware dispatch bugs.  Encoding ported from tellstick-server
+# ProtocolEverflourish.stringForMethod():
 #   https://github.com/telldus/tellstick-server/blob/master/rf433/src/rf433/ProtocolEverflourish.py
 #
-# See docs/EVERFLOURISH_RESEARCH.md for full research and analysis.
+# See docs/ZNET_PROTOCOL_PORTING_GUIDE.md for full details.
 # ---------------------------------------------------------------------------
 
 _EF_SHORT = bytes([60])    # short pulse timing value (≈988 µs)
@@ -1656,10 +1660,11 @@ class TellStickNetController:
                 return -1
             send_kwargs = dict(S=rf_packet)  # raw pulse-train bytes
         else:
-            # WARNING: This generic path sends a native protocol dict which is
-            # SILENTLY DROPPED by TellStick Net v1 firmware for all non-arctech
-            # protocols.  Each protocol that users report broken on ZNet needs
-            # its own raw pulse-train encoder (like everflourish above).
+            # WARNING: This generic path sends a native protocol dict which is:
+            # - SILENTLY DROPPED by TellStick Net v1 firmware (non-arctech)
+            # - BUGGY on v2/ZNet firmware (unit+1 offset, missing parameters)
+            # Each protocol that users report broken needs its own raw
+            # pulse-train encoder (like everflourish above).
             # See docs/ZNET_PROTOCOL_PORTING_GUIDE.md for the porting pattern.
             send_kwargs = dict(
                 _encode_generic_command(protocol, model, house, unit, method_name)

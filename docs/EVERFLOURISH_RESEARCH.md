@@ -11,8 +11,10 @@ Net/ZNet backend (via UDP).
 
 ## Root Cause
 
-The TellStick Net v1 firmware (`tellstick-net/firmware/tellsticknet.c`)
-handles external UDP "send" commands with this logic:
+### TellStick Net v1 (C firmware)
+
+The original TellStick Net v1 runs a C firmware
+(`tellstick-net/firmware/tellsticknet.c`) with this send logic:
 
 ```c
 void send() {
@@ -46,13 +48,41 @@ void send() {
 
 Source: https://github.com/telldus/tellstick-net/blob/master/firmware/tellsticknet.c
 
-**Summary:** The firmware has exactly TWO code paths:
-1. Protocol dict with `protocol=arctech` + `model=selflearning` → native handler
-2. Raw `S` bytes → direct pulse playback
-3. **Everything else is silently dropped**
+On v1: Native dicts are silently dropped for non-arctech protocols.
+
+### TellStick Net v2 / ZNet (Python firmware)
+
+The v2 and ZNet run Linux (OpenWrt) with `tellstick-server`.  Decompiled from
+the firmware binary `tellstick-znet-lite-v2-1.3.2.bin` in this repo, the local
+UDP send handler (`productiontest/Server.py :: CommandHandler.handleSend`)
+routes through the **full Python protocol stack**:
+
+```python
+@staticmethod
+def handleSend(msg):
+    protocol = Protocol.protocolInstance(msg['protocol'])
+    protocol.setModel(msg['model'])
+    protocol.setParameters({'house': msg['house'], 'unit': msg['unit'] + 1})
+    msg = protocol.stringForMethod(msg['method'], None)
+    CommandHandler.rf433.dev.queue(RF433Msg('S', msg['S'], {}))
+```
+
+On v2/ZNet: ALL protocols are theoretically supported via native dict, BUT
+there are bugs:
+- **Unit offset**: `msg['unit'] + 1` adds 1 to unit before setParameters,
+  causing commands to target the wrong unit
+- **Missing parameters**: Only `house` and `unit` are passed — protocols
+  needing `code`, `system`, etc. will fail
+- **No R/P prefixes**: Repeat/pause values are always `{}`
+
+### Summary
 
 Our code was sending a native dict (`protocol=everflourish, model=selflearning,
-house=X, unit=Y, method=Z`) which falls through to path 3 (silent drop).
+house=X, unit=Y, method=Z`) which:
+- On v1: Falls through to silent drop (no protocol handler for everflourish)
+- On v2/ZNet: Would reach the protocol handler BUT may hit the unit offset bug
+
+**Raw S bytes works on ALL versions** by bypassing all protocol dispatch.
 
 ## All Reference Implementations Examined
 
@@ -151,14 +181,16 @@ generate raw pulse-train bytes in Python. Send with `S=<bytes>` key.
 - More code to maintain (pulse-train encoding logic)
 - Must be exact match to the firmware's encoding
 
-### Option B: Keep sending native dict ❌ BROKEN
+### Option B: Keep sending native dict ❌ UNRELIABLE
 
 Send `{protocol: "everflourish", model: "selflearning", house: X, unit: Y, method: Z}`.
 
-**Why it fails:**
-- TellStick Net v1 firmware ignores all non-arctech native dicts
-- ZNet might handle it through its internal device model, but there's no
-  public local API handler for external UDP "send" commands
+**Why it fails or is unreliable:**
+- TellStick Net v1 firmware ignores all non-arctech native dicts (silent drop)
+- ZNet v2 firmware routes through the Python protocol stack BUT has bugs:
+  - `handleSend()` adds 1 to unit (`msg['unit'] + 1`) causing wrong unit targeting
+  - Only `house` and `unit` passed to protocol — missing `code`, `system`, etc.
+  - R/P prefixes always empty — protocols needing custom repeat/pause will fail
 - molobrakos never implemented this approach either
 
 ### Option C: Register a device on the ZNet and send commands through it ❌ COMPLEX
