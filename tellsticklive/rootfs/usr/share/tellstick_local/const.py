@@ -28,7 +28,7 @@ DOMAIN = "tellstick_local"
 
 
 
-INTEGRATION_VERSION = "3.1.3.1"
+INTEGRATION_VERSION = "3.1.4.3"
 
 
 # Backend type stored in config entry data
@@ -389,6 +389,53 @@ PROTOCOL_MODEL_MAP: dict[str, tuple[str, str, int]] = {
 
 # Ordered list of labels for the protocol dropdown
 PROTOCOL_MODEL_LABELS: list[str] = [label for label, _, _, _ in PROTOCOL_MODEL_CATALOG]
+
+# ---------------------------------------------------------------------------
+# Net/ZNet protocol split — native vs raw pulse
+#
+# The ZNet firmware's handleSend() routes UDP "send" commands through its
+# built-in Python protocol stack.  This works for ALL protocols, but has
+# bugs (unit+1 offset, missing parameters, no R/P prefixes).  We compensate
+# for the unit+1 bug in _encode_generic_command(), but protocols that need
+# extra parameters (code, system, fade) or custom R/P values will NOT work
+# via the native path.
+#
+# Protocols with raw pulse-train encoders bypass all firmware bugs and work
+# on every hardware version (v1, v2, ZNet).
+#
+# See docs/ZNET_PROTOCOL_PORTING_GUIDE.md for full details.
+# ---------------------------------------------------------------------------
+
+# Protocols with raw pulse-train encoders implemented in net_client.py.
+# These bypass all ZNet firmware bugs and work on ALL hardware versions.
+NET_RAW_PROTOCOLS: set[str] = {"arctech", "everflourish"}
+
+# Split PROTOCOL_MODEL_CATALOG for Net/ZNet backends:
+# - "raw" = we have a raw pulse-train encoder (reliable on all hardware)
+# - "native" = firmware handles it (unit+1 bug compensated, but only
+#   house/unit params passed — protocols needing code/system/fade may fail)
+
+PROTOCOL_RAW_CATALOG: list[tuple[str, str, str, int]] = [
+    entry for entry in PROTOCOL_MODEL_CATALOG
+    if entry[1] in NET_RAW_PROTOCOLS
+]
+
+PROTOCOL_NATIVE_CATALOG: list[tuple[str, str, str, int]] = [
+    entry for entry in PROTOCOL_MODEL_CATALOG
+    if entry[1] not in NET_RAW_PROTOCOLS
+]
+
+PROTOCOL_RAW_MAP: dict[str, tuple[str, str, int]] = {
+    label: (proto, model, widget)
+    for label, proto, model, widget in PROTOCOL_RAW_CATALOG
+}
+PROTOCOL_RAW_LABELS: list[str] = [label for label, _, _, _ in PROTOCOL_RAW_CATALOG]
+
+PROTOCOL_NATIVE_MAP: dict[str, tuple[str, str, int]] = {
+    label: (proto, model, widget)
+    for label, proto, model, widget in PROTOCOL_NATIVE_CATALOG
+}
+PROTOCOL_NATIVE_LABELS: list[str] = [label for label, _, _, _ in PROTOCOL_NATIVE_CATALOG]
 
 # Model normalization: arctech selflearning devices always report "selflearning" in
 # raw RF events regardless of whether they were configured as -switch or -dimmer.

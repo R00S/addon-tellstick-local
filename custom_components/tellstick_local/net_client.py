@@ -1199,35 +1199,129 @@ def _encode_arctech_command(
 
 # ---------------------------------------------------------------------------
 # Everflourish TX encoding
-# The ZNet firmware has ProtocolEverflourish registered in
-# Protocol.protocolInstance().  We send a native protocol dict — the same
-# pattern that works for arctech.  Unlike arctech (which uses
-# intParameter('unit', 0, 15), 0-indexed), ProtocolEverflourish uses
-# intParameter('unit', 1, 4) — a 1-indexed range.  The firmware does NOT
-# add 1 to the unit; it passes our value straight to intParameter.
-# Therefore we must send 1-indexed units (NOT subtract 1).
+#
+# The local UDP "send" command is handled differently by each firmware:
+#
+# - TellStick Net v1 (C firmware, tellsticknet.c): only handles
+#   arctech/selflearning natively.  ALL other protocols silently dropped.
+#
+# - TellStick Net v2 / ZNet (Python firmware, tellstick-server): routes
+#   through the full protocol stack, BUT handleSend() has bugs (unit+1
+#   offset, limited parameter passthrough, no R/P prefixes).
+#
+# Raw pulse-train bytes via the "S" key work on ALL versions and bypass
+# all firmware dispatch bugs.  Encoding ported from tellstick-server
+# ProtocolEverflourish.stringForMethod():
+#   https://github.com/telldus/tellstick-server/blob/master/rf433/src/rf433/ProtocolEverflourish.py
+#
+# See docs/ZNET_PROTOCOL_PORTING_GUIDE.md for full details.
 # ---------------------------------------------------------------------------
+
+_EF_SHORT = bytes([60])    # short pulse timing value (≈988 µs)
+_EF_LONG = bytes([114])    # long pulse timing value  (≈1878 µs)
+_EF_ZERO = _EF_SHORT + _EF_SHORT + _EF_SHORT + _EF_LONG    # bit "0"
+_EF_ONE = _EF_SHORT + _EF_LONG + _EF_SHORT + _EF_SHORT     # bit "1"
+
+# RF action codes (NOT the same as _METHOD_INT values)
+_EF_ACTION_ON = 15
+_EF_ACTION_OFF = 0
+_EF_ACTION_LEARN = 10
+
+
+def _everflourish_checksum(x: int) -> int:
+    """Calculate everflourish checksum (Frank Stevenson algorithm).
+
+    Ported from telldus-core ProtocolEverflourish::calculateChecksum() and
+    tellstick-server ProtocolEverflourish.calculateChecksum().
+    """
+    bits = [
+        0xF, 0xA, 0x7, 0xE,
+        0xF, 0xD, 0x9, 0x1,
+        0x1, 0x2, 0x4, 0x8,
+        0x3, 0x6, 0xC, 0xB,
+    ]
+    bit = 1
+    res = 0x5
+
+    if (x & 0x3) == 3:
+        lo = x & 0x00FF
+        hi = x & 0xFF00
+        lo += 4
+        if lo > 0x100:
+            lo = 0x12
+        x = lo | hi
+
+    for i in range(16):
+        if x & bit:
+            res = res ^ bits[i]
+        bit = bit << 1
+    return res
+
+
+def _everflourish_pulse_train(house: int, unit1: int, action: int) -> bytes:
+    """Build raw everflourish pulse-train bytes.
+
+    Ported from tellstick-server ProtocolEverflourish.stringForMethod().
+    The unit parameter is 1-indexed (1–4).
+
+    Signal format:
+      [preamble: 8×short] [deviceCode: 16 bits] [checksum: 4 bits]
+      [action: 4 bits] [terminator: 4×short]
+    """
+    bits = [_EF_ZERO, _EF_ONE]
+    device_code = (house << 2) | (unit1 - 1)
+    checksum = _everflourish_checksum(device_code)
+
+    # Preamble: 8 × short pulse
+    code = _EF_SHORT * 8
+
+    # Device code: 16 bits, MSB first
+    for i in range(15, -1, -1):
+        code += bits[(device_code >> i) & 0x01]
+
+    # Checksum: 4 bits, MSB first
+    for i in range(3, -1, -1):
+        code += bits[(checksum >> i) & 0x01]
+
+    # Action: 4 bits, MSB first
+    for i in range(3, -1, -1):
+        code += bits[(action >> i) & 0x01]
+
+    # Terminator: 4 × short pulse
+    code += _EF_SHORT * 4
+
+    return code
+
 
 def _encode_everflourish_command(
     house: Any, unit: Any, method_name: str
-) -> dict | None:
-    """Return a native protocol dict for an everflourish UDP 'send' command.
+) -> bytes | None:
+    """Return raw pulse-train bytes for an everflourish UDP 'send' command.
 
-    The ZNet firmware passes the dict values directly to ProtocolEverflourish,
-    which calls ``intParameter('unit', 1, 4)`` — a 1-indexed range.  Unlike
-    ProtocolNexa (arctech) which uses ``intParameter('unit', 0, 15)`` (0-indexed),
-    everflourish expects 1-indexed units.  The ZNet firmware does NOT add 1 to
-    the unit (consistent with how arctech works: we send 0-indexed there and
-    the firmware passes it straight to intParameter(0, 15)).
+    The TellStick Net/ZNet firmware only accepts raw pulse-train bytes via
+    the ``S`` key for non-arctech protocols.  Native protocol dicts are
+    silently dropped by the firmware.
 
-    Encoding contract:
-      widget unit 1 → send 1 → intParameter(1,1,4)=1 → unit_code=0 → decoded unit=1
-      widget unit 2 → send 2 → intParameter(2,1,4)=2 → unit_code=1 → decoded unit=2
-      widget unit 3 → send 3 → intParameter(3,1,4)=3 → unit_code=2 → decoded unit=3
-      widget unit 4 → send 4 → intParameter(4,1,4)=4 → unit_code=3 → decoded unit=4
+    Encoding ported from tellstick-server ProtocolEverflourish.stringForMethod().
+
+    >>> _encode_everflourish_command(100, 1, "turnon") is not None
+    True
+    >>> _encode_everflourish_command(100, 1, "turnoff") is not None
+    True
+    >>> _encode_everflourish_command(100, 1, "learn") is not None
+    True
+    >>> _encode_everflourish_command(100, 1, "dim") is None
+    True
+    >>> len(_encode_everflourish_command(0, 1, "turnon"))
+    108
     """
-    method_int = _METHOD_INT.get(method_name)
-    if method_int is None:
+    action_map = {
+        "turnon": _EF_ACTION_ON,
+        "turnoff": _EF_ACTION_OFF,
+        "learn": _EF_ACTION_LEARN,
+    }
+    action = action_map.get(method_name)
+    if action is None:
         return None
     try:
         house_int = max(0, min(16383, int(house)))
@@ -1235,29 +1329,43 @@ def _encode_everflourish_command(
         _LOGGER.warning("Everflourish: non-integer house %r", house)
         return None
     try:
-        unit1 = max(1, min(4, int(unit)))  # keep 1-indexed; firmware passes to intParameter(1,4)
+        unit1 = max(1, min(4, int(unit)))
     except (TypeError, ValueError):
         unit1 = 1
-    return OrderedDict(
-        protocol="everflourish",
-        model="selflearning",   # required: firmware calls msg['model'] → KeyError without it
-        house=house_int,
-        unit=unit1,
-        method=method_int,
-    )
+    return _everflourish_pulse_train(house_int, unit1, action)
 
 
 def _encode_generic_command(
     protocol: str, model: str, house: Any, unit: Any, method_name: str
 ) -> dict:
-    """Build a generic send dict for protocols handled natively by the ZNet."""
+    """Build a generic send dict for protocols handled natively by the ZNet.
+
+    The ZNet v2/ZNet firmware's handleSend() has a unit+1 offset bug::
+
+        protocol.setParameters({'house': msg['house'], 'unit': msg['unit'] + 1})
+
+    This means the firmware adds 1 to the unit we send before passing it to
+    the protocol encoder's ``intParameter('unit', ...)``.  To compensate, we
+    subtract 1 from the unit value here so the protocol encoder receives the
+    correct value.
+
+    **Limitation:** handleSend() only passes ``house`` and ``unit`` to
+    ``setParameters()``.  Protocols that need ``code``, ``system``, ``units``,
+    ``fade``, or other parameters will not receive them — those protocols
+    require raw pulse-train encoders instead.
+
+    Source: decompiled from ``tellstick-znet-lite-v2-1.3.2.bin`` firmware,
+    ``productiontest/Server.py :: CommandHandler.handleSend()``.
+    """
     method_int = _METHOD_INT.get(method_name, 0)
     try:
         house_val: Any = int(house)
     except (TypeError, ValueError):
         house_val = str(house)
     try:
-        unit_val: Any = int(unit)
+        # Compensate for ZNet firmware unit+1 bug: subtract 1 so that after
+        # the firmware adds 1, the protocol encoder gets the correct value.
+        unit_val: Any = int(unit) - 1
     except (TypeError, ValueError):
         unit_val = str(unit)
     return OrderedDict(
@@ -1570,8 +1678,16 @@ class TellStickNetController:
                     "Net everflourish: unsupported method=%s", method_name
                 )
                 return -1
-            send_kwargs = dict(rf_packet)
+            send_kwargs = dict(S=rf_packet)  # raw pulse-train bytes
         else:
+            # Native firmware path: the ZNet firmware's handleSend() routes
+            # this through its Python protocol stack.  We compensate for the
+            # unit+1 bug in _encode_generic_command() (subtracts 1 from unit).
+            #
+            # LIMITATION: handleSend() only passes house/unit to the protocol
+            # encoder.  Protocols needing code, system, fade, or custom R/P
+            # prefixes will NOT work correctly via this path.
+            # See docs/ZNET_PROTOCOL_PORTING_GUIDE.md for the porting pattern.
             send_kwargs = dict(
                 _encode_generic_command(protocol, model, house, unit, method_name)
             )

@@ -204,6 +204,29 @@ Source: `Protocol::getProtocolInstance()` in `service/Protocol.cpp`.
 These protocols have only `static decodeData()` and are NOT in
 `getProtocolInstance()`. Do NOT add them to `TX_PROTOCOLS`.
 
+### 🛑 Net/ZNet firmware constraint — raw pulse bytes recommended for ALL protocols
+
+**TellStick Net v1** (C firmware, `tellsticknet.c`): only handles
+`arctech/selflearning` natively via protocol dict.  ALL other protocols are
+**silently dropped**.
+
+**TellStick Net v2 / ZNet** (Python firmware, `tellstick-server`): routes
+UDP "send" through the full Python protocol stack — ALL protocols are
+theoretically supported.  BUT `handleSend()` has bugs: unit+1 offset,
+limited parameter passthrough (only house/unit), no R/P prefixes.
+Verified by decompiling `tellstick-znet-lite-v2-1.3.2.bin` from this repo.
+
+**Raw pulse-train bytes via the `S` key work on ALL versions** and bypass
+all firmware protocol dispatch bugs.  This is the recommended approach.
+
+Currently only `arctech` (on/off/learn via native dict, dim via raw bytes) and
+`everflourish` (all commands via raw bytes) have working Net/ZNet TX encoders.
+All other TX protocols fall through to `_encode_generic_command()` which sends
+a native dict — **this will silently fail on v1 and may hit bugs on v2/ZNet.**
+
+See `docs/ZNET_PROTOCOL_PORTING_GUIDE.md` for the step-by-step porting pattern
+and status of each protocol.
+
 ### Protocol → HA entity type
 
 | Protocol       | HA entity              | Commands     | Notes                                                                                                                      |

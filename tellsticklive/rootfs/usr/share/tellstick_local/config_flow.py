@@ -62,6 +62,10 @@ from .const import (
     ENTRY_TELLSTICK_CONTROLLER,
     PROTOCOL_MODEL_LABELS,
     PROTOCOL_MODEL_MAP,
+    PROTOCOL_NATIVE_LABELS,
+    PROTOCOL_NATIVE_MAP,
+    PROTOCOL_RAW_LABELS,
+    PROTOCOL_RAW_MAP,
     SENSOR_TYPE_NAMES,
     SIGNAL_NEW_DEVICE,
     WIDGET_PARAMS,
@@ -2166,7 +2170,21 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
-        """Step 0: Choose how to find the device — by brand or by protocol."""
+        """Step 0: Choose how to find the device — by brand or by protocol.
+
+        For Net/ZNet backends the protocol list is split into two:
+        - "raw pulse" = protocols with raw pulse-train encoders (reliable)
+        - "TellStick native" = firmware handles encoding (unit+1 bug compensated,
+          but only house/unit passed — protocols needing code/system/fade may fail)
+        For Duo backend all protocols work natively via telldusd.
+        """
+        entry = self._get_entry()
+        backend = entry.data.get(CONF_BACKEND, BACKEND_DUO)
+        if backend == BACKEND_NET:
+            return self.async_show_menu(
+                step_id="user",
+                menu_options=["by_brand", "by_protocol_raw", "by_protocol_native"],
+            )
         return self.async_show_menu(
             step_id="user",
             menu_options=["by_brand", "by_protocol"],
@@ -2203,7 +2221,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
     async def async_step_by_protocol(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
-        """Search by protocol name."""
+        """Search by protocol name (Duo backend — all protocols work)."""
         if user_input is not None:
             self._device_type = user_input["device_type"]
             protocol, model, widget = PROTOCOL_MODEL_MAP[self._device_type]
@@ -2224,6 +2242,73 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                         "device_type",
                         default=PROTOCOL_MODEL_LABELS[0],
                     ): vol.In(PROTOCOL_MODEL_LABELS),
+                }
+            ),
+        )
+
+    async def async_step_by_protocol_raw(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Net/ZNet: add by protocol using raw pulse-train encoding.
+
+        These protocols have dedicated raw pulse-train encoders in our code
+        that bypass all ZNet firmware bugs.  Reliable on ALL hardware
+        versions (Net v1, v2, ZNet).
+        """
+        if user_input is not None:
+            self._device_type = user_input["device_type"]
+            protocol, model, widget = PROTOCOL_RAW_MAP[self._device_type]
+            self._widget_id = widget
+            self._new_device = {
+                CONF_DEVICE_NAME: user_input["name"],
+                CONF_DEVICE_PROTOCOL: protocol,
+                CONF_DEVICE_MODEL: model,
+            }
+            return await self.async_step_params()
+
+        return self.async_show_form(
+            step_id="by_protocol_raw",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("name"): str,
+                    vol.Required(
+                        "device_type",
+                        default=PROTOCOL_RAW_LABELS[0],
+                    ): vol.In(PROTOCOL_RAW_LABELS),
+                }
+            ),
+        )
+
+    async def async_step_by_protocol_native(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Net/ZNet: add by protocol using TellStick native encoding.
+
+        These protocols are handled by the ZNet firmware's built-in Python
+        protocol stack.  The firmware's unit+1 bug is compensated for, but
+        only house/unit parameters are passed — protocols needing code,
+        system, or fade may not work correctly.
+        """
+        if user_input is not None:
+            self._device_type = user_input["device_type"]
+            protocol, model, widget = PROTOCOL_NATIVE_MAP[self._device_type]
+            self._widget_id = widget
+            self._new_device = {
+                CONF_DEVICE_NAME: user_input["name"],
+                CONF_DEVICE_PROTOCOL: protocol,
+                CONF_DEVICE_MODEL: model,
+            }
+            return await self.async_step_params()
+
+        return self.async_show_form(
+            step_id="by_protocol_native",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("name"): str,
+                    vol.Required(
+                        "device_type",
+                        default=PROTOCOL_NATIVE_LABELS[0],
+                    ): vol.In(PROTOCOL_NATIVE_LABELS),
                 }
             ),
         )

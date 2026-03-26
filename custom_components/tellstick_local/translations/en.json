@@ -231,7 +231,9 @@
           "title": "Add a device",
           "menu_options": {
             "by_brand": "Add by brand",
-            "by_protocol": "Add by protocol"
+            "by_protocol": "Add by protocol",
+            "by_protocol_raw": "Add by protocol (raw pulse)",
+            "by_protocol_native": "Add by protocol (TellStick native — experimental)"
           }
         },
         "by_brand": {
@@ -245,6 +247,22 @@
         "by_protocol": {
           "title": "Add by protocol",
           "description": "Pick the protocol and model, then give it a name.",
+          "data": {
+            "name": "Device name",
+            "device_type": "Protocol and model"
+          }
+        },
+        "by_protocol_raw": {
+          "title": "Add by protocol (raw pulse)",
+          "description": "These protocols use **raw pulse-train encoders** that bypass ZNet firmware bugs. Not yet tested on real hardware.\n\nPick the protocol and model, then give it a name.",
+          "data": {
+            "name": "Device name",
+            "device_type": "Protocol and model"
+          }
+        },
+        "by_protocol_native": {
+          "title": "Add by protocol (TellStick native)",
+          "description": "These protocols are handled by the TellStick firmware's built-in protocol stack. The firmware's **unit+1 bug** is compensated for, but only **house** and **unit** parameters are passed — protocols needing code, system, or fade may not work correctly.\n\nPick the protocol and model, then give it a name.",
           "data": {
             "name": "Device name",
             "device_type": "Protocol and model"
