@@ -1303,6 +1303,17 @@ def _encode_everflourish_command(
     silently dropped by the firmware.
 
     Encoding ported from tellstick-server ProtocolEverflourish.stringForMethod().
+
+    >>> _encode_everflourish_command(100, 1, "turnon") is not None
+    True
+    >>> _encode_everflourish_command(100, 1, "turnoff") is not None
+    True
+    >>> _encode_everflourish_command(100, 1, "learn") is not None
+    True
+    >>> _encode_everflourish_command(100, 1, "dim") is None
+    True
+    >>> len(_encode_everflourish_command(0, 1, "turnon"))
+    108
     """
     action_map = {
         "turnon": _EF_ACTION_ON,
@@ -1327,14 +1338,34 @@ def _encode_everflourish_command(
 def _encode_generic_command(
     protocol: str, model: str, house: Any, unit: Any, method_name: str
 ) -> dict:
-    """Build a generic send dict for protocols handled natively by the ZNet."""
+    """Build a generic send dict for protocols handled natively by the ZNet.
+
+    The ZNet v2/ZNet firmware's handleSend() has a unit+1 offset bug::
+
+        protocol.setParameters({'house': msg['house'], 'unit': msg['unit'] + 1})
+
+    This means the firmware adds 1 to the unit we send before passing it to
+    the protocol encoder's ``intParameter('unit', ...)``.  To compensate, we
+    subtract 1 from the unit value here so the protocol encoder receives the
+    correct value.
+
+    **Limitation:** handleSend() only passes ``house`` and ``unit`` to
+    ``setParameters()``.  Protocols that need ``code``, ``system``, ``units``,
+    ``fade``, or other parameters will not receive them — those protocols
+    require raw pulse-train encoders instead.
+
+    Source: decompiled from ``tellstick-znet-lite-v2-1.3.2.bin`` firmware,
+    ``productiontest/Server.py :: CommandHandler.handleSend()``.
+    """
     method_int = _METHOD_INT.get(method_name, 0)
     try:
         house_val: Any = int(house)
     except (TypeError, ValueError):
         house_val = str(house)
     try:
-        unit_val: Any = int(unit)
+        # Compensate for ZNet firmware unit+1 bug: subtract 1 so that after
+        # the firmware adds 1, the protocol encoder gets the correct value.
+        unit_val: Any = int(unit) - 1
     except (TypeError, ValueError):
         unit_val = str(unit)
     return OrderedDict(
@@ -1649,11 +1680,13 @@ class TellStickNetController:
                 return -1
             send_kwargs = dict(S=rf_packet)  # raw pulse-train bytes
         else:
-            # WARNING: This generic path sends a native protocol dict which is:
-            # - SILENTLY DROPPED by TellStick Net v1 firmware (non-arctech)
-            # - BUGGY on v2/ZNet firmware (unit+1 offset, missing parameters)
-            # Each protocol that users report broken needs its own raw
-            # pulse-train encoder (like everflourish above).
+            # Native firmware path: the ZNet firmware's handleSend() routes
+            # this through its Python protocol stack.  We compensate for the
+            # unit+1 bug in _encode_generic_command() (subtracts 1 from unit).
+            #
+            # LIMITATION: handleSend() only passes house/unit to the protocol
+            # encoder.  Protocols needing code, system, fade, or custom R/P
+            # prefixes will NOT work correctly via this path.
             # See docs/ZNET_PROTOCOL_PORTING_GUIDE.md for the porting pattern.
             send_kwargs = dict(
                 _encode_generic_command(protocol, model, house, unit, method_name)
