@@ -56,6 +56,33 @@ def _is_switch(protocol: str, model: str) -> bool:
     return base in _SWITCH_MODELS
 
 
+def _is_dimmer_model(model: str) -> bool:
+    """Return True if *model* is a dimmer model (light, not switch)."""
+    base = model.split(":")[0].lower() if ":" in model else model.lower()
+    return base == "selflearning-dimmer"
+
+
+def _remove_stale_switch(
+    ent_reg: er.EntityRegistry, entry_id: str, device_uid: str
+) -> None:
+    """Remove a stale switch entity for a device that is now a dimmer/light.
+
+    When a device is (re-)added as a dimmer, any previously auto-discovered
+    switch entity for the same UID must be removed from the entity registry.
+    Without this cleanup the old switch persists alongside the new light,
+    leaving the user with a broken switch entity and no dimmer controls.
+    """
+    unique_id = f"{entry_id}_{device_uid}"
+    entity_id = ent_reg.async_get_entity_id("switch", DOMAIN, unique_id)
+    if entity_id is not None:
+        _LOGGER.info(
+            "Removing stale switch entity %s for dimmer device %s",
+            entity_id,
+            device_uid,
+        )
+        ent_reg.async_remove(entity_id)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -72,11 +99,16 @@ async def async_setup_entry(
     known: set[str] = set()
 
     # Pre-create entities for stored (manually-added) switch devices
+    ent_reg = er.async_get(hass)
     stored_entities: list[TellStickSwitch] = []
     for device_uid, device_cfg in entry.options.get(CONF_DEVICES, {}).items():
         protocol = device_cfg.get(CONF_DEVICE_PROTOCOL, "")
         model = device_cfg.get(CONF_DEVICE_MODEL, "")
         if not _is_switch(protocol, model):
+            # If the stored model is a dimmer, clean up any stale switch
+            # entity from before the model was changed.
+            if _is_dimmer_model(model):
+                _remove_stale_switch(ent_reg, entry.entry_id, device_uid)
             continue
         known.add(device_uid)
         stored_entities.append(
@@ -116,13 +148,22 @@ async def async_setup_entry(
             if er.async_get(hass).async_get_entity_id("switch", DOMAIN, unique_id) is not None:
                 return  # entity still active — skip duplicate
             known.discard(uid)  # entity was deleted — fall through to create
-        # Use the stored catalog model (e.g. "selflearning-dimmer:nexa") for
-        # the type check when available.  The synthetic event from the "Add
-        # device" flow uses the RF-normalized model ("selflearning") which
-        # loses the -dimmer/-switch distinction.  Issue #90.
+        # Determine the catalog model for the type check.  Three sources,
+        # in priority order:
+        #   1. _catalog_model from the synthetic event (set by "Add device"
+        #      flow — always correct and independent of entry.options timing)
+        #   2. Stored catalog model from entry.options (correct after restart)
+        #   3. RF event model (fallback — loses -dimmer/-switch distinction)
         stored = entry.options.get(CONF_DEVICES, {}).get(uid, {})
-        check_model = stored.get(CONF_DEVICE_MODEL, model)
+        check_model = (
+            params.get("_catalog_model", "")
+            or stored.get(CONF_DEVICE_MODEL, "")
+            or model
+        )
         if not _is_switch(protocol, check_model):
+            # Catalog/stored model says dimmer — clean up any stale switch.
+            if _is_dimmer_model(check_model):
+                _remove_stale_switch(ent_reg, entry.entry_id, uid)
             return
         known.add(uid)
         name = stored.get(CONF_DEVICE_NAME) or f"TellStick {uid}"

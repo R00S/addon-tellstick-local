@@ -2527,16 +2527,20 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 # Dispatch a synthetic RawDeviceEvent so platforms create the
                 # entity immediately.  Use the RF-normalized model name so
                 # the UID built from the event matches the one in device_id_map.
+                # Include the full catalog model as _catalog_model so light.py
+                # and switch.py can determine the entity type without relying
+                # on the entry.options lookup (which may not be visible yet
+                # if async_update_entry hasn't propagated to MappingProxyType).
                 protocol = self._new_device[CONF_DEVICE_PROTOCOL]
-                rf_model = normalize_rf_model(
-                    self._new_device.get(CONF_DEVICE_MODEL, "")
-                )
+                catalog_model = self._new_device.get(CONF_DEVICE_MODEL, "")
+                rf_model = normalize_rf_model(catalog_model)
                 house_str = self._new_device.get(CONF_DEVICE_HOUSE, "")
                 unit_str = self._new_device.get(CONF_DEVICE_UNIT, "")
                 synthetic = RawDeviceEvent(
                     raw=(
                         f"class:command;protocol:{protocol};model:{rf_model};"
                         f"house:{house_str};unit:{unit_str};method:turnon;"
+                        f"_catalog_model:{catalog_model};"
                     ),
                     controller_id=0,
                 )
