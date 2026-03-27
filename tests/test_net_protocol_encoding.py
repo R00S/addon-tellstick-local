@@ -167,29 +167,20 @@ def run_tests() -> None:
             PROTOCOL_RAW_MAP,
         )
 
-        # raw + native = full catalog
-        total = len(PROTOCOL_RAW_CATALOG) + len(PROTOCOL_NATIVE_CATALOG)
+        # Both catalogs now contain ALL protocols (users can test either path)
         report(
-            "raw + native = total catalog",
-            total == len(PROTOCOL_MODEL_CATALOG),
-            f"{len(PROTOCOL_RAW_CATALOG)} + {len(PROTOCOL_NATIVE_CATALOG)} = {total} vs {len(PROTOCOL_MODEL_CATALOG)}",
+            "raw catalog = full catalog",
+            len(PROTOCOL_RAW_CATALOG) == len(PROTOCOL_MODEL_CATALOG),
+            f"raw={len(PROTOCOL_RAW_CATALOG)} vs full={len(PROTOCOL_MODEL_CATALOG)}",
+        )
+        report(
+            "native catalog = full catalog",
+            len(PROTOCOL_NATIVE_CATALOG) == len(PROTOCOL_MODEL_CATALOG),
+            f"native={len(PROTOCOL_NATIVE_CATALOG)} vs full={len(PROTOCOL_MODEL_CATALOG)}",
         )
 
-        # All raw entries are in NET_RAW_PROTOCOLS
         raw_protos = {entry[1] for entry in PROTOCOL_RAW_CATALOG}
-        report(
-            "All raw entries have raw encoders",
-            raw_protos.issubset(NET_RAW_PROTOCOLS),
-            f"raw_protos={raw_protos}, NET_RAW={NET_RAW_PROTOCOLS}",
-        )
-
-        # No native entries are in NET_RAW_PROTOCOLS
         native_protos = {entry[1] for entry in PROTOCOL_NATIVE_CATALOG}
-        report(
-            "No native entries have raw encoders",
-            not native_protos.intersection(NET_RAW_PROTOCOLS),
-            f"overlap={native_protos.intersection(NET_RAW_PROTOCOLS)}",
-        )
 
         # Labels match catalog lengths
         report("Raw labels count", len(PROTOCOL_RAW_LABELS) == len(PROTOCOL_RAW_CATALOG))
@@ -199,12 +190,16 @@ def run_tests() -> None:
         report("Raw map count", len(PROTOCOL_RAW_MAP) == len(PROTOCOL_RAW_CATALOG))
         report("Native map count", len(PROTOCOL_NATIVE_MAP) == len(PROTOCOL_NATIVE_CATALOG))
 
-        # Arctech should be in raw (has raw pulse encoder)
+        # Arctech and everflourish must be in BOTH catalogs
         report("arctech in raw", "arctech" in raw_protos)
+        report("arctech in native", "arctech" in native_protos)
         report("everflourish in raw", "everflourish" in raw_protos)
+        report("everflourish in native", "everflourish" in native_protos)
 
-        # Other protocols should be in native
+        # Other protocols must also be in both catalogs
+        report("sartano in raw", "sartano" in raw_protos)
         report("sartano in native", "sartano" in native_protos)
+        report("hasta in raw", "hasta" in raw_protos)
         report("hasta in native", "hasta" in native_protos)
 
     except Exception as e:

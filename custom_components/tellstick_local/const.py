@@ -28,7 +28,7 @@ DOMAIN = "tellstick_local"
 
 
 
-INTEGRATION_VERSION = "3.1.4.3"
+INTEGRATION_VERSION = "3.1.5.0"
 
 
 # Backend type stored in config entry data
@@ -56,6 +56,10 @@ CONF_DEVICE_MODEL = "model"
 CONF_DEVICE_HOUSE = "house"
 CONF_DEVICE_UNIT = "unit"
 CONF_DEVICE_NAME = "name"
+CONF_DEVICE_ENCODING = "encoding"
+ENCODING_RAW = "raw"
+ENCODING_NATIVE = "native"
+ENCODING_NATIVE_NOFIX = "native_nofix"
 CONF_IGNORED_UIDS = "ignored_uids"
 
 # Defaults
@@ -128,6 +132,7 @@ TX_PROTOCOLS = [
     "fuhaote",
     "hasta",
     "ikea",
+    "kangtai",
     "risingsun",
     "sartano",
     "silvanchip",
@@ -146,6 +151,7 @@ PROTOCOL_DEFAULT_MODELS: dict[str, str] = {
     "fuhaote": "",
     "hasta": "",
     "ikea": "",
+    "kangtai": "selflearning-switch",
     "risingsun": "",
     "sartano": "",
     "silvanchip": "",
@@ -243,6 +249,16 @@ WIDGET_PARAMS: dict[int, list[dict]] = {
         {"name": "house", "type": "int", "default": 1, "min": 1, "max": 16777215, "random": True},
         {"name": "unit", "type": "int", "default": 1, "min": 1, "max": 16},
     ],
+    # 18: kangtai on/off (Clas Ohlson 36-8836) — Net/ZNet only
+    18: [
+        {"name": "house", "type": "int", "default": 1, "min": 1, "max": 65535, "random": True},
+        {"name": "unit", "type": "int", "default": 1, "min": 1, "max": 30},
+    ],
+    # 19: kangtai dimmer — Net/ZNet only
+    19: [
+        {"name": "house", "type": "int", "default": 1, "min": 1, "max": 65535, "random": True},
+        {"name": "unit", "type": "int", "default": 1, "min": 1, "max": 126},
+    ],
 }
 
 # ---------------------------------------------------------------------------
@@ -262,6 +278,9 @@ DEVICE_CATALOG: list[tuple[str, str, str, int]] = [
     ("Chacon — Code switch", "arctech", "codeswitch:chacon", 1),
     ("Chacon — Self-learning dimmer", "arctech", "selflearning-dimmer:chacon", 8),
     ("Chacon — Self-learning on/off", "arctech", "selflearning-switch:chacon", 8),
+    # Clas Ohlson 36-8836 uses kangtai protocol (Net/ZNet only)
+    ("Clas Ohlson — Self-learning on/off (36-8836)", "kangtai", "selflearning-switch:clasohlson", 18),
+    ("Clas Ohlson — Self-learning dimmer (36-8836)", "kangtai", "selflearning-dimmer:clasohlson", 19),
     ("CoCo Technologies — Bell", "arctech", "bell:coco", 4),
     ("CoCo Technologies — Code switch", "arctech", "codeswitch:coco", 1),
     ("CoCo Technologies — Self-learning dimmer", "arctech", "selflearning-dimmer:coco", 8),
@@ -363,6 +382,9 @@ PROTOCOL_MODEL_CATALOG: list[tuple[str, str, str, int]] = [
     # ikea — Koppla 433 MHz (TX only)
     ("ikea — Koppla dimmer", "ikea", "selflearning", 3),
     ("ikea — Koppla on/off", "ikea", "selflearning-switch", 3),
+    # kangtai — Clas Ohlson 36-8836 (Net/ZNet only, TX only)
+    ("kangtai — Self-learning on/off", "kangtai", "selflearning-switch", 18),
+    ("kangtai — Self-learning dimmer", "kangtai", "selflearning-dimmer", 19),
     # risingsun — Kjell & Company, Conrad, Otio (TX+RX)
     ("risingsun — Code switch", "risingsun", "codeswitch", 5),
     ("risingsun — Self-learning on/off", "risingsun", "selflearning", 12),
@@ -411,19 +433,22 @@ PROTOCOL_MODEL_LABELS: list[str] = [label for label, _, _, _ in PROTOCOL_MODEL_C
 NET_RAW_PROTOCOLS: set[str] = {"arctech", "everflourish"}
 
 # Split PROTOCOL_MODEL_CATALOG for Net/ZNet backends:
-# - "raw" = we have a raw pulse-train encoder (reliable on all hardware)
-# - "native" = firmware handles it (unit+1 bug compensated, but only
+# - "raw" = our code encodes the pulse train (reliable on all hardware;
+#   protocols with a dedicated encoder use it, others fall back to native)
+# - "native" = firmware handles encoding (unit+1 bug compensated, but only
 #   house/unit params passed — protocols needing code/system/fade may fail)
+#
+# BOTH catalogs contain ALL protocols so users can test either path for
+# every device.  The encoding preference ("raw" or "native") is stored
+# per device in CONF_DEVICE_ENCODING and checked at send time.
 
-PROTOCOL_RAW_CATALOG: list[tuple[str, str, str, int]] = [
-    entry for entry in PROTOCOL_MODEL_CATALOG
-    if entry[1] in NET_RAW_PROTOCOLS
-]
+PROTOCOL_RAW_CATALOG: list[tuple[str, str, str, int]] = list(
+    PROTOCOL_MODEL_CATALOG
+)
 
-PROTOCOL_NATIVE_CATALOG: list[tuple[str, str, str, int]] = [
-    entry for entry in PROTOCOL_MODEL_CATALOG
-    if entry[1] not in NET_RAW_PROTOCOLS
-]
+PROTOCOL_NATIVE_CATALOG: list[tuple[str, str, str, int]] = list(
+    PROTOCOL_MODEL_CATALOG
+)
 
 PROTOCOL_RAW_MAP: dict[str, tuple[str, str, int]] = {
     label: (proto, model, widget)

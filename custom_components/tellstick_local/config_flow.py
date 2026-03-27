@@ -40,6 +40,7 @@ from .const import (
     CONF_BACKEND,
     CONF_COMMAND_PORT,
     CONF_DETECT_SARTANO,
+    CONF_DEVICE_ENCODING,
     CONF_DEVICE_HOUSE,
     CONF_DEVICE_MODEL,
     CONF_DEVICE_NAME,
@@ -57,6 +58,9 @@ from .const import (
     DEVICE_CATALOG_LABELS,
     DEVICE_CATALOG_MAP,
     DOMAIN,
+    ENCODING_NATIVE,
+    ENCODING_NATIVE_NOFIX,
+    ENCODING_RAW,
     ENTRY_DEVICE_ID_MAP,
     ENTRY_MIRRORS,
     ENTRY_TELLSTICK_CONTROLLER,
@@ -2183,7 +2187,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         if backend == BACKEND_NET:
             return self.async_show_menu(
                 step_id="user",
-                menu_options=["by_brand", "by_protocol_raw", "by_protocol_native"],
+                menu_options=["by_brand", "by_protocol_raw", "by_protocol_native", "by_protocol_native_nofix"],
             )
         return self.async_show_menu(
             step_id="user",
@@ -2251,9 +2255,9 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
     ) -> SubentryFlowResult:
         """Net/ZNet: add by protocol using raw pulse-train encoding.
 
-        These protocols have dedicated raw pulse-train encoders in our code
-        that bypass all ZNet firmware bugs.  Reliable on ALL hardware
-        versions (Net v1, v2, ZNet).
+        Protocols with dedicated raw pulse-train encoders (arctech,
+        everflourish) use them to bypass all ZNet firmware bugs.  Other
+        protocols fall through to the native firmware path at send time.
         """
         if user_input is not None:
             self._device_type = user_input["device_type"]
@@ -2263,6 +2267,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 CONF_DEVICE_NAME: user_input["name"],
                 CONF_DEVICE_PROTOCOL: protocol,
                 CONF_DEVICE_MODEL: model,
+                CONF_DEVICE_ENCODING: ENCODING_RAW,
             }
             return await self.async_step_params()
 
@@ -2284,7 +2289,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
     ) -> SubentryFlowResult:
         """Net/ZNet: add by protocol using TellStick native encoding.
 
-        These protocols are handled by the ZNet firmware's built-in Python
+        All protocols are handled by the ZNet firmware's built-in Python
         protocol stack.  The firmware's unit+1 bug is compensated for, but
         only house/unit parameters are passed — protocols needing code,
         system, or fade may not work correctly.
@@ -2297,11 +2302,46 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 CONF_DEVICE_NAME: user_input["name"],
                 CONF_DEVICE_PROTOCOL: protocol,
                 CONF_DEVICE_MODEL: model,
+                CONF_DEVICE_ENCODING: ENCODING_NATIVE,
             }
             return await self.async_step_params()
 
         return self.async_show_form(
             step_id="by_protocol_native",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("name"): str,
+                    vol.Required(
+                        "device_type",
+                        default=PROTOCOL_NATIVE_LABELS[0],
+                    ): vol.In(PROTOCOL_NATIVE_LABELS),
+                }
+            ),
+        )
+
+    async def async_step_by_protocol_native_nofix(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Net/ZNet: add by protocol using native encoding WITHOUT unit-1 fix.
+
+        Same as native but does NOT compensate for the ZNet firmware's
+        unit+1 bug.  Useful for testing whether the bug actually applies
+        to a given protocol.
+        """
+        if user_input is not None:
+            self._device_type = user_input["device_type"]
+            protocol, model, widget = PROTOCOL_NATIVE_MAP[self._device_type]
+            self._widget_id = widget
+            self._new_device = {
+                CONF_DEVICE_NAME: user_input["name"],
+                CONF_DEVICE_PROTOCOL: protocol,
+                CONF_DEVICE_MODEL: model,
+                CONF_DEVICE_ENCODING: ENCODING_NATIVE_NOFIX,
+            }
+            return await self.async_step_params()
+
+        return self.async_show_form(
+            step_id="by_protocol_native_nofix",
             data_schema=vol.Schema(
                 {
                     vol.Required("name"): str,
@@ -2400,6 +2440,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                         CONF_DEVICE_MODEL: self._new_device.get(CONF_DEVICE_MODEL, ""),
                         CONF_DEVICE_HOUSE: self._new_device.get(CONF_DEVICE_HOUSE, ""),
                         CONF_DEVICE_UNIT: self._new_device.get(CONF_DEVICE_UNIT, ""),
+                        CONF_DEVICE_ENCODING: self._new_device.get(CONF_DEVICE_ENCODING, ""),
                     }
                     await controller.learn(device_dict)
                     device_id_map_entry: Any = device_dict
@@ -2452,6 +2493,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                         self._new_device.get(CONF_DEVICE_MODEL, ""),
                         self._new_device.get(CONF_DEVICE_HOUSE, ""),
                         self._new_device.get(CONF_DEVICE_UNIT, ""),
+                        self._new_device.get(CONF_DEVICE_ENCODING, ""),
                     )
 
                 # Persist in entry.options[CONF_DEVICES]
@@ -2462,6 +2504,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                     CONF_DEVICE_MODEL: self._new_device.get(CONF_DEVICE_MODEL, ""),
                     CONF_DEVICE_HOUSE: self._new_device.get(CONF_DEVICE_HOUSE, ""),
                     CONF_DEVICE_UNIT: self._new_device.get(CONF_DEVICE_UNIT, ""),
+                    CONF_DEVICE_ENCODING: self._new_device.get(CONF_DEVICE_ENCODING, ""),
                     "params": self._new_device.get("params", {}),
                 }
                 new_options = dict(entry.options)
