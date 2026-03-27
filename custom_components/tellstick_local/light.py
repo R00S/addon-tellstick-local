@@ -49,6 +49,27 @@ def _is_dimmer(protocol: str, model: str) -> bool:
     return base in _DIMMER_MODELS
 
 
+def _remove_stale_switch(
+    ent_reg: er.EntityRegistry, entry_id: str, device_uid: str
+) -> None:
+    """Remove a stale switch entity for a device that is now a dimmer/light.
+
+    When a device is (re-)added as a dimmer, any previously auto-discovered
+    switch entity for the same UID must be removed from the entity registry.
+    Without this cleanup the old switch persists alongside the new light,
+    leaving the user with a broken switch entity and no dimmer controls.
+    """
+    unique_id = f"{entry_id}_{device_uid}"
+    entity_id = ent_reg.async_get_entity_id("switch", DOMAIN, unique_id)
+    if entity_id is not None:
+        _LOGGER.info(
+            "Removing stale switch entity %s for dimmer device %s",
+            entity_id,
+            device_uid,
+        )
+        ent_reg.async_remove(entity_id)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -66,12 +87,16 @@ async def async_setup_entry(
     known: set[str] = set()
 
     # Pre-create entities for stored (manually-added) dimmer devices
+    ent_reg = er.async_get(hass)
     stored_entities: list[TellStickLight] = []
     for device_uid, device_cfg in entry.options.get(CONF_DEVICES, {}).items():
         protocol = device_cfg.get(CONF_DEVICE_PROTOCOL, "")
         model = device_cfg.get(CONF_DEVICE_MODEL, "")
         if not _is_dimmer(protocol, model):
             continue
+        # Clean up stale switch entity for this UID — the device was
+        # (re-)added as a dimmer, so any old switch entity must go.
+        _remove_stale_switch(ent_reg, entry.entry_id, device_uid)
         known.add(device_uid)
         stored_entities.append(
             TellStickLight(
@@ -118,14 +143,20 @@ async def async_setup_entry(
         check_model = stored.get(CONF_DEVICE_MODEL, model)
         if not _is_dimmer(protocol, check_model):
             return
+        # Clean up stale switch entity for this UID — the device was
+        # (re-)added as a dimmer, so any old switch entity must go.
+        _remove_stale_switch(ent_reg, entry.entry_id, uid)
         known.add(uid)
         name = stored.get(CONF_DEVICE_NAME) or f"TellStick {uid}"
+        # Use stored catalog model for display (shows "selflearning-dimmer"
+        # instead of raw RF "selflearning" in the device info).
+        display_model = stored.get(CONF_DEVICE_MODEL) or model
         entity = TellStickLight(
             entry_id=entry.entry_id,
             device_uid=uid,
             name=name,
             protocol=protocol,
-            model=model,
+            model=display_model,
             controller=controller,
             device_id=device_id_map.get(uid),
             house=params.get("house", ""),
