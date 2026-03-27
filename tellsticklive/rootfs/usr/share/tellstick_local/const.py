@@ -28,7 +28,7 @@ DOMAIN = "tellstick_local"
 
 
 
-INTEGRATION_VERSION = "3.1.4.3"
+INTEGRATION_VERSION = "3.1.5.0"
 
 
 # Backend type stored in config entry data
@@ -414,16 +414,19 @@ NET_RAW_PROTOCOLS: set[str] = {"arctech", "everflourish"}
 # - "raw" = we have a raw pulse-train encoder (reliable on all hardware)
 # - "native" = firmware handles it (unit+1 bug compensated, but only
 #   house/unit params passed — protocols needing code/system/fade may fail)
+#
+# Both catalogs include ALL protocols that have raw encoders (arctech,
+# everflourish) so users can test either path.  The native catalog also
+# includes every other protocol (firmware-only).
 
 PROTOCOL_RAW_CATALOG: list[tuple[str, str, str, int]] = [
     entry for entry in PROTOCOL_MODEL_CATALOG
     if entry[1] in NET_RAW_PROTOCOLS
 ]
 
-PROTOCOL_NATIVE_CATALOG: list[tuple[str, str, str, int]] = [
-    entry for entry in PROTOCOL_MODEL_CATALOG
-    if entry[1] not in NET_RAW_PROTOCOLS
-]
+PROTOCOL_NATIVE_CATALOG: list[tuple[str, str, str, int]] = list(
+    PROTOCOL_MODEL_CATALOG
+)
 
 PROTOCOL_RAW_MAP: dict[str, tuple[str, str, int]] = {
     label: (proto, model, widget)
