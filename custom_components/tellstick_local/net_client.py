@@ -1171,10 +1171,7 @@ def _encode_arctech_command(
     except (TypeError, ValueError):
         unit0 = 0
 
-    # Normalise: TURNON on a dimmer model becomes DIM at full brightness
-    if method_int == _TURNON and "dimmer" in str(model).lower():
-        method_int = _DIM
-        param = 255
+    # DIM at level 0 is equivalent to TURNOFF.
     if method_int == _DIM and int(param or 0) == 0:
         method_int = _TURNOFF
 
@@ -2790,9 +2787,15 @@ class TellStickNetController:
                     "Net arctech: unsupported method=%s model=%s", method_name, model
                 )
                 return -1
-            send_kwargs = (
-                dict(S=rf_packet) if isinstance(rf_packet, bytes) else dict(rf_packet)
-            )
+            if isinstance(rf_packet, bytes):
+                # Raw dim pulse bytes: include protocol metadata so the ZNet
+                # firmware's handleSend() doesn't silently drop the packet
+                # (it requires a "protocol" key to pass the initial guard).
+                send_kwargs = dict(
+                    protocol="arctech", model="selflearning", S=rf_packet,
+                )
+            else:
+                send_kwargs = dict(rf_packet)
         elif protocol == "everflourish":
             # Everflourish variant dispatch.  The model suffix (e.g. ":ef_v5")
             # selects the encoding variant.  See _encode_everflourish_variant().
