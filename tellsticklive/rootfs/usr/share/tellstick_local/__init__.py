@@ -41,6 +41,7 @@ from .const import (
     CONF_BACKEND,
     CONF_COMMAND_PORT,
     CONF_DETECT_SARTANO,
+    CONF_DEVICE_ENCODING,
     CONF_DEVICE_HOUSE,
     CONF_DEVICE_MODEL,
     CONF_DEVICE_NAME,
@@ -501,6 +502,7 @@ async def _register_mirror_devices(
                 CONF_DEVICE_MODEL: model,
                 CONF_DEVICE_HOUSE: house,
                 CONF_DEVICE_UNIT: unit,
+                CONF_DEVICE_ENCODING: device_cfg.get(CONF_DEVICE_ENCODING, ""),
             }
         else:
             # Duo mirror: register device with the mirror's telldusd
@@ -533,6 +535,7 @@ async def _register_device_on_mirror(
     model: str,
     house: str,
     unit: str,
+    encoding: str = "",
 ) -> None:
     """Register a single newly-added device on one mirror controller.
 
@@ -566,6 +569,7 @@ async def _register_device_on_mirror(
             CONF_DEVICE_MODEL: model,
             CONF_DEVICE_HOUSE: house,
             CONF_DEVICE_UNIT: unit,
+            CONF_DEVICE_ENCODING: encoding,
         }
 
 
@@ -810,6 +814,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 CONF_DEVICE_MODEL: device_cfg.get(CONF_DEVICE_MODEL, ""),
                 CONF_DEVICE_HOUSE: device_cfg.get(CONF_DEVICE_HOUSE, ""),
                 CONF_DEVICE_UNIT: device_cfg.get(CONF_DEVICE_UNIT, ""),
+                CONF_DEVICE_ENCODING: device_cfg.get(CONF_DEVICE_ENCODING, ""),
             }
         # Net does not use _import_app_configured_devices
         do_app_import = False

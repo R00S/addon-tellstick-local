@@ -1336,7 +1336,8 @@ def _encode_everflourish_command(
 
 
 def _encode_generic_command(
-    protocol: str, model: str, house: Any, unit: Any, method_name: str
+    protocol: str, model: str, house: Any, unit: Any, method_name: str,
+    *, compensate_unit: bool = True,
 ) -> dict:
     """Build a generic send dict for protocols handled natively by the ZNet.
 
@@ -1345,9 +1346,11 @@ def _encode_generic_command(
         protocol.setParameters({'house': msg['house'], 'unit': msg['unit'] + 1})
 
     This means the firmware adds 1 to the unit we send before passing it to
-    the protocol encoder's ``intParameter('unit', ...)``.  To compensate, we
-    subtract 1 from the unit value here so the protocol encoder receives the
-    correct value.
+    the protocol encoder's ``intParameter('unit', ...)``.  When
+    *compensate_unit* is True (the default) we subtract 1 from the unit value
+    so the protocol encoder receives the correct value.  Set to False to send
+    the unit value as-is (useful for testing whether the bug actually applies
+    to a given protocol).
 
     **Limitation:** handleSend() only passes ``house`` and ``unit`` to
     ``setParameters()``.  Protocols that need ``code``, ``system``, ``units``,
@@ -1363,9 +1366,9 @@ def _encode_generic_command(
     except (TypeError, ValueError):
         house_val = str(house)
     try:
-        # Compensate for ZNet firmware unit+1 bug: subtract 1 so that after
-        # the firmware adds 1, the protocol encoder gets the correct value.
-        unit_val: Any = int(unit) - 1
+        unit_int = int(unit)
+        # Compensate for ZNet firmware unit+1 bug when requested.
+        unit_val: Any = unit_int - 1 if compensate_unit else unit_int
     except (TypeError, ValueError):
         unit_val = str(unit)
     return OrderedDict(
@@ -1660,18 +1663,40 @@ class TellStickNetController:
         model = model_full.split(":")[0] if ":" in model_full else model_full
         house = device.get("house", "0")
         unit = device.get("unit", "0")
+        encoding = device.get("encoding", "")
 
-        if protocol == "arctech":
+        if encoding == "native":
+            # Explicit native path: always use the firmware's protocol stack.
+            # Compensates for the ZNet unit+1 bug.  Works for all protocols
+            # but only passes house/unit — code/system/fade are lost.
+            send_kwargs: dict[str, Any] = dict(
+                _encode_generic_command(protocol, model, house, unit, method_name)
+            )
+        elif encoding == "native_nofix":
+            # Native path WITHOUT unit+1 compensation.  Sends the unit value
+            # as-is so the user can test whether the bug actually applies.
+            send_kwargs = dict(
+                _encode_generic_command(
+                    protocol, model, house, unit, method_name,
+                    compensate_unit=False,
+                )
+            )
+        elif protocol == "arctech":
+            # Arctech-specific encoder (pre-split behaviour, proven stable).
+            # Returns native OrderedDict for on/off/learn (with proper model
+            # normalisation, letter house codes, 0-indexed unit) and raw
+            # pulse-train bytes for dim.
             rf_packet = _encode_arctech_command(model, house, unit, method_name, param)
             if rf_packet is None:
                 _LOGGER.warning(
                     "Net arctech: unsupported method=%s model=%s", method_name, model
                 )
                 return -1
-            send_kwargs: dict[str, Any] = (
+            send_kwargs = (
                 dict(S=rf_packet) if isinstance(rf_packet, bytes) else dict(rf_packet)
             )
         elif protocol == "everflourish":
+            # Everflourish raw pulse-train encoder.
             rf_packet = _encode_everflourish_command(house, unit, method_name)
             if rf_packet is None:
                 _LOGGER.warning(
@@ -1680,13 +1705,9 @@ class TellStickNetController:
                 return -1
             send_kwargs = dict(S=rf_packet)  # raw pulse-train bytes
         else:
-            # Native firmware path: the ZNet firmware's handleSend() routes
-            # this through its Python protocol stack.  We compensate for the
-            # unit+1 bug in _encode_generic_command() (subtracts 1 from unit).
-            #
-            # LIMITATION: handleSend() only passes house/unit to the protocol
-            # encoder.  Protocols needing code, system, fade, or custom R/P
-            # prefixes will NOT work correctly via this path.
+            # No protocol-specific encoder: fall through to native firmware
+            # path.  Compensates for ZNet unit+1 bug but only passes
+            # house/unit — protocols needing code/system/fade may fail.
             # See docs/ZNET_PROTOCOL_PORTING_GUIDE.md for the porting pattern.
             send_kwargs = dict(
                 _encode_generic_command(protocol, model, house, unit, method_name)

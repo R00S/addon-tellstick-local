@@ -233,7 +233,8 @@
             "by_brand": "Add by brand",
             "by_protocol": "Add by protocol",
             "by_protocol_raw": "Add by protocol (raw pulse)",
-            "by_protocol_native": "Add by protocol (TellStick native — experimental)"
+            "by_protocol_native": "Add by protocol (TellStick native — unit-1 fix)",
+            "by_protocol_native_nofix": "Add by protocol (TellStick native — no unit fix)"
           }
         },
         "by_brand": {
@@ -261,8 +262,16 @@
           }
         },
         "by_protocol_native": {
-          "title": "Add by protocol (TellStick native)",
-          "description": "These protocols are handled by the TellStick firmware's built-in protocol stack. The firmware's **unit+1 bug** is compensated for, but only **house** and **unit** parameters are passed — protocols needing code, system, or fade may not work correctly.\n\nPick the protocol and model, then give it a name.",
+          "title": "Add by protocol (TellStick native — unit-1 fix)",
+          "description": "These protocols are handled by the TellStick firmware's built-in protocol stack. The firmware's **unit+1 bug** is compensated for (we subtract 1), but only **house** and **unit** parameters are passed — protocols needing code, system, or fade may not work correctly.\n\nPick the protocol and model, then give it a name.",
+          "data": {
+            "name": "Device name",
+            "device_type": "Protocol and model"
+          }
+        },
+        "by_protocol_native_nofix": {
+          "title": "Add by protocol (TellStick native — no unit fix)",
+          "description": "Same as native encoding but does **NOT** compensate for the firmware's unit+1 bug — the unit value is sent as-is. Use this to test whether the bug actually applies to your device.\n\nPick the protocol and model, then give it a name.",
           "data": {
             "name": "Device name",
             "device_type": "Protocol and model"
