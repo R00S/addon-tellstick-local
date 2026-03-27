@@ -116,11 +116,15 @@ async def async_setup_entry(
             if er.async_get(hass).async_get_entity_id("switch", DOMAIN, unique_id) is not None:
                 return  # entity still active — skip duplicate
             known.discard(uid)  # entity was deleted — fall through to create
-        if not _is_switch(protocol, model):
+        # Use the stored catalog model (e.g. "selflearning-dimmer:nexa") for
+        # the type check when available.  The synthetic event from the "Add
+        # device" flow uses the RF-normalized model ("selflearning") which
+        # loses the -dimmer/-switch distinction.  Issue #90.
+        stored = entry.options.get(CONF_DEVICES, {}).get(uid, {})
+        check_model = stored.get(CONF_DEVICE_MODEL, model)
+        if not _is_switch(protocol, check_model):
             return
         known.add(uid)
-        # Use stored name if available, otherwise generate one
-        stored = entry.options.get(CONF_DEVICES, {}).get(uid, {})
         name = stored.get(CONF_DEVICE_NAME) or f"TellStick {uid}"
         entity = TellStickSwitch(
             entry_id=entry.entry_id,
