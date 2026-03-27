@@ -58,10 +58,10 @@ from .const import (
     DEVICE_CATALOG_LABELS,
     DEVICE_CATALOG_MAP,
     DOMAIN,
-    EF_TEST_GROUP_UID,
     EF_TEST_HOUSE,
+    EF_TEST_NATIVE_VARIANTS,
+    EF_TEST_RAW_VARIANTS,
     EF_TEST_UNIT,
-    EF_TEST_VARIANTS,
     ENCODING_NATIVE,
     ENCODING_NATIVE_NOFIX,
     ENCODING_RAW,
@@ -2191,7 +2191,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         if backend == BACKEND_NET:
             return self.async_show_menu(
                 step_id="user",
-                menu_options=["by_brand", "by_protocol_raw", "by_protocol_native", "by_protocol_native_nofix", "ef_test_device"],
+                menu_options=["by_brand", "by_protocol_raw", "by_protocol_native", "by_protocol_native_nofix", "ef_test_raw", "ef_test_native"],
             )
         return self.async_show_menu(
             step_id="user",
@@ -2562,18 +2562,22 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         )
 
     # ------------------------------------------------------------------
-    # EF test device — quick-add all 20 everflourish variants at once
+    # EF test devices — two separate flows for raw vs native variants
     # ------------------------------------------------------------------
 
-    async def async_step_ef_test_device(
-        self, user_input: dict[str, Any] | None = None
+    async def _async_ef_test_create(
+        self,
+        user_input: dict[str, Any] | None,
+        variants: list[tuple[str, str]],
+        group_prefix: str,
+        seq_model: str,
+        step_id: str,
     ) -> SubentryFlowResult:
-        """Add all 20 EF raw encoding test variants as individual switches.
+        """Shared helper for EF test raw/native flows.
 
-        Also creates a special "sequence all" marker device that the button
-        platform picks up to create an ``EFTestSequenceButton``.
-
-        Net/ZNet backend only — the Duo backend doesn't need variant testing.
+        Creates one switch entity per variant + one sequence button,
+        persists to options, reloads the integration entry, and reports
+        progress.
         """
         errors: dict[str, str] = {}
 
@@ -2588,16 +2592,12 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             )
 
             existing_devices = dict(entry.options.get(CONF_DEVICES, {}))
-            group_uid = f"{EF_TEST_GROUP_UID}_{house}_{unit}"
+            group_uid = f"{group_prefix}_{house}_{unit}"
             created = 0
 
             # --- Create one switch entity per variant ---
-            for variant_suffix, label in EF_TEST_VARIANTS:
+            for variant_suffix, label in variants:
                 model = f"selflearning-switch:{variant_suffix}"
-                # Use a custom UID that includes the variant suffix.
-                # build_device_uid() normalizes away the suffix, so all
-                # 20 variants would get the same UID.  The ef_test_ prefix
-                # also makes them easy to identify and clean up.
                 device_uid = f"ef_test_{variant_suffix}_{house}_{unit}"
                 if device_uid in existing_devices:
                     continue
@@ -2607,7 +2607,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                     CONF_DEVICE_MODEL: model,
                     CONF_DEVICE_HOUSE: house,
                     CONF_DEVICE_UNIT: unit,
-                    CONF_DEVICE_ENCODING: "",  # raw path (variant dispatch)
+                    CONF_DEVICE_ENCODING: "",
                 }
                 device_id_map[device_uid] = device_dict
 
@@ -2623,12 +2623,12 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 created += 1
 
             # --- Create the "sequence all" marker device ---
-            seq_uid = f"ef_test_seq_{house}_{unit}"
+            seq_uid = f"ef_test_{group_prefix}_seq_{house}_{unit}"
             if seq_uid not in existing_devices:
                 existing_devices[seq_uid] = {
-                    CONF_DEVICE_NAME: f"EF test — sequence ALL (h={house} u={unit})",
+                    CONF_DEVICE_NAME: f"EF test {group_prefix} — sequence ALL (h={house} u={unit})",
                     CONF_DEVICE_PROTOCOL: "everflourish",
-                    CONF_DEVICE_MODEL: "ef_test_sequence",
+                    CONF_DEVICE_MODEL: seq_model,
                     CONF_DEVICE_HOUSE: house,
                     CONF_DEVICE_UNIT: unit,
                     CONF_DEVICE_ENCODING: "",
@@ -2644,13 +2644,17 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             )
 
             _LOGGER.info(
-                "EF test device: created %d entities (house=%s unit=%s)",
-                created, house, unit,
+                "EF test %s: created %d entities (house=%s unit=%s), reloading",
+                group_prefix, created, house, unit,
             )
+
+            # Reload the integration entry so new entities appear immediately
+            await self.hass.config_entries.async_reload(entry.entry_id)
+
             return self.async_abort(reason="device_added")
 
         return self.async_show_form(
-            step_id="ef_test_device",
+            step_id=step_id,
             data_schema=vol.Schema(
                 {
                     vol.Required("house", default=int(EF_TEST_HOUSE)): vol.All(
@@ -2662,4 +2666,28 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 }
             ),
             errors=errors,
+        )
+
+    async def async_step_ef_test_raw(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Add all EF raw (S-only) pulse encoding test variants."""
+        return await self._async_ef_test_create(
+            user_input,
+            variants=EF_TEST_RAW_VARIANTS,
+            group_prefix="ef_test_raw",
+            seq_model="ef_test_raw_sequence",
+            step_id="ef_test_raw",
+        )
+
+    async def async_step_ef_test_native(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Add all EF native (firmware dict) encoding test variants."""
+        return await self._async_ef_test_create(
+            user_input,
+            variants=EF_TEST_NATIVE_VARIANTS,
+            group_prefix="ef_test_native",
+            seq_model="ef_test_native_sequence",
+            step_id="ef_test_native",
         )

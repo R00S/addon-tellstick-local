@@ -2,9 +2,10 @@
 
 Provides:
 - **Send learn signal** button on each non-sensor device.
-- **EF test — sequence ALL** button that fires all 20 everflourish encoding
-  variants in sequence with 2 s delays, so testers can watch the TellStick LED
-  to see which variant(s) make the hardware blink.
+- **EF test — sequence ALL** buttons (one for raw variants, one for native
+  variants) that fire all encoding variants in sequence with 2 s delays,
+  so testers can watch the TellStick LED to see which variant(s) make
+  the hardware blink.
 """
 from __future__ import annotations
 
@@ -28,6 +29,8 @@ from .const import (
     CONF_DEVICE_UNIT,
     CONF_DEVICES,
     DOMAIN,
+    EF_TEST_NATIVE_VARIANTS,
+    EF_TEST_RAW_VARIANTS,
     EF_TEST_VARIANTS,
     ENTRY_DEVICE_ID_MAP,
     ENTRY_MIRRORS,
@@ -60,8 +63,16 @@ async def async_setup_entry(
 
         model = device_cfg.get(CONF_DEVICE_MODEL, "")
 
+        # EF test "sequence ALL" markers → create the appropriate sequence button
+        _EF_SEQ_MODELS: dict[str, tuple[list[tuple[str, str]], str]] = {
+            "ef_test_sequence": (EF_TEST_VARIANTS, "ef_test_sequence"),
+            "ef_test_raw_sequence": (EF_TEST_RAW_VARIANTS, "ef_test_raw_sequence"),
+            "ef_test_native_sequence": (EF_TEST_NATIVE_VARIANTS, "ef_test_native_sequence"),
+        }
+
         # EF test "sequence ALL" marker → create the sequence button
-        if model == "ef_test_sequence":
+        if model in _EF_SEQ_MODELS:
+            variants_list, translation_key = _EF_SEQ_MODELS[model]
             stored_entities.append(
                 EFTestSequenceButton(
                     entry_id=entry.entry_id,
@@ -70,6 +81,8 @@ async def async_setup_entry(
                     house=device_cfg.get(CONF_DEVICE_HOUSE, "100"),
                     unit=device_cfg.get(CONF_DEVICE_UNIT, "1"),
                     group_uid=device_cfg.get("group_uid") or None,
+                    variants_list=variants_list,
+                    translation_key_override=translation_key,
                 )
             )
             continue
@@ -190,9 +203,9 @@ class TellStickLearnButton(ButtonEntity):
 
 
 class EFTestSequenceButton(ButtonEntity):
-    """Button that fires all 20 everflourish encoding variants in sequence.
+    """Button that fires all everflourish encoding variants in sequence.
 
-    When pressed, iterates through every EF_TEST_VARIANTS entry, sends a
+    When pressed, iterates through every variant in the provided list, sends a
     ``turn_on`` command for that variant, waits ``_EF_SEQ_DELAY`` seconds,
     then moves to the next.  The tester watches the TellStick LED to see
     which variant(s) cause the hardware to blink.
@@ -203,7 +216,6 @@ class EFTestSequenceButton(ButtonEntity):
 
     _attr_has_entity_name = True
     _attr_icon = "mdi:playlist-play"
-    _attr_translation_key = "ef_test_sequence"
 
     def __init__(
         self,
@@ -213,12 +225,16 @@ class EFTestSequenceButton(ButtonEntity):
         house: str,
         unit: str,
         group_uid: str | None = None,
+        variants_list: list[tuple[str, str]] | None = None,
+        translation_key_override: str = "ef_test_sequence",
     ) -> None:
         """Initialize the EF sequence button."""
         self._entry_id = entry_id
         self._device_uid = device_uid
         self._house = house
         self._unit = unit
+        self._variants = variants_list or EF_TEST_VARIANTS
+        self._attr_translation_key = translation_key_override
         self._attr_unique_id = f"{entry_id}_{device_uid}_ef_seq"
         self._running = False
         self._current_variant = ""
@@ -243,7 +259,7 @@ class EFTestSequenceButton(ButtonEntity):
         }
 
     async def async_press(self) -> None:
-        """Fire all 20 EF variants in sequence with delays."""
+        """Fire all EF variants in sequence with delays."""
         if self._running:
             _LOGGER.warning("EF test sequence already running — ignoring press")
             return
@@ -257,10 +273,10 @@ class EFTestSequenceButton(ButtonEntity):
             return
 
         self._running = True
-        total = len(EF_TEST_VARIANTS)
+        total = len(self._variants)
 
         try:
-            for idx, (variant_suffix, label) in enumerate(EF_TEST_VARIANTS, 1):
+            for idx, (variant_suffix, label) in enumerate(self._variants, 1):
                 self._current_variant = f"{variant_suffix}: {label}"
                 self._progress = f"{idx}/{total}"
                 self.async_write_ha_state()

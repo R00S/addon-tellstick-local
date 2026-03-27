@@ -1366,13 +1366,54 @@ def _encode_everflourish_command(
     return _everflourish_pulse_train(house_int, unit1, action)
 
 
+def _everflourish_pulse_train_ex_preamble(
+    house: int, unit1: int, action: int,
+    *, preamble_count: int = 8,
+    short: int = 60, long: int = 114,
+) -> bytes:
+    """Build raw everflourish pulse-train bytes with custom preamble length.
+
+    Same as ``_everflourish_pulse_train_ex`` but allows overriding the
+    preamble length (number of short pulses).  Standard is 8.
+    """
+    s = bytes([short])
+    l = bytes([long])  # noqa: E741
+    zero = s + s + s + l
+    one = s + l + s + s
+    bits = [zero, one]
+
+    device_code = (house << 2) | (unit1 - 1)
+    checksum = _everflourish_checksum(device_code)
+
+    # Preamble: preamble_count × short pulse
+    code = s * preamble_count
+
+    # Device code: 16 bits, MSB first
+    for i in range(15, -1, -1):
+        code += bits[(device_code >> i) & 0x01]
+
+    # Checksum: 4 bits, MSB first
+    for i in range(3, -1, -1):
+        code += bits[(checksum >> i) & 0x01]
+
+    # Action: 4 bits, MSB first
+    for i in range(3, -1, -1):
+        code += bits[(action >> i) & 0x01]
+
+    # Terminator: 4 × short pulse
+    code += s * 4
+
+    return code
+
+
 def _encode_everflourish_variant(
     house: Any, unit: Any, method_name: str, model_full: str,
 ) -> dict[str, Any] | None:
     """Build send_kwargs for an everflourish raw variant.
 
-    Extracts the variant suffix (``ef_v1`` … ``ef_v20``) from *model_full* and
-    returns the appropriate dict to pass to ``encode_packet("send", ...)``.
+    Extracts the variant suffix (``ef_v1`` … ``ef_v20``, ``ef_r01`` … ``ef_r52``,
+    ``ef_n01`` … ``ef_n53``) from *model_full* and returns the appropriate dict
+    to pass to ``encode_packet("send", ...)``.
     Returns ``None`` if the method is unsupported.
 
     See ``docs/EVERFLOURISH_RESEARCH.md`` for variant descriptions.
@@ -1401,47 +1442,53 @@ def _encode_everflourish_variant(
     except (TypeError, ValueError):
         unit_int = 1
 
+    # Clamped values for raw pulse builder
+    try:
+        house_clamped = max(0, min(16383, int(house)))
+    except (TypeError, ValueError):
+        house_clamped = 0
+    try:
+        unit_clamped = max(1, min(4, int(unit)))
+    except (TypeError, ValueError):
+        unit_clamped = 1
+
+    # ==================================================================
+    # LEGACY variants ef_v1..ef_v20 (backward compat)
+    # ==================================================================
+
     # -- Group A: S-only (no protocol key) ----------------------------------
     if variant in ("", "ef_v1"):
-        # v1: S-only bytes (current behaviour)
         return dict(S=rf_packet)
 
     if variant == "ef_v2":
-        # v2: S bytes + R=4 repeat prefix
         return dict(S=rf_packet, R=4)
 
     if variant == "ef_v3":
-        # v3: S bytes + R=10, P=5 (like tellstick-server internal path)
         return dict(S=rf_packet, R=10, P=5)
 
     if variant == "ef_v4":
-        # v4: Doubled signal (two copies of the pulse train)
         return dict(S=rf_packet + rf_packet)
 
     # -- Group B: Native dict (firmware encodes internally) -----------------
     if variant == "ef_v5":
-        # v5: Native dict, no unit fix — firmware will add +1 internally
         return OrderedDict(
             protocol="everflourish", model="selflearning-switch",
             house=house_int, unit=unit_int, method=method_int,
         )
 
     if variant == "ef_v6":
-        # v6: Native dict, unit-1 fix — compensates for firmware +1 bug
         return OrderedDict(
             protocol="everflourish", model="selflearning-switch",
             house=house_int, unit=unit_int - 1, method=method_int,
         )
 
     if variant == "ef_v7":
-        # v7: Native dict, model="selflearning" (firmware canonical name), no fix
         return OrderedDict(
             protocol="everflourish", model="selflearning",
             house=house_int, unit=unit_int, method=method_int,
         )
 
     if variant == "ef_v8":
-        # v8: Native dict, model="selflearning", unit-1 fix
         return OrderedDict(
             protocol="everflourish", model="selflearning",
             house=house_int, unit=unit_int - 1, method=method_int,
@@ -1449,7 +1496,6 @@ def _encode_everflourish_variant(
 
     # -- Group C: Hybrid (native dict + our S bytes) -----------------------
     if variant == "ef_v9":
-        # v9: Native + S, no unit fix
         d: dict[str, Any] = OrderedDict(
             protocol="everflourish", model="selflearning-switch",
             house=house_int, unit=unit_int, method=method_int,
@@ -1458,7 +1504,6 @@ def _encode_everflourish_variant(
         return d
 
     if variant == "ef_v10":
-        # v10: Native + S, unit-1 fix
         d = OrderedDict(
             protocol="everflourish", model="selflearning-switch",
             house=house_int, unit=unit_int - 1, method=method_int,
@@ -1467,7 +1512,6 @@ def _encode_everflourish_variant(
         return d
 
     if variant == "ef_v11":
-        # v11: Native + S + R + P, no unit fix
         d = OrderedDict(
             protocol="everflourish", model="selflearning-switch",
             house=house_int, unit=unit_int, method=method_int,
@@ -1478,60 +1522,31 @@ def _encode_everflourish_variant(
         return d
 
     if variant == "ef_v12":
-        # v12: Native dict, unit-2 fix (test: firmware+1 AND protocol+1?)
         return OrderedDict(
             protocol="everflourish", model="selflearning",
             house=house_int, unit=unit_int - 2, method=method_int,
         )
 
     # -- Group D: Timing variations (S-only) --------------------------------
-    #
-    # TellStick protocol spec: each byte = byte_value × 10 µs pulse duration.
-    # Source: telldus/telldus docs/02-tellstick-protocol.dox
-    #
-    # Standard everflourish: short=60 (600µs), long=114 (1140µs)
-    # Sourced from BOTH telldus-core ProtocolEverflourish.cpp AND
-    # tellstick-server ProtocolEverflourish.py — same values in both.
-
-    # Resolve house/unit for the raw pulse builder
-    try:
-        house_clamped = max(0, min(16383, int(house)))
-    except (TypeError, ValueError):
-        house_clamped = 0
-    try:
-        unit_clamped = max(1, min(4, int(unit)))
-    except (TypeError, ValueError):
-        unit_clamped = 1
-
     if variant == "ef_v13":
-        # v13: Half timing (short=30 → 300µs, long=57 → 570µs)
-        # Tests if hardware applies a 2× multiplier to byte values.
         pkt = _everflourish_pulse_train_ex(
             house_clamped, unit_clamped, action, short=30, long=57,
         )
         return dict(S=pkt)
 
     if variant == "ef_v14":
-        # v14: Double timing (short=120 → 1200µs, long=228 → 2280µs)
-        # Tests if hardware applies a 0.5× divider to byte values.
         pkt = _everflourish_pulse_train_ex(
             house_clamped, unit_clamped, action, short=120, long=228,
         )
         return dict(S=pkt)
 
     if variant == "ef_v15":
-        # v15: Inverted bits — swap 0↔1 pulse patterns.
-        # Tests if our bit encoding is backwards.
         pkt = _everflourish_pulse_train_ex(
             house_clamped, unit_clamped, action, invert_bits=True,
         )
         return dict(S=pkt)
 
     if variant == "ef_v16":
-        # v16: Duo sync prefix — prepend [60,1,1,60] before preamble.
-        # The Duo's extended format (ProtocolEverflourish.cpp) has a sync
-        # byte 0b01101001 = [short, minimal, minimal, short] between the
-        # T timing table and the preamble.  Test if this sync matters.
         pkt = _everflourish_pulse_train_ex(
             house_clamped, unit_clamped, action,
             preamble_prefix=bytes([60, 1, 1, 60]),
@@ -1539,37 +1554,17 @@ def _encode_everflourish_variant(
         return dict(S=pkt)
 
     # -- Group E: Repeat/terminator (S-only) --------------------------------
-    #
-    # The Duo sends R=5 (repeat 5 times) and appends '+' (chr 43) as
-    # end-of-transmission marker.  The ZNet's internal path sends ONCE
-    # with NO repeat and NO '+'.  Test if adding these helps.
-    #
-    # R/P in the dict: on Net v1, the C firmware MAY read R from the dict
-    # to control rfSend() loop count.  On ZNet v2, R/P in the dict are
-    # ignored (handleSend crashes before looking at them for S-only).
-
     if variant == "ef_v17":
-        # v17: S-only + R=5 (repeat 5 times, matching Duo)
         return dict(S=rf_packet, R=5)
 
     if variant == "ef_v18":
-        # v18: S-only with '+' terminator appended to pulse data.
-        # TellStick protocol: S<data>+ where + signals end-of-transmission.
-        # Firmware normally adds the '+', but test if including it in S
-        # data makes a difference (e.g. Net v1 C firmware edge case).
         return dict(S=rf_packet + b"+")
 
     if variant == "ef_v19":
-        # v19: S-only + R=5 + P=37 + '+' terminator (full Duo-style).
-        # R=5 repeats, P=37 (37ms pause between repeats), '+' end marker.
         return dict(S=rf_packet + b"+", R=5, P=37)
 
-    # -- Group F: Hybrid with repeat (native + Duo-style repeat) -----------
+    # -- Group F: Hybrid with repeat ----------------------------------------
     if variant == "ef_v20":
-        # v20: Native + S + R=5 (test if firmware passes R prefix to RF chip).
-        # On ZNet v2, handleSend() decodes via protocol stack and ignores our
-        # R value.  But on Net v1 (if protocol key causes drop), this tests
-        # whether the firmware sees R before checking protocol.
         d = OrderedDict(
             protocol="everflourish", model="selflearning",
             house=house_int, unit=unit_int - 1, method=method_int,
@@ -1577,6 +1572,255 @@ def _encode_everflourish_variant(
         d["S"] = rf_packet
         d["R"] = 5
         return d
+
+    # ==================================================================
+    # NEW RAW variants ef_r01..ef_r52 (S-only pulse-train bytes)
+    # ==================================================================
+
+    # --- Group RS: Standard timing (60/114), varying repeat count ---
+    _rs_repeats = {
+        "ef_r01": 1, "ef_r02": 2, "ef_r03": 3, "ef_r04": 4,
+        "ef_r05": 5, "ef_r06": 6, "ef_r07": 7, "ef_r08": 8,
+        "ef_r09": 9, "ef_r10": 10, "ef_r11": 15, "ef_r12": 20,
+    }
+    if variant in _rs_repeats:
+        return dict(S=rf_packet, R=_rs_repeats[variant])
+
+    # --- Group RT: Timing sweep (all R=5) ---
+    _rt_timings: dict[str, tuple[int, int]] = {
+        "ef_r13": (30, 57), "ef_r14": (40, 76), "ef_r15": (50, 95),
+        "ef_r16": (70, 133), "ef_r17": (80, 152), "ef_r18": (90, 171),
+    }
+    if variant in _rt_timings:
+        s_val, l_val = _rt_timings[variant]
+        pkt = _everflourish_pulse_train_ex(
+            house_clamped, unit_clamped, action, short=s_val, long=l_val,
+        )
+        return dict(S=pkt, R=5)
+
+    # --- Group RP: Preamble length sweep (all R=5) ---
+    # We rebuild the pulse train with a custom preamble length
+    _rp_lengths: dict[str, int] = {
+        "ef_r19": 0, "ef_r20": 2, "ef_r21": 4, "ef_r22": 6,
+        "ef_r23": 10, "ef_r24": 12, "ef_r25": 16,
+    }
+    if variant in _rp_lengths:
+        pre_len = _rp_lengths[variant]
+        # Build with standard timing but override preamble by manually
+        # constructing the pulse train with the desired preamble length.
+        pkt = _everflourish_pulse_train_ex_preamble(
+            house_clamped, unit_clamped, action, preamble_count=pre_len,
+        )
+        return dict(S=pkt, R=5)
+
+    # --- Group RD: Double/triple signal copies ---
+    _rd_copies: dict[str, tuple[int, int]] = {
+        "ef_r26": (2, 1), "ef_r27": (2, 3), "ef_r28": (2, 5),
+        "ef_r29": (3, 1), "ef_r30": (3, 3), "ef_r31": (3, 5),
+    }
+    if variant in _rd_copies:
+        copies, r_val = _rd_copies[variant]
+        return dict(S=rf_packet * copies, R=r_val)
+
+    # --- Group RF: Frame/terminator combos ---
+    _rf_combos: dict[str, tuple[int, bool, int]] = {
+        # (R, has_plus_terminator, P)
+        "ef_r32": (1, False, 0), "ef_r33": (1, True, 0),
+        "ef_r34": (3, False, 0), "ef_r35": (3, True, 0),
+        "ef_r36": (3, True, 5), "ef_r37": (5, False, 0),
+        "ef_r38": (5, True, 5), "ef_r39": (5, True, 37),
+        "ef_r40": (5, False, 37),
+    }
+    if variant in _rf_combos:
+        r_val, has_plus, p_val = _rf_combos[variant]
+        s_data = (rf_packet + b"+") if has_plus else rf_packet
+        result: dict[str, Any] = dict(S=s_data, R=r_val)
+        if p_val:
+            result["P"] = p_val
+        return result
+
+    # --- Group RI: Inverted bit encoding ---
+    _ri_repeats: dict[str, int] = {
+        "ef_r41": 1, "ef_r42": 3, "ef_r43": 5,
+    }
+    if variant in _ri_repeats:
+        pkt = _everflourish_pulse_train_ex(
+            house_clamped, unit_clamped, action, invert_bits=True,
+        )
+        return dict(S=pkt, R=_ri_repeats[variant])
+
+    # --- Group RB: Bit order variations ---
+    if variant == "ef_r44":
+        # MSB standard (same as normal, explicit for comparison)
+        return dict(S=rf_packet, R=5)
+
+    if variant == "ef_r45":
+        # LSB reversed — reverse the entire pulse byte sequence
+        return dict(S=bytes(reversed(rf_packet)), R=5)
+
+    if variant == "ef_r46":
+        # LSB reversed + inverted bits
+        pkt = _everflourish_pulse_train_ex(
+            house_clamped, unit_clamped, action, invert_bits=True,
+        )
+        return dict(S=bytes(reversed(pkt)), R=5)
+
+    # --- Group RX: Cross timing combos (all R=5) ---
+    _rx_timings: dict[str, tuple[int, int]] = {
+        "ef_r47": (30, 114), "ef_r48": (60, 57),
+        "ef_r49": (50, 114), "ef_r50": (60, 95),
+        "ef_r51": (40, 133), "ef_r52": (80, 114),
+    }
+    if variant in _rx_timings:
+        s_val, l_val = _rx_timings[variant]
+        pkt = _everflourish_pulse_train_ex(
+            house_clamped, unit_clamped, action, short=s_val, long=l_val,
+        )
+        return dict(S=pkt, R=5)
+
+    # ==================================================================
+    # NEW NATIVE variants ef_n01..ef_n53 (firmware protocol dicts)
+    # ==================================================================
+
+    # --- Group NM: Model name variations (unit offset 0) ---
+    _nm_models: dict[str, str] = {
+        "ef_n01": "selflearning-switch", "ef_n02": "selflearning",
+        "ef_n03": "selflearning-dimmer", "ef_n04": "switch",
+        "ef_n05": "everflourish", "ef_n06": "codeswitch", "ef_n07": "bell",
+    }
+    if variant in _nm_models:
+        return OrderedDict(
+            protocol="everflourish", model=_nm_models[variant],
+            house=house_int, unit=unit_int, method=method_int,
+        )
+
+    # --- Group NU: Unit offsets (model=selflearning-switch) ---
+    _nu_offsets: dict[str, int] = {
+        "ef_n08": -3, "ef_n09": -2, "ef_n10": -1, "ef_n11": 0,
+        "ef_n12": 1, "ef_n13": 2, "ef_n14": 3,
+    }
+    if variant in _nu_offsets:
+        return OrderedDict(
+            protocol="everflourish", model="selflearning-switch",
+            house=house_int, unit=unit_int + _nu_offsets[variant],
+            method=method_int,
+        )
+
+    # --- Group NU2: Unit offsets (model=selflearning) ---
+    _nu2_offsets: dict[str, int] = {
+        "ef_n15": -3, "ef_n16": -2, "ef_n17": -1, "ef_n18": 0,
+        "ef_n19": 1, "ef_n20": 2, "ef_n21": 3,
+    }
+    if variant in _nu2_offsets:
+        return OrderedDict(
+            protocol="everflourish", model="selflearning",
+            house=house_int, unit=unit_int + _nu2_offsets[variant],
+            method=method_int,
+        )
+
+    # --- Group NH: House offsets (model=selflearning-switch, unit+0) ---
+    _nh_offsets: dict[str, int] = {
+        "ef_n22": -2, "ef_n23": -1, "ef_n24": 0,
+        "ef_n25": 1, "ef_n26": 2,
+    }
+    if variant in _nh_offsets:
+        return OrderedDict(
+            protocol="everflourish", model="selflearning-switch",
+            house=house_int + _nh_offsets[variant], unit=unit_int,
+            method=method_int,
+        )
+
+    # --- Group NS: Native + S bytes hybrid ---
+    _ns_combos: dict[str, tuple[str, int]] = {
+        # (model, unit_offset)
+        "ef_n27": ("selflearning-switch", 0), "ef_n28": ("selflearning-switch", -1),
+        "ef_n29": ("selflearning", 0), "ef_n30": ("selflearning", -1),
+        "ef_n31": ("selflearning-dimmer", 0), "ef_n32": ("selflearning-dimmer", -1),
+        "ef_n33": ("switch", 0), "ef_n34": ("codeswitch", 0),
+    }
+    if variant in _ns_combos:
+        mdl, u_off = _ns_combos[variant]
+        d = OrderedDict(
+            protocol="everflourish", model=mdl,
+            house=house_int, unit=unit_int + u_off, method=method_int,
+        )
+        d["S"] = rf_packet
+        return d
+
+    # --- Group NR: Native + R/P repeat values ---
+    _nr_combos: dict[str, tuple[int, int | None]] = {
+        # (R, P or None)
+        "ef_n35": (1, None), "ef_n36": (3, None),
+        "ef_n37": (5, None), "ef_n38": (10, None),
+        "ef_n39": (1, 5), "ef_n40": (3, 5),
+        "ef_n41": (5, 5), "ef_n42": (10, 5),
+    }
+    if variant in _nr_combos:
+        r_val, p_val = _nr_combos[variant]
+        d = OrderedDict(
+            protocol="everflourish", model="selflearning-switch",
+            house=house_int, unit=unit_int, method=method_int,
+        )
+        d["R"] = r_val
+        if p_val is not None:
+            d["P"] = p_val
+        return d
+
+    # --- Group NC: Combo (native + S + R) ---
+    _nc_combos: dict[str, tuple[str, int, int]] = {
+        # (model, unit_offset, R)
+        "ef_n43": ("selflearning-switch", 0, 3),
+        "ef_n44": ("selflearning-switch", -1, 5),
+        "ef_n45": ("selflearning", 0, 5),
+        "ef_n46": ("selflearning", -1, 5),
+        "ef_n47": ("selflearning-dimmer", 0, 5),
+        "ef_n48": ("switch", 0, 3),
+    }
+    if variant in _nc_combos:
+        mdl, u_off, r_val = _nc_combos[variant]
+        d = OrderedDict(
+            protocol="everflourish", model=mdl,
+            house=house_int, unit=unit_int + u_off, method=method_int,
+        )
+        d["S"] = rf_packet
+        d["R"] = r_val
+        return d
+
+    # --- Group NX: Edge cases ---
+    if variant == "ef_n49":
+        # Method as string 'turnon' instead of int
+        return OrderedDict(
+            protocol="everflourish", model="selflearning-switch",
+            house=house_int, unit=unit_int, method=method_name,
+        )
+
+    if variant == "ef_n50":
+        # Method=1 (TELLSTICK_TURNON)
+        return OrderedDict(
+            protocol="everflourish", model="selflearning-switch",
+            house=house_int, unit=unit_int, method=1,
+        )
+
+    if variant == "ef_n51":
+        # Method=2 (TELLSTICK_TURNOFF)
+        return OrderedDict(
+            protocol="everflourish", model="selflearning-switch",
+            house=house_int, unit=unit_int, method=2,
+        )
+
+    if variant == "ef_n52":
+        # Method=16 (TELLSTICK_LEARN)
+        return OrderedDict(
+            protocol="everflourish", model="selflearning-switch",
+            house=house_int, unit=unit_int, method=16,
+        )
+
+    if variant == "ef_n53":
+        # Method=0x80 + original int (test high-bit flag)
+        return OrderedDict(
+            protocol="everflourish", model="selflearning-switch",
+            house=house_int, unit=unit_int, method=0x80 | method_int,
+        )
 
     # Unknown variant: fall back to S-only
     _LOGGER.warning("Everflourish: unknown variant %r, using S-only", variant)

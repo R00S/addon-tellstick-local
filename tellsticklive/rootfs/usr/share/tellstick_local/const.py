@@ -28,7 +28,7 @@ DOMAIN = "tellstick_local"
 
 
 
-INTEGRATION_VERSION = "3.1.5.3"
+INTEGRATION_VERSION = "3.1.5.4"
 
 
 # Backend type stored in config entry data
@@ -447,61 +447,211 @@ PROTOCOL_RAW_CATALOG: list[tuple[str, str, str, int]] = list(
 )
 
 # ---------------------------------------------------------------------------
-# Everflourish raw encoding variants for ZNet/Net hardware testing.
+# Everflourish encoding variants for ZNet/Net hardware testing.
 #
-# ZNet v2 firmware's handleSend() requires a 'protocol' key — sending only
-# {S: raw_bytes} causes a KeyError and the packet is silently dropped.
-# Net v1 C firmware accepts S-only dicts but drops protocol dicts for non-arctech.
+# Split into TWO test devices:
+#   1. RAW variants (ef_r01..ef_r52) — S-only pulse-train bytes that bypass
+#      firmware protocol handling.  These make the ZNet LED blink.
+#   2. NATIVE variants (ef_n01..ef_n53) — firmware protocol dicts that go
+#      through the ZNet's handleSend() Python stack.  Currently do NOT make
+#      the ZNet LED blink — exhaustive testing of the native path.
 #
-# These variants let users empirically test which encoding approach works on
-# their specific hardware.  See docs/EVERFLOURISH_RESEARCH.md for details.
+# The old ef_v1..ef_v20 are kept for backward compat (dispatched in
+# _encode_everflourish_variant).
 #
-# Group A — S-only (tests if firmware has hidden S path)
-# Group B — Native dict (tests model/unit variations)
-# Group C — Hybrid (tests if firmware uses our S or its own)
+# See docs/EVERFLOURISH_RESEARCH.md for background.
 # ---------------------------------------------------------------------------
+
+# ---- RAW (S-only) test variants ------------------------------------------
+# Group RS: Standard timing sweep with different R (repeat) values
+# Group RT: Timing sweep — varying pulse widths
+# Group RP: Preamble length sweep
+# Group RD: Double/triple signal copies
+# Group RF: Frame/terminator combinations
+# Group RI: Inverted bit encoding
+# Group RB: Bit order variations
+# Group RX: Cross timing (short from one group, long from another)
+_EF_TEST_RAW_VARIANTS: list[tuple[str, str, str, int]] = [
+    # --- Group RS: Standard timing (60/114), varying repeat count ---
+    ("EF raw r01 — S std R=1", "everflourish", "selflearning-switch:ef_r01", 11),
+    ("EF raw r02 — S std R=2", "everflourish", "selflearning-switch:ef_r02", 11),
+    ("EF raw r03 — S std R=3", "everflourish", "selflearning-switch:ef_r03", 11),
+    ("EF raw r04 — S std R=4", "everflourish", "selflearning-switch:ef_r04", 11),
+    ("EF raw r05 — S std R=5", "everflourish", "selflearning-switch:ef_r05", 11),
+    ("EF raw r06 — S std R=6", "everflourish", "selflearning-switch:ef_r06", 11),
+    ("EF raw r07 — S std R=7", "everflourish", "selflearning-switch:ef_r07", 11),
+    ("EF raw r08 — S std R=8", "everflourish", "selflearning-switch:ef_r08", 11),
+    ("EF raw r09 — S std R=9", "everflourish", "selflearning-switch:ef_r09", 11),
+    ("EF raw r10 — S std R=10", "everflourish", "selflearning-switch:ef_r10", 11),
+    ("EF raw r11 — S std R=15", "everflourish", "selflearning-switch:ef_r11", 11),
+    ("EF raw r12 — S std R=20", "everflourish", "selflearning-switch:ef_r12", 11),
+    # --- Group RT: Timing sweep — short/long pulse widths (all R=5) ---
+    ("EF raw r13 — S short=30 long=57 R=5", "everflourish", "selflearning-switch:ef_r13", 11),
+    ("EF raw r14 — S short=40 long=76 R=5", "everflourish", "selflearning-switch:ef_r14", 11),
+    ("EF raw r15 — S short=50 long=95 R=5", "everflourish", "selflearning-switch:ef_r15", 11),
+    ("EF raw r16 — S short=70 long=133 R=5", "everflourish", "selflearning-switch:ef_r16", 11),
+    ("EF raw r17 — S short=80 long=152 R=5", "everflourish", "selflearning-switch:ef_r17", 11),
+    ("EF raw r18 — S short=90 long=171 R=5", "everflourish", "selflearning-switch:ef_r18", 11),
+    # --- Group RP: Preamble length sweep (all R=5) ---
+    ("EF raw r19 — S preamble=0 R=5", "everflourish", "selflearning-switch:ef_r19", 11),
+    ("EF raw r20 — S preamble=2 R=5", "everflourish", "selflearning-switch:ef_r20", 11),
+    ("EF raw r21 — S preamble=4 R=5", "everflourish", "selflearning-switch:ef_r21", 11),
+    ("EF raw r22 — S preamble=6 R=5", "everflourish", "selflearning-switch:ef_r22", 11),
+    ("EF raw r23 — S preamble=10 R=5", "everflourish", "selflearning-switch:ef_r23", 11),
+    ("EF raw r24 — S preamble=12 R=5", "everflourish", "selflearning-switch:ef_r24", 11),
+    ("EF raw r25 — S preamble=16 R=5", "everflourish", "selflearning-switch:ef_r25", 11),
+    # --- Group RD: Double/triple signal copies ---
+    ("EF raw r26 — S×2 R=1", "everflourish", "selflearning-switch:ef_r26", 11),
+    ("EF raw r27 — S×2 R=3", "everflourish", "selflearning-switch:ef_r27", 11),
+    ("EF raw r28 — S×2 R=5", "everflourish", "selflearning-switch:ef_r28", 11),
+    ("EF raw r29 — S×3 R=1", "everflourish", "selflearning-switch:ef_r29", 11),
+    ("EF raw r30 — S×3 R=3", "everflourish", "selflearning-switch:ef_r30", 11),
+    ("EF raw r31 — S×3 R=5", "everflourish", "selflearning-switch:ef_r31", 11),
+    # --- Group RF: Frame/terminator combos ---
+    ("EF raw r32 — S R=1 no+", "everflourish", "selflearning-switch:ef_r32", 11),
+    ("EF raw r33 — S R=1 +term", "everflourish", "selflearning-switch:ef_r33", 11),
+    ("EF raw r34 — S R=3 no+ P=0", "everflourish", "selflearning-switch:ef_r34", 11),
+    ("EF raw r35 — S R=3 +term P=0", "everflourish", "selflearning-switch:ef_r35", 11),
+    ("EF raw r36 — S R=3 +term P=5", "everflourish", "selflearning-switch:ef_r36", 11),
+    ("EF raw r37 — S R=5 no+ P=0", "everflourish", "selflearning-switch:ef_r37", 11),
+    ("EF raw r38 — S R=5 +term P=5", "everflourish", "selflearning-switch:ef_r38", 11),
+    ("EF raw r39 — S R=5 +term P=37", "everflourish", "selflearning-switch:ef_r39", 11),
+    ("EF raw r40 — S R=5 no+ P=37", "everflourish", "selflearning-switch:ef_r40", 11),
+    # --- Group RI: Inverted bit encoding ---
+    ("EF raw r41 — S inverted R=1", "everflourish", "selflearning-switch:ef_r41", 11),
+    ("EF raw r42 — S inverted R=3", "everflourish", "selflearning-switch:ef_r42", 11),
+    ("EF raw r43 — S inverted R=5", "everflourish", "selflearning-switch:ef_r43", 11),
+    # --- Group RB: Bit order variations ---
+    ("EF raw r44 — S MSB std R=5", "everflourish", "selflearning-switch:ef_r44", 11),
+    ("EF raw r45 — S LSB reversed R=5", "everflourish", "selflearning-switch:ef_r45", 11),
+    ("EF raw r46 — S LSB+inverted R=5", "everflourish", "selflearning-switch:ef_r46", 11),
+    # --- Group RX: Cross timing combos ---
+    ("EF raw r47 — S short=30 long=114 R=5", "everflourish", "selflearning-switch:ef_r47", 11),
+    ("EF raw r48 — S short=60 long=57 R=5", "everflourish", "selflearning-switch:ef_r48", 11),
+    ("EF raw r49 — S short=50 long=114 R=5", "everflourish", "selflearning-switch:ef_r49", 11),
+    ("EF raw r50 — S short=60 long=95 R=5", "everflourish", "selflearning-switch:ef_r50", 11),
+    ("EF raw r51 — S short=40 long=133 R=5", "everflourish", "selflearning-switch:ef_r51", 11),
+    ("EF raw r52 — S short=80 long=114 R=5", "everflourish", "selflearning-switch:ef_r52", 11),
+]
+
+# ---- NATIVE (firmware protocol dict) test variants -----------------------
+# Group NM: Model name variations
+# Group NU: Unit offset variations (selflearning-switch)
+# Group NU2: Unit offset variations (selflearning)
+# Group NH: House offset variations
+# Group NS: Native + S bytes hybrid
+# Group NR: Native + R/P repeat values
+# Group NC: Combo (native + S + R)
+# Group NX: Extra / edge cases
+_EF_TEST_NATIVE_VARIANTS: list[tuple[str, str, str, int]] = [
+    # --- Group NM: Model name variations (unit offset 0) ---
+    ("EF native n01 — model=selflearning-switch", "everflourish", "selflearning-switch:ef_n01", 11),
+    ("EF native n02 — model=selflearning", "everflourish", "selflearning-switch:ef_n02", 11),
+    ("EF native n03 — model=selflearning-dimmer", "everflourish", "selflearning-switch:ef_n03", 11),
+    ("EF native n04 — model=switch", "everflourish", "selflearning-switch:ef_n04", 11),
+    ("EF native n05 — model=everflourish", "everflourish", "selflearning-switch:ef_n05", 11),
+    ("EF native n06 — model=codeswitch", "everflourish", "selflearning-switch:ef_n06", 11),
+    ("EF native n07 — model=bell", "everflourish", "selflearning-switch:ef_n07", 11),
+    # --- Group NU: Unit offsets (model=selflearning-switch) ---
+    ("EF native n08 — sl-sw unit-3", "everflourish", "selflearning-switch:ef_n08", 11),
+    ("EF native n09 — sl-sw unit-2", "everflourish", "selflearning-switch:ef_n09", 11),
+    ("EF native n10 — sl-sw unit-1", "everflourish", "selflearning-switch:ef_n10", 11),
+    ("EF native n11 — sl-sw unit+0", "everflourish", "selflearning-switch:ef_n11", 11),
+    ("EF native n12 — sl-sw unit+1", "everflourish", "selflearning-switch:ef_n12", 11),
+    ("EF native n13 — sl-sw unit+2", "everflourish", "selflearning-switch:ef_n13", 11),
+    ("EF native n14 — sl-sw unit+3", "everflourish", "selflearning-switch:ef_n14", 11),
+    # --- Group NU2: Unit offsets (model=selflearning) ---
+    ("EF native n15 — sl unit-3", "everflourish", "selflearning-switch:ef_n15", 11),
+    ("EF native n16 — sl unit-2", "everflourish", "selflearning-switch:ef_n16", 11),
+    ("EF native n17 — sl unit-1", "everflourish", "selflearning-switch:ef_n17", 11),
+    ("EF native n18 — sl unit+0", "everflourish", "selflearning-switch:ef_n18", 11),
+    ("EF native n19 — sl unit+1", "everflourish", "selflearning-switch:ef_n19", 11),
+    ("EF native n20 — sl unit+2", "everflourish", "selflearning-switch:ef_n20", 11),
+    ("EF native n21 — sl unit+3", "everflourish", "selflearning-switch:ef_n21", 11),
+    # --- Group NH: House offsets (model=selflearning-switch, unit+0) ---
+    ("EF native n22 — house-2", "everflourish", "selflearning-switch:ef_n22", 11),
+    ("EF native n23 — house-1", "everflourish", "selflearning-switch:ef_n23", 11),
+    ("EF native n24 — house+0", "everflourish", "selflearning-switch:ef_n24", 11),
+    ("EF native n25 — house+1", "everflourish", "selflearning-switch:ef_n25", 11),
+    ("EF native n26 — house+2", "everflourish", "selflearning-switch:ef_n26", 11),
+    # --- Group NS: Native + S bytes hybrid ---
+    ("EF native n27 — sl-sw+S unit+0", "everflourish", "selflearning-switch:ef_n27", 11),
+    ("EF native n28 — sl-sw+S unit-1", "everflourish", "selflearning-switch:ef_n28", 11),
+    ("EF native n29 — sl+S unit+0", "everflourish", "selflearning-switch:ef_n29", 11),
+    ("EF native n30 — sl+S unit-1", "everflourish", "selflearning-switch:ef_n30", 11),
+    ("EF native n31 — sl-dimmer+S unit+0", "everflourish", "selflearning-switch:ef_n31", 11),
+    ("EF native n32 — sl-dimmer+S unit-1", "everflourish", "selflearning-switch:ef_n32", 11),
+    ("EF native n33 — switch+S unit+0", "everflourish", "selflearning-switch:ef_n33", 11),
+    ("EF native n34 — codeswitch+S unit+0", "everflourish", "selflearning-switch:ef_n34", 11),
+    # --- Group NR: Native + R/P repeat values ---
+    ("EF native n35 — sl-sw R=1", "everflourish", "selflearning-switch:ef_n35", 11),
+    ("EF native n36 — sl-sw R=3", "everflourish", "selflearning-switch:ef_n36", 11),
+    ("EF native n37 — sl-sw R=5", "everflourish", "selflearning-switch:ef_n37", 11),
+    ("EF native n38 — sl-sw R=10", "everflourish", "selflearning-switch:ef_n38", 11),
+    ("EF native n39 — sl-sw R=1 P=5", "everflourish", "selflearning-switch:ef_n39", 11),
+    ("EF native n40 — sl-sw R=3 P=5", "everflourish", "selflearning-switch:ef_n40", 11),
+    ("EF native n41 — sl-sw R=5 P=5", "everflourish", "selflearning-switch:ef_n41", 11),
+    ("EF native n42 — sl-sw R=10 P=5", "everflourish", "selflearning-switch:ef_n42", 11),
+    # --- Group NC: Combo (native + S + R) ---
+    ("EF native n43 — sl-sw+S+R=3 unit+0", "everflourish", "selflearning-switch:ef_n43", 11),
+    ("EF native n44 — sl-sw+S+R=5 unit-1", "everflourish", "selflearning-switch:ef_n44", 11),
+    ("EF native n45 — sl+S+R=5 unit+0", "everflourish", "selflearning-switch:ef_n45", 11),
+    ("EF native n46 — sl+S+R=5 unit-1", "everflourish", "selflearning-switch:ef_n46", 11),
+    ("EF native n47 — sl-dimmer+S+R=5 unit+0", "everflourish", "selflearning-switch:ef_n47", 11),
+    ("EF native n48 — switch+S+R=3 unit+0", "everflourish", "selflearning-switch:ef_n48", 11),
+    # --- Group NX: Edge cases ---
+    ("EF native n49 — method as str 'turnon'", "everflourish", "selflearning-switch:ef_n49", 11),
+    ("EF native n50 — method=1 (TURNON)", "everflourish", "selflearning-switch:ef_n50", 11),
+    ("EF native n51 — method=2 (TURNOFF)", "everflourish", "selflearning-switch:ef_n51", 11),
+    ("EF native n52 — method=16 (LEARN)", "everflourish", "selflearning-switch:ef_n52", 11),
+    ("EF native n53 — method=0x80+int", "everflourish", "selflearning-switch:ef_n53", 11),
+]
+
+# Legacy alias (old 20 variants) — kept so existing devices still work
 _EF_RAW_VARIANTS: list[tuple[str, str, str, int]] = [
-    # Group A: S-only (raw pulse bytes, no protocol key)
     ("EF raw v1 — S-only bytes", "everflourish", "selflearning-switch:ef_v1", 11),
     ("EF raw v2 — S + R=4", "everflourish", "selflearning-switch:ef_v2", 11),
     ("EF raw v3 — S + R=10 P=5", "everflourish", "selflearning-switch:ef_v3", 11),
     ("EF raw v4 — S doubled", "everflourish", "selflearning-switch:ef_v4", 11),
-    # Group B: Native dict (firmware encodes internally)
     ("EF raw v5 — native nofix", "everflourish", "selflearning-switch:ef_v5", 11),
     ("EF raw v6 — native unit-1 fix", "everflourish", "selflearning-switch:ef_v6", 11),
     ("EF raw v7 — native model=selflearning nofix", "everflourish", "selflearning-switch:ef_v7", 11),
     ("EF raw v8 — native model=selflearning fix", "everflourish", "selflearning-switch:ef_v8", 11),
-    # Group C: Hybrid (native dict + our S bytes)
     ("EF raw v9 — native+S nofix", "everflourish", "selflearning-switch:ef_v9", 11),
     ("EF raw v10 — native+S fix", "everflourish", "selflearning-switch:ef_v10", 11),
     ("EF raw v11 — native+S+R+P nofix", "everflourish", "selflearning-switch:ef_v11", 11),
     ("EF raw v12 — native unit-2 fix", "everflourish", "selflearning-switch:ef_v12", 11),
-    # Group D: Timing variations (S-only, different pulse widths)
     ("EF raw v13 — S half timing (300/570µs)", "everflourish", "selflearning-switch:ef_v13", 11),
     ("EF raw v14 — S double timing (1200/2280µs)", "everflourish", "selflearning-switch:ef_v14", 11),
     ("EF raw v15 — S inverted bits", "everflourish", "selflearning-switch:ef_v15", 11),
     ("EF raw v16 — S Duo sync prefix", "everflourish", "selflearning-switch:ef_v16", 11),
-    # Group E: Repeat/terminator (S-only, protocol framing)
     ("EF raw v17 — S + R=5 (Duo repeat)", "everflourish", "selflearning-switch:ef_v17", 11),
     ("EF raw v18 — S + '+' terminator", "everflourish", "selflearning-switch:ef_v18", 11),
     ("EF raw v19 — S + R=5 P=37 '+' (full Duo)", "everflourish", "selflearning-switch:ef_v19", 11),
-    # Group F: Hybrid with repeat
     ("EF raw v20 — native+S+R=5 fix", "everflourish", "selflearning-switch:ef_v20", 11),
 ]
 PROTOCOL_RAW_CATALOG.extend(_EF_RAW_VARIANTS)
+PROTOCOL_RAW_CATALOG.extend(_EF_TEST_RAW_VARIANTS)
+PROTOCOL_RAW_CATALOG.extend(_EF_TEST_NATIVE_VARIANTS)
 
 # ---------------------------------------------------------------------------
-# EF test device — quick-add all 20 variants as individual switch entities
-# plus one "sequence all" button, so testers can check which variant makes
-# the TellStick hardware blink.
+# EF test device — two separate test device flows:
+#   1. RAW: 52 S-only pulse-train variants + 1 sequence button
+#   2. NATIVE: 53 firmware dict variants + 1 sequence button
 # ---------------------------------------------------------------------------
 
-# Ordered list of (variant_suffix, label) used by the EF test device flow.
-# Matches _EF_RAW_VARIANTS above (same order).
-EF_TEST_VARIANTS: list[tuple[str, str]] = [
+EF_TEST_RAW_VARIANTS: list[tuple[str, str]] = [
     (entry[2].split(":", 1)[1], entry[0])
-    for entry in _EF_RAW_VARIANTS
+    for entry in _EF_TEST_RAW_VARIANTS
 ]
+EF_TEST_NATIVE_VARIANTS: list[tuple[str, str]] = [
+    (entry[2].split(":", 1)[1], entry[0])
+    for entry in _EF_TEST_NATIVE_VARIANTS
+]
+# Union of both for backward compat (button.py, tests, etc.)
+EF_TEST_VARIANTS: list[tuple[str, str]] = (
+    EF_TEST_RAW_VARIANTS + EF_TEST_NATIVE_VARIANTS
+)
 # Group UID prefix used to group all EF test entities under one HA device card.
 EF_TEST_GROUP_UID = "ef_test"
 # Default test house/unit (can be overridden in the flow).

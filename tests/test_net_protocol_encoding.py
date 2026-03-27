@@ -167,13 +167,23 @@ def run_tests() -> None:
             PROTOCOL_RAW_MAP,
         )
 
-        # Raw catalog = full catalog + everflourish raw variants
-        from custom_components.tellstick_local.const import _EF_RAW_VARIANTS
+        # Raw catalog = full catalog + legacy EF variants + new raw + new native
+        from custom_components.tellstick_local.const import (
+            _EF_RAW_VARIANTS,
+            _EF_TEST_NATIVE_VARIANTS,
+            _EF_TEST_RAW_VARIANTS,
+        )
 
+        expected_raw = (
+            len(PROTOCOL_MODEL_CATALOG)
+            + len(_EF_RAW_VARIANTS)
+            + len(_EF_TEST_RAW_VARIANTS)
+            + len(_EF_TEST_NATIVE_VARIANTS)
+        )
         report(
-            "raw catalog = full catalog + EF variants",
-            len(PROTOCOL_RAW_CATALOG) == len(PROTOCOL_MODEL_CATALOG) + len(_EF_RAW_VARIANTS),
-            f"raw={len(PROTOCOL_RAW_CATALOG)} vs full={len(PROTOCOL_MODEL_CATALOG)}+{len(_EF_RAW_VARIANTS)}",
+            "raw catalog = full catalog + all EF variants",
+            len(PROTOCOL_RAW_CATALOG) == expected_raw,
+            f"raw={len(PROTOCOL_RAW_CATALOG)} vs expected={expected_raw}",
         )
         report(
             "native catalog = full catalog",
