@@ -1371,7 +1371,7 @@ def _encode_everflourish_variant(
 ) -> dict[str, Any] | None:
     """Build send_kwargs for an everflourish raw variant.
 
-    Extracts the variant suffix (``ef_v1`` … ``ef_v12``) from *model_full* and
+    Extracts the variant suffix (``ef_v1`` … ``ef_v20``) from *model_full* and
     returns the appropriate dict to pass to ``encode_packet("send", ...)``.
     Returns ``None`` if the method is unsupported.
 
