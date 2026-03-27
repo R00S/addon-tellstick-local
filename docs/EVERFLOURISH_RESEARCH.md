@@ -3,6 +3,14 @@
 > **Issue:** [#85](https://github.com/R00S/addon-tellstick-local/issues/85) —
 > GAO (everflourish) protocol works on TellStick Duo but not on TellStick ZNet.
 
+> **⚠️ Status (2026-03):** Raw pulse encoder implemented and sends correct
+> bytes, but testing showed that even **Duo-generated** everflourish signals
+> are not picked up by a Net/ZNet acting as receiver. This suggests TellStick
+> hardware may drop everflourish signals originating from another TellStick
+> entirely — the protocol may only work when transmitting to dedicated
+> everflourish receivers (e.g. GAO wall plugs), not between TellSticks.
+> Awaiting user reports with actual everflourish hardware before further changes.
+
 ## Problem
 
 Sending on/off commands to Everflourish (GAO) devices works on the TellStick

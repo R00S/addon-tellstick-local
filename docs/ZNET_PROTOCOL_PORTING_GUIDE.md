@@ -106,7 +106,7 @@ from our Python code instead of the firmware's Python code.
 | Protocol       | ZNet TX Status    | Method Used                          | Source Ported From                             |
 | -------------- | ----------------- | ------------------------------------ | ---------------------------------------------- |
 | `arctech`      | ✅ Working        | Native dict (on/off/learn) + raw `S` bytes (dim) | `molobrakos/tellsticknet` + `tellstick-server/ProtocolArctech.py` |
-| `everflourish` | ✅ Working        | Raw `S` bytes                        | `tellstick-server/ProtocolEverflourish.py`     |
+| `everflourish` | ⚠️ Unverified²    | Raw `S` bytes                        | `tellstick-server/ProtocolEverflourish.py`     |
 | `brateck`      | ❌ **Needs port** | Falls through to generic dict (BROKEN) | `tellstick-server/ProtocolBrateck.py`          |
 | `comen`        | ❌ **Needs port** | Falls through to generic dict (BROKEN) | `tellstick-server/ProtocolComen.py`¹           |
 | `fuhaote`      | ❌ **Needs port** | Falls through to generic dict (BROKEN) | `tellstick-server/ProtocolFuhaote.py`          |
@@ -123,6 +123,12 @@ from our Python code instead of the firmware's Python code.
 ¹ `comen` and `waveman` extend `ProtocolArctech` — they reuse arctech's
   `stringSelflearningForCode()` or `stringForCodeSwitch()`.
   `yidong` extends `ProtocolSartano` — it reuses sartano's `stringForCode()`.
+
+² Everflourish raw pulse encoder is implemented and sends correct bytes, but
+  testing showed that even Duo-generated everflourish signals are not picked up
+  by a Net/ZNet acting as receiver.  TellStick hardware may drop everflourish
+  signals from other TellSticks entirely.  Awaiting user reports with actual
+  everflourish receivers (e.g. GAO wall plugs) before marking as working.
 
 > **Note:** The Duo backend (telldusd + socat TCP) handles all protocols
 > natively — the issue is ONLY with the Net/ZNet UDP backend.  On ZNet v2,
