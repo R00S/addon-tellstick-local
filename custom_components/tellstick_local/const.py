@@ -28,7 +28,7 @@ DOMAIN = "tellstick_local"
 
 
 
-INTEGRATION_VERSION = "3.1.5.1"
+INTEGRATION_VERSION = "3.1.5.2"
 
 
 # Backend type stored in config entry data
@@ -476,6 +476,17 @@ _EF_RAW_VARIANTS: list[tuple[str, str, str, int]] = [
     ("EF raw v10 — native+S fix", "everflourish", "selflearning-switch:ef_v10", 11),
     ("EF raw v11 — native+S+R+P nofix", "everflourish", "selflearning-switch:ef_v11", 11),
     ("EF raw v12 — native unit-2 fix", "everflourish", "selflearning-switch:ef_v12", 11),
+    # Group D: Timing variations (S-only, different pulse widths)
+    ("EF raw v13 — S half timing (300/570µs)", "everflourish", "selflearning-switch:ef_v13", 11),
+    ("EF raw v14 — S double timing (1200/2280µs)", "everflourish", "selflearning-switch:ef_v14", 11),
+    ("EF raw v15 — S inverted bits", "everflourish", "selflearning-switch:ef_v15", 11),
+    ("EF raw v16 — S Duo sync prefix", "everflourish", "selflearning-switch:ef_v16", 11),
+    # Group E: Repeat/terminator (S-only, protocol framing)
+    ("EF raw v17 — S + R=5 (Duo repeat)", "everflourish", "selflearning-switch:ef_v17", 11),
+    ("EF raw v18 — S + '+' terminator", "everflourish", "selflearning-switch:ef_v18", 11),
+    ("EF raw v19 — S + R=5 P=37 '+' (full Duo)", "everflourish", "selflearning-switch:ef_v19", 11),
+    # Group F: Hybrid with repeat
+    ("EF raw v20 — native+S+R=5 fix", "everflourish", "selflearning-switch:ef_v20", 11),
 ]
 PROTOCOL_RAW_CATALOG.extend(_EF_RAW_VARIANTS)
 

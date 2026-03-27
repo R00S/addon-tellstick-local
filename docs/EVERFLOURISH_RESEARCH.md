@@ -7,27 +7,47 @@
 > (v1) produces **no blinking**, while the native firmware path produces
 > **blinking** (both with and without unit-1 fix).  This means `handleSend()`
 > on ZNet v2 **requires the `protocol` key** — S-only dicts are silently
-> dropped.  12 encoding variants (EF raw v1–v12) are now available in the
+> dropped.  20 encoding variants (EF raw v1–v20) are now available in the
 > "by protocol (raw)" menu to empirically test which approach works on
 > each hardware version.  Cross-TellStick RX still untested — Duo-generated
 > everflourish signals are not picked up by Net/ZNet as a receiver.
 >
+> **Timing research (from TellStick protocol spec):**
+> Each byte value in the S pulse train = `byte_value × 10 µs`.
+> Standard: short=60 → 600 µs, long=114 → 1140 µs (same in telldus-core
+> AND tellstick-server).  Duo adds R=5 (5 repeats) and `+` end marker;
+> ZNet internal path sends once with no repeat and no `+`.
+>
 > **Test variants (in "by protocol (raw)" menu):**
 >
-> | Variant | Dict keys sent | Hypothesis |
-> |---------|---------------|------------|
-> | v1 | `{S}` | Current S-only — fails on ZNet v2 |
-> | v2 | `{S, R=4}` | S + repeat prefix |
-> | v3 | `{S, R=10, P=5}` | S + repeat + pause (like internal path) |
-> | v4 | `{S+S}` | Doubled signal |
-> | v5 | `{protocol, model=sw, house, unit, method}` | Native, no unit fix |
-> | v6 | `{protocol, model=sw, house, unit-1, method}` | Native, unit-1 fix |
-> | v7 | `{protocol, model=sl, house, unit, method}` | Native, model="selflearning" |
-> | v8 | `{protocol, model=sl, house, unit-1, method}` | Native, model="selflearning" + fix |
-> | v9 | `{protocol, model=sw, …, S}` | Hybrid, no fix |
-> | v10 | `{protocol, model=sw, …, S}` unit-1 | Hybrid, fix |
-> | v11 | `{protocol, model=sw, …, S, R, P}` | Hybrid + R+P |
-> | v12 | `{protocol, model=sl, house, unit-2, method}` | Native, unit-2 fix |
+> | # | Name | Dict keys | Hypothesis |
+> |---|------|-----------|------------|
+> | **Group A — S-only** | | | |
+> | v1 | S-only bytes | `{S}` | Current — fails on ZNet v2 |
+> | v2 | S + R=4 | `{S, R=4}` | S + repeat prefix |
+> | v3 | S + R=10 P=5 | `{S, R=10, P=5}` | S + repeat + pause |
+> | v4 | S doubled | `{S+S}` | Double-length signal |
+> | **Group B — Native dict** | | | |
+> | v5 | native nofix | `{proto, model=sw, …}` | Firmware encodes, no unit fix |
+> | v6 | native fix | `{proto, model=sw, unit-1, …}` | Firmware encodes, unit-1 fix |
+> | v7 | native model=sl nofix | `{proto, model=sl, …}` | Canonical model name |
+> | v8 | native model=sl fix | `{proto, model=sl, unit-1, …}` | Canonical model + fix |
+> | **Group C — Hybrid** | | | |
+> | v9 | native+S nofix | `{proto, …, S}` | Firmware may use our S bytes |
+> | v10 | native+S fix | `{proto, unit-1, …, S}` | Hybrid + fix |
+> | v11 | native+S+R+P | `{proto, …, S, R, P}` | Hybrid + repeat/pause |
+> | v12 | native unit-2 | `{proto, unit-2, …}` | Double compensation |
+> | **Group D — Timing** | | | |
+> | v13 | half timing | `{S}` 30/57 | 300/570 µs (2× multiplier?) |
+> | v14 | double timing | `{S}` 120/228 | 1200/2280 µs (0.5× divider?) |
+> | v15 | inverted bits | `{S}` swap 0↔1 | Bit patterns backwards? |
+> | v16 | Duo sync prefix | `{S}` +[60,1,1,60] | Sync burst from Duo format |
+> | **Group E — Repeat/terminator** | | | |
+> | v17 | S + R=5 | `{S, R=5}` | Match Duo repeat count |
+> | v18 | S + '+' term | `{S…+}` | TellStick end-of-TX marker |
+> | v19 | S + R=5 P=37 '+' | `{S…+, R=5, P=37}` | Full Duo-style framing |
+> | **Group F — Hybrid + repeat** | | | |
+> | v20 | native+S+R=5 fix | `{proto, unit-1, S, R=5}` | Native + our S + repeat |
 
 ## Problem
 
@@ -268,8 +288,11 @@ def calculateChecksum(x):
 │  8×short │     16 bits      │   4 bits     │   4 bits     │  4×short │
 └──────────┴──────────────────┴──────────────┴──────────────┴──────────┘
 
-  short pulse = 60 (≈988 µs timing value)
-  long  pulse = 114 (≈1878 µs timing value)
+  short pulse = 60 (= 60 × 10 µs = 600 µs)
+  long  pulse = 114 (= 114 × 10 µs = 1140 µs)
+
+  (TellStick protocol: each byte value × 10 µs.
+   Source: telldus/telldus docs/02-tellstick-protocol.dox)
 
   bit "0" = short, short, short, long   (sssl)
   bit "1" = short, long,  short, short  (slss)

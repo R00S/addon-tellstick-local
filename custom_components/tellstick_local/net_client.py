@@ -1217,8 +1217,8 @@ def _encode_arctech_command(
 # See docs/ZNET_PROTOCOL_PORTING_GUIDE.md for full details.
 # ---------------------------------------------------------------------------
 
-_EF_SHORT = bytes([60])    # short pulse timing value (≈988 µs)
-_EF_LONG = bytes([114])    # long pulse timing value  (≈1878 µs)
+_EF_SHORT = bytes([60])    # short pulse timing value (= 600 µs @ 10 µs/unit)
+_EF_LONG = bytes([114])    # long pulse timing value  (= 1140 µs @ 10 µs/unit)
 _EF_ZERO = _EF_SHORT + _EF_SHORT + _EF_SHORT + _EF_LONG    # bit "0"
 _EF_ONE = _EF_SHORT + _EF_LONG + _EF_SHORT + _EF_SHORT     # bit "1"
 
@@ -1268,12 +1268,43 @@ def _everflourish_pulse_train(house: int, unit1: int, action: int) -> bytes:
       [preamble: 8×short] [deviceCode: 16 bits] [checksum: 4 bits]
       [action: 4 bits] [terminator: 4×short]
     """
-    bits = [_EF_ZERO, _EF_ONE]
+    return _everflourish_pulse_train_ex(
+        house, unit1, action,
+        short=60, long=114, invert_bits=False, preamble_prefix=b"",
+    )
+
+
+def _everflourish_pulse_train_ex(
+    house: int, unit1: int, action: int,
+    *, short: int = 60, long: int = 114,
+    invert_bits: bool = False,
+    preamble_prefix: bytes = b"",
+) -> bytes:
+    """Build raw everflourish pulse-train bytes with configurable timing.
+
+    Parameters
+    ----------
+    short, long : int
+        Pulse timing byte values (default 60/114 from tellstick-server).
+    invert_bits : bool
+        If True, swap the bit-0 and bit-1 pulse patterns.
+    preamble_prefix : bytes
+        Extra bytes prepended before the 8×short preamble (e.g. ``b'\\xff'``
+        sync marker like arctech uses).
+    """
+    s = bytes([short])
+    l = bytes([long])  # noqa: E741 (intentionally lowercase L like telldus source)
+    zero = s + s + s + l    # bit "0": sssl
+    one = s + l + s + s     # bit "1": slss
+    if invert_bits:
+        zero, one = one, zero
+    bits = [zero, one]
+
     device_code = (house << 2) | (unit1 - 1)
     checksum = _everflourish_checksum(device_code)
 
-    # Preamble: 8 × short pulse
-    code = _EF_SHORT * 8
+    # Preamble: optional prefix + 8 × short pulse
+    code = preamble_prefix + s * 8
 
     # Device code: 16 bits, MSB first
     for i in range(15, -1, -1):
@@ -1288,7 +1319,7 @@ def _everflourish_pulse_train(house: int, unit1: int, action: int) -> bytes:
         code += bits[(action >> i) & 0x01]
 
     # Terminator: 4 × short pulse
-    code += _EF_SHORT * 4
+    code += s * 4
 
     return code
 
@@ -1358,6 +1389,9 @@ def _encode_everflourish_variant(
 
     # Resolve numeric house/unit for native dicts
     method_int = _METHOD_INT.get(method_name, 0)
+    # Resolve action code for _everflourish_pulse_train_ex (timing variants)
+    _ef_action_map = {"turnon": _EF_ACTION_ON, "turnoff": _EF_ACTION_OFF, "learn": _EF_ACTION_LEARN}
+    action = _ef_action_map.get(method_name, _EF_ACTION_ON)
     try:
         house_int: Any = int(house)
     except (TypeError, ValueError):
@@ -1449,6 +1483,100 @@ def _encode_everflourish_variant(
             protocol="everflourish", model="selflearning",
             house=house_int, unit=unit_int - 2, method=method_int,
         )
+
+    # -- Group D: Timing variations (S-only) --------------------------------
+    #
+    # TellStick protocol spec: each byte = byte_value × 10 µs pulse duration.
+    # Source: telldus/telldus docs/02-tellstick-protocol.dox
+    #
+    # Standard everflourish: short=60 (600µs), long=114 (1140µs)
+    # Sourced from BOTH telldus-core ProtocolEverflourish.cpp AND
+    # tellstick-server ProtocolEverflourish.py — same values in both.
+
+    # Resolve house/unit for the raw pulse builder
+    try:
+        house_clamped = max(0, min(16383, int(house)))
+    except (TypeError, ValueError):
+        house_clamped = 0
+    try:
+        unit_clamped = max(1, min(4, int(unit)))
+    except (TypeError, ValueError):
+        unit_clamped = 1
+
+    if variant == "ef_v13":
+        # v13: Half timing (short=30 → 300µs, long=57 → 570µs)
+        # Tests if hardware applies a 2× multiplier to byte values.
+        pkt = _everflourish_pulse_train_ex(
+            house_clamped, unit_clamped, action, short=30, long=57,
+        )
+        return dict(S=pkt)
+
+    if variant == "ef_v14":
+        # v14: Double timing (short=120 → 1200µs, long=228 → 2280µs)
+        # Tests if hardware applies a 0.5× divider to byte values.
+        pkt = _everflourish_pulse_train_ex(
+            house_clamped, unit_clamped, action, short=120, long=228,
+        )
+        return dict(S=pkt)
+
+    if variant == "ef_v15":
+        # v15: Inverted bits — swap 0↔1 pulse patterns.
+        # Tests if our bit encoding is backwards.
+        pkt = _everflourish_pulse_train_ex(
+            house_clamped, unit_clamped, action, invert_bits=True,
+        )
+        return dict(S=pkt)
+
+    if variant == "ef_v16":
+        # v16: Duo sync prefix — prepend [60,1,1,60] before preamble.
+        # The Duo's extended format (ProtocolEverflourish.cpp) has a sync
+        # byte 0b01101001 = [short, minimal, minimal, short] between the
+        # T timing table and the preamble.  Test if this sync matters.
+        pkt = _everflourish_pulse_train_ex(
+            house_clamped, unit_clamped, action,
+            preamble_prefix=bytes([60, 1, 1, 60]),
+        )
+        return dict(S=pkt)
+
+    # -- Group E: Repeat/terminator (S-only) --------------------------------
+    #
+    # The Duo sends R=5 (repeat 5 times) and appends '+' (chr 43) as
+    # end-of-transmission marker.  The ZNet's internal path sends ONCE
+    # with NO repeat and NO '+'.  Test if adding these helps.
+    #
+    # R/P in the dict: on Net v1, the C firmware MAY read R from the dict
+    # to control rfSend() loop count.  On ZNet v2, R/P in the dict are
+    # ignored (handleSend crashes before looking at them for S-only).
+
+    if variant == "ef_v17":
+        # v17: S-only + R=5 (repeat 5 times, matching Duo)
+        return dict(S=rf_packet, R=5)
+
+    if variant == "ef_v18":
+        # v18: S-only with '+' terminator appended to pulse data.
+        # TellStick protocol: S<data>+ where + signals end-of-transmission.
+        # Firmware normally adds the '+', but test if including it in S
+        # data makes a difference (e.g. Net v1 C firmware edge case).
+        return dict(S=rf_packet + b"+")
+
+    if variant == "ef_v19":
+        # v19: S-only + R=5 + P=37 + '+' terminator (full Duo-style).
+        # R=5 repeats, P=37 (37ms pause between repeats), '+' end marker.
+        return dict(S=rf_packet + b"+", R=5, P=37)
+
+    # -- Group F: Hybrid with repeat (native + Duo-style repeat) -----------
+    if variant == "ef_v20":
+        # v20: Native + S + R=5 (test if firmware passes R prefix to RF chip).
+        # On ZNet v2, handleSend() decodes via protocol stack and ignores our
+        # R value.  But on Net v1 (if protocol key causes drop), this tests
+        # whether the firmware sees R before checking protocol.
+        d = OrderedDict(
+            protocol="everflourish", model="selflearning",
+            house=house_int, unit=unit_int - 1, method=method_int,
+        )
+        d["S"] = rf_packet
+        d["R"] = 5
+        return d
 
     # Unknown variant: fall back to S-only
     _LOGGER.warning("Everflourish: unknown variant %r, using S-only", variant)

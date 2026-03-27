@@ -106,7 +106,7 @@ from our Python code instead of the firmware's Python code.
 | Protocol       | ZNet TX Status    | Method Used                          | Source Ported From                             |
 | -------------- | ----------------- | ------------------------------------ | ---------------------------------------------- |
 | `arctech`      | ✅ Working        | Native dict (on/off/learn) + raw `S` bytes (dim) | `molobrakos/tellsticknet` + `tellstick-server/ProtocolArctech.py` |
-| `everflourish` | 🔬 Testing²       | 12 variants (S-only / native / hybrid) | `tellstick-server/ProtocolEverflourish.py`     |
+| `everflourish` | 🔬 Testing²       | 20 variants (S-only / native / hybrid / timing) | `tellstick-server/ProtocolEverflourish.py`     |
 | `brateck`      | ❌ **Needs port** | Falls through to generic dict (BROKEN) | `tellstick-server/ProtocolBrateck.py`          |
 | `comen`        | ❌ **Needs port** | Falls through to generic dict (BROKEN) | `tellstick-server/ProtocolComen.py`¹           |
 | `fuhaote`      | ❌ **Needs port** | Falls through to generic dict (BROKEN) | `tellstick-server/ProtocolFuhaote.py`          |
@@ -128,7 +128,10 @@ from our Python code instead of the firmware's Python code.
   `handleSend()` requires a `protocol` key and drops S-only dicts.  Native
   firmware path **does produce blinking** (both with and without unit-1 fix).
   12 encoding variants (EF raw v1–v12) are available in the "by protocol
-  (raw)" menu for empirical testing.  See `docs/EVERFLOURISH_RESEARCH.md`.
+  (raw)" menu for empirical testing.  v13–v20 test timing variations
+  (half/double/inverted), Duo-style repeat (R=5), `+` terminator, and
+  sync prefix — all based on the actual TellStick protocol specification
+  (10 µs per byte unit).  See `docs/EVERFLOURISH_RESEARCH.md`.
   Cross-TellStick RX remains untested (Duo signals not picked up by Net/ZNet).
 
 > **Note:** The Duo backend (telldusd + socat TCP) handles all protocols
