@@ -2665,6 +2665,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                     ),
                 }
             ),
+            description_placeholders={"count": str(len(variants))},
             errors=errors,
         )
 
