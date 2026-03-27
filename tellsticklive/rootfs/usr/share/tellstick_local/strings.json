@@ -3,6 +3,9 @@
     "button": {
       "learn": {
         "name": "Send learn signal"
+      },
+      "ef_test_sequence": {
+        "name": "Test ALL EF variants (sequence)"
       }
     }
   },
@@ -234,7 +237,8 @@
             "by_protocol": "Add by protocol",
             "by_protocol_raw": "Add by protocol (raw pulse)",
             "by_protocol_native": "Add by protocol (TellStick native — unit-1 fix)",
-            "by_protocol_native_nofix": "Add by protocol (TellStick native — no unit fix)"
+            "by_protocol_native_nofix": "Add by protocol (TellStick native — no unit fix)",
+            "ef_test_device": "⚡ Add EF test device (all 20 variants)"
           }
         },
         "by_brand": {
@@ -292,6 +296,14 @@
         "confirm": {
           "title": "Send pairing signal",
           "description": "**{name}** ({protocol}/{model}) will learn house code **{house}**, unit **{unit}**.\n\nPut your 433 MHz receiver in **learn mode** now, then click **Submit** — the pairing signal is sent immediately."
+        },
+        "ef_test_device": {
+          "title": "Add EF test device",
+          "description": "Creates **21 entities** in one click:\n- **20 switch entities** — one per everflourish encoding variant (v1–v20)\n- **1 sequence button** — fires all 20 variants in order with 2 s delays\n\nWatch the TellStick LED to see which variant(s) make it blink.\n\nHouse/unit values are shared across all variants.",
+          "data": {
+            "house": "House code (0–16383)",
+            "unit": "Unit (1–4)"
+          }
         }
       },
       "error": {

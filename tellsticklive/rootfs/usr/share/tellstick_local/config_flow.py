@@ -58,6 +58,10 @@ from .const import (
     DEVICE_CATALOG_LABELS,
     DEVICE_CATALOG_MAP,
     DOMAIN,
+    EF_TEST_GROUP_UID,
+    EF_TEST_HOUSE,
+    EF_TEST_UNIT,
+    EF_TEST_VARIANTS,
     ENCODING_NATIVE,
     ENCODING_NATIVE_NOFIX,
     ENCODING_RAW,
@@ -2187,7 +2191,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         if backend == BACKEND_NET:
             return self.async_show_menu(
                 step_id="user",
-                menu_options=["by_brand", "by_protocol_raw", "by_protocol_native", "by_protocol_native_nofix"],
+                menu_options=["by_brand", "by_protocol_raw", "by_protocol_native", "by_protocol_native_nofix", "ef_test_device"],
             )
         return self.async_show_menu(
             step_id="user",
@@ -2554,5 +2558,108 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 "house": self._new_device.get(CONF_DEVICE_HOUSE, ""),
                 "unit": self._new_device.get(CONF_DEVICE_UNIT, ""),
             },
+            errors=errors,
+        )
+
+    # ------------------------------------------------------------------
+    # EF test device — quick-add all 20 everflourish variants at once
+    # ------------------------------------------------------------------
+
+    async def async_step_ef_test_device(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Add all 20 EF raw encoding test variants as individual switches.
+
+        Also creates a special "sequence all" marker device that the button
+        platform picks up to create an ``EFTestSequenceButton``.
+
+        Net/ZNet backend only — the Duo backend doesn't need variant testing.
+        """
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            house = str(user_input.get("house", EF_TEST_HOUSE))
+            unit = str(user_input.get("unit", EF_TEST_UNIT))
+
+            entry = self._get_entry()
+            entry_data = self.hass.data[DOMAIN].get(entry.entry_id, {})
+            device_id_map: dict[str, Any] = entry_data.get(
+                ENTRY_DEVICE_ID_MAP, {}
+            )
+
+            existing_devices = dict(entry.options.get(CONF_DEVICES, {}))
+            group_uid = f"{EF_TEST_GROUP_UID}_{house}_{unit}"
+            created = 0
+
+            # --- Create one switch entity per variant ---
+            for variant_suffix, label in EF_TEST_VARIANTS:
+                model = f"selflearning-switch:{variant_suffix}"
+                # Use a custom UID that includes the variant suffix.
+                # build_device_uid() normalizes away the suffix, so all
+                # 20 variants would get the same UID.  The ef_test_ prefix
+                # also makes them easy to identify and clean up.
+                device_uid = f"ef_test_{variant_suffix}_{house}_{unit}"
+                if device_uid in existing_devices:
+                    continue
+
+                device_dict: dict[str, Any] = {
+                    CONF_DEVICE_PROTOCOL: "everflourish",
+                    CONF_DEVICE_MODEL: model,
+                    CONF_DEVICE_HOUSE: house,
+                    CONF_DEVICE_UNIT: unit,
+                    CONF_DEVICE_ENCODING: "",  # raw path (variant dispatch)
+                }
+                device_id_map[device_uid] = device_dict
+
+                existing_devices[device_uid] = {
+                    CONF_DEVICE_NAME: label,
+                    CONF_DEVICE_PROTOCOL: "everflourish",
+                    CONF_DEVICE_MODEL: model,
+                    CONF_DEVICE_HOUSE: house,
+                    CONF_DEVICE_UNIT: unit,
+                    CONF_DEVICE_ENCODING: "",
+                    "group_uid": group_uid,
+                }
+                created += 1
+
+            # --- Create the "sequence all" marker device ---
+            seq_uid = f"ef_test_seq_{house}_{unit}"
+            if seq_uid not in existing_devices:
+                existing_devices[seq_uid] = {
+                    CONF_DEVICE_NAME: f"EF test — sequence ALL (h={house} u={unit})",
+                    CONF_DEVICE_PROTOCOL: "everflourish",
+                    CONF_DEVICE_MODEL: "ef_test_sequence",
+                    CONF_DEVICE_HOUSE: house,
+                    CONF_DEVICE_UNIT: unit,
+                    CONF_DEVICE_ENCODING: "",
+                    "group_uid": group_uid,
+                }
+                created += 1
+
+            # Persist everything
+            new_options = dict(entry.options)
+            new_options[CONF_DEVICES] = existing_devices
+            self.hass.config_entries.async_update_entry(
+                entry, options=new_options
+            )
+
+            _LOGGER.info(
+                "EF test device: created %d entities (house=%s unit=%s)",
+                created, house, unit,
+            )
+            return self.async_abort(reason="device_added")
+
+        return self.async_show_form(
+            step_id="ef_test_device",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("house", default=int(EF_TEST_HOUSE)): vol.All(
+                        int, vol.Range(min=0, max=16383),
+                    ),
+                    vol.Required("unit", default=int(EF_TEST_UNIT)): vol.All(
+                        int, vol.Range(min=1, max=4),
+                    ),
+                }
+            ),
             errors=errors,
         )

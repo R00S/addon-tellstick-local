@@ -28,7 +28,7 @@ DOMAIN = "tellstick_local"
 
 
 
-INTEGRATION_VERSION = "3.1.5.2"
+INTEGRATION_VERSION = "3.1.5.3"
 
 
 # Backend type stored in config entry data
@@ -489,6 +489,24 @@ _EF_RAW_VARIANTS: list[tuple[str, str, str, int]] = [
     ("EF raw v20 — native+S+R=5 fix", "everflourish", "selflearning-switch:ef_v20", 11),
 ]
 PROTOCOL_RAW_CATALOG.extend(_EF_RAW_VARIANTS)
+
+# ---------------------------------------------------------------------------
+# EF test device — quick-add all 20 variants as individual switch entities
+# plus one "sequence all" button, so testers can check which variant makes
+# the TellStick hardware blink.
+# ---------------------------------------------------------------------------
+
+# Ordered list of (variant_suffix, label) used by the EF test device flow.
+# Matches _EF_RAW_VARIANTS above (same order).
+EF_TEST_VARIANTS: list[tuple[str, str]] = [
+    (entry[2].split(":", 1)[1], entry[0])
+    for entry in _EF_RAW_VARIANTS
+]
+# Group UID prefix used to group all EF test entities under one HA device card.
+EF_TEST_GROUP_UID = "ef_test"
+# Default test house/unit (can be overridden in the flow).
+EF_TEST_HOUSE = "100"
+EF_TEST_UNIT = "1"
 
 PROTOCOL_NATIVE_CATALOG: list[tuple[str, str, str, int]] = list(
     PROTOCOL_MODEL_CATALOG
