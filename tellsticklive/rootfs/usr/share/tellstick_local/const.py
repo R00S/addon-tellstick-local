@@ -28,7 +28,7 @@ DOMAIN = "tellstick_local"
 
 
 
-INTEGRATION_VERSION = "3.1.5.5"
+INTEGRATION_VERSION = "3.1.5.6"
 
 
 # Backend type stored in config entry data
@@ -38,7 +38,7 @@ BACKEND_NET = "net"   # TellStick Net / ZNet — UDP protocol direct to device
 
 # Net/ZNet UDP ports
 NET_DISCOVERY_PORT = 30303    # broadcast "D" → device replies with IP/MAC/firmware
-NET_COMMAND_PORT = 42314      # "reglistener" + "send" commands; ZNet pushes events here
+NET_COMMAND_PORT = 42314      # "reglistener" + "send" commands; Net/ZNet pushes events here
 NET_REGISTRATION_INTERVAL_MINUTES = 10  # re-send "reglistener" every 10 minutes
 
 # Config keys (CONF_HOST from homeassistant.const is used for host)
@@ -415,7 +415,7 @@ PROTOCOL_MODEL_LABELS: list[str] = [label for label, _, _, _ in PROTOCOL_MODEL_C
 # ---------------------------------------------------------------------------
 # Net/ZNet protocol split — native vs raw pulse
 #
-# The ZNet firmware's handleSend() routes UDP "send" commands through its
+# The Net/ZNet firmware's handleSend() routes UDP "send" commands through its
 # built-in Python protocol stack.  This works for ALL protocols, but has
 # bugs (unit+1 offset, missing parameters, no R/P prefixes).  We compensate
 # for the unit+1 bug in _encode_generic_command(), but protocols that need
@@ -429,7 +429,7 @@ PROTOCOL_MODEL_LABELS: list[str] = [label for label, _, _, _ in PROTOCOL_MODEL_C
 # ---------------------------------------------------------------------------
 
 # Protocols with raw pulse-train encoders implemented in net_client.py.
-# These bypass all ZNet firmware bugs and work on ALL hardware versions.
+# These bypass all Net/ZNet firmware bugs and work on ALL hardware versions.
 NET_RAW_PROTOCOLS: set[str] = {"arctech", "everflourish"}
 
 # Split PROTOCOL_MODEL_CATALOG for Net/ZNet backends:
@@ -447,14 +447,14 @@ PROTOCOL_RAW_CATALOG: list[tuple[str, str, str, int]] = list(
 )
 
 # ---------------------------------------------------------------------------
-# Everflourish encoding variants for ZNet/Net hardware testing.
+# Everflourish encoding variants for Net/ZNet hardware testing.
 #
 # Split into TWO test devices:
 #   1. RAW variants (ef_r01..ef_r140) — S-only pulse-train bytes that bypass
-#      firmware protocol handling.  These make the ZNet LED blink.
+#      firmware protocol handling.  These make the Net/ZNet LED blink.
 #   2. NATIVE variants (ef_n01..ef_n123) — firmware protocol dicts that go
-#      through the ZNet's handleSend() Python stack.  Currently do NOT make
-#      the ZNet LED blink — exhaustive testing of the native path.
+#      through the Net/ZNet's handleSend() Python stack.  Currently do NOT make
+#      the Net/ZNet LED blink — exhaustive testing of the native path.
 #
 # The old ef_v1..ef_v20 are kept for backward compat (dispatched in
 # _encode_everflourish_variant).

@@ -103,7 +103,7 @@ from our Python code instead of the firmware's Python code.
 
 ## Current Status of Each TX Protocol
 
-| Protocol       | ZNet TX Status    | Method Used                          | Source Ported From                             |
+| Protocol       | Net/ZNet TX Status | Method Used                          | Source Ported From                             |
 | -------------- | ----------------- | ------------------------------------ | ---------------------------------------------- |
 | `arctech`      | ✅ Working        | Native dict (on/off/learn) + raw `S` bytes (dim) | `molobrakos/tellsticknet` + `tellstick-server/ProtocolArctech.py` |
 | `everflourish` | 🔬 Testing²       | 20 variants (S-only / native / hybrid / timing) | `tellstick-server/ProtocolEverflourish.py`     |
@@ -124,7 +124,7 @@ from our Python code instead of the firmware's Python code.
   `stringSelflearningForCode()` or `stringForCodeSwitch()`.
   `yidong` extends `ProtocolSartano` — it reuses sartano's `stringForCode()`.
 
-² Everflourish raw S-only encoder (v1) produces **no blinking** on ZNet v2 —
+² Everflourish raw S-only encoder (v1) produces **no blinking** on Net/ZNet —
   `handleSend()` requires a `protocol` key and drops S-only dicts.  Native
   firmware path **does produce blinking** (both with and without unit-1 fix).
   12 encoding variants (EF raw v1–v12) are available in the "by protocol
@@ -142,7 +142,7 @@ from our Python code instead of the firmware's Python code.
 
 ## How to Port a Protocol — Step by Step
 
-### Step 1: Find the ZNet Firmware Source
+### Step 1: Find the Net/ZNet Firmware Source
 
 Every protocol has a `stringForMethod()` in the `tellstick-server` repo:
 
@@ -255,7 +255,7 @@ Each protocol uses different timing values for its pulses:
 ¹ Sartano and its derivatives (yidong) use `$` and `k` as pulse-width
   characters, where `$` ≈ chr(36) and `k` ≈ chr(107).
 
-² The ZNet firmware's `rfSend()` treats each byte as a timing value.
+² The Net/ZNet firmware's `rfSend()` treats each byte as a timing value.
   Character-based protocols like sartano use printable ASCII as timing values —
   `$` = 36 (≈594 µs), `k` = 107 (≈1764 µs).
 
@@ -292,7 +292,7 @@ send_kwargs = dict(S=pulse_bytes, R=10, P=25)
    release workflow (`.github/workflows/create-test-release.yaml`) makes this
    easy — create a pre-release, user installs via HACS, tries the device.
 
-## Reference: ZNet Firmware Source Locations
+## Reference: Net/ZNet Firmware Source Locations
 
 All protocol implementations are in the `telldus/tellstick-server` repo under
 `rf433/src/rf433/`:
