@@ -3,13 +3,31 @@
 > **Issue:** [#85](https://github.com/R00S/addon-tellstick-local/issues/85) —
 > GAO (everflourish) protocol works on TellStick Duo but not on TellStick ZNet.
 
-> **⚠️ Status (2026-03):** Raw pulse encoder implemented and sends correct
-> bytes, but testing showed that even **Duo-generated** everflourish signals
-> are not picked up by a Net/ZNet acting as receiver. This suggests TellStick
-> hardware may drop everflourish signals originating from another TellStick
-> entirely — the protocol may only work when transmitting to dedicated
-> everflourish receivers (e.g. GAO wall plugs), not between TellSticks.
-> Awaiting user reports with actual everflourish hardware before further changes.
+> **⚠️ Status (2026-03):** ZNet testing showed that the raw S-only encoder
+> (v1) produces **no blinking**, while the native firmware path produces
+> **blinking** (both with and without unit-1 fix).  This means `handleSend()`
+> on ZNet v2 **requires the `protocol` key** — S-only dicts are silently
+> dropped.  12 encoding variants (EF raw v1–v12) are now available in the
+> "by protocol (raw)" menu to empirically test which approach works on
+> each hardware version.  Cross-TellStick RX still untested — Duo-generated
+> everflourish signals are not picked up by Net/ZNet as a receiver.
+>
+> **Test variants (in "by protocol (raw)" menu):**
+>
+> | Variant | Dict keys sent | Hypothesis |
+> |---------|---------------|------------|
+> | v1 | `{S}` | Current S-only — fails on ZNet v2 |
+> | v2 | `{S, R=4}` | S + repeat prefix |
+> | v3 | `{S, R=10, P=5}` | S + repeat + pause (like internal path) |
+> | v4 | `{S+S}` | Doubled signal |
+> | v5 | `{protocol, model=sw, house, unit, method}` | Native, no unit fix |
+> | v6 | `{protocol, model=sw, house, unit-1, method}` | Native, unit-1 fix |
+> | v7 | `{protocol, model=sl, house, unit, method}` | Native, model="selflearning" |
+> | v8 | `{protocol, model=sl, house, unit-1, method}` | Native, model="selflearning" + fix |
+> | v9 | `{protocol, model=sw, …, S}` | Hybrid, no fix |
+> | v10 | `{protocol, model=sw, …, S}` unit-1 | Hybrid, fix |
+> | v11 | `{protocol, model=sw, …, S, R, P}` | Hybrid + R+P |
+> | v12 | `{protocol, model=sl, house, unit-2, method}` | Native, unit-2 fix |
 
 ## Problem
 

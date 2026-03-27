@@ -28,7 +28,7 @@ DOMAIN = "tellstick_local"
 
 
 
-INTEGRATION_VERSION = "3.1.5.0"
+INTEGRATION_VERSION = "3.1.5.1"
 
 
 # Backend type stored in config entry data
@@ -445,6 +445,39 @@ NET_RAW_PROTOCOLS: set[str] = {"arctech", "everflourish"}
 PROTOCOL_RAW_CATALOG: list[tuple[str, str, str, int]] = list(
     PROTOCOL_MODEL_CATALOG
 )
+
+# ---------------------------------------------------------------------------
+# Everflourish raw encoding variants for ZNet/Net hardware testing.
+#
+# ZNet v2 firmware's handleSend() requires a 'protocol' key — sending only
+# {S: raw_bytes} causes a KeyError and the packet is silently dropped.
+# Net v1 C firmware accepts S-only dicts but drops protocol dicts for non-arctech.
+#
+# These variants let users empirically test which encoding approach works on
+# their specific hardware.  See docs/EVERFLOURISH_RESEARCH.md for details.
+#
+# Group A — S-only (tests if firmware has hidden S path)
+# Group B — Native dict (tests model/unit variations)
+# Group C — Hybrid (tests if firmware uses our S or its own)
+# ---------------------------------------------------------------------------
+_EF_RAW_VARIANTS: list[tuple[str, str, str, int]] = [
+    # Group A: S-only (raw pulse bytes, no protocol key)
+    ("EF raw v1 — S-only bytes", "everflourish", "selflearning-switch:ef_v1", 11),
+    ("EF raw v2 — S + R=4", "everflourish", "selflearning-switch:ef_v2", 11),
+    ("EF raw v3 — S + R=10 P=5", "everflourish", "selflearning-switch:ef_v3", 11),
+    ("EF raw v4 — S doubled", "everflourish", "selflearning-switch:ef_v4", 11),
+    # Group B: Native dict (firmware encodes internally)
+    ("EF raw v5 — native nofix", "everflourish", "selflearning-switch:ef_v5", 11),
+    ("EF raw v6 — native unit-1 fix", "everflourish", "selflearning-switch:ef_v6", 11),
+    ("EF raw v7 — native model=selflearning nofix", "everflourish", "selflearning-switch:ef_v7", 11),
+    ("EF raw v8 — native model=selflearning fix", "everflourish", "selflearning-switch:ef_v8", 11),
+    # Group C: Hybrid (native dict + our S bytes)
+    ("EF raw v9 — native+S nofix", "everflourish", "selflearning-switch:ef_v9", 11),
+    ("EF raw v10 — native+S fix", "everflourish", "selflearning-switch:ef_v10", 11),
+    ("EF raw v11 — native+S+R+P nofix", "everflourish", "selflearning-switch:ef_v11", 11),
+    ("EF raw v12 — native unit-2 fix", "everflourish", "selflearning-switch:ef_v12", 11),
+]
+PROTOCOL_RAW_CATALOG.extend(_EF_RAW_VARIANTS)
 
 PROTOCOL_NATIVE_CATALOG: list[tuple[str, str, str, int]] = list(
     PROTOCOL_MODEL_CATALOG

@@ -1335,6 +1335,126 @@ def _encode_everflourish_command(
     return _everflourish_pulse_train(house_int, unit1, action)
 
 
+def _encode_everflourish_variant(
+    house: Any, unit: Any, method_name: str, model_full: str,
+) -> dict[str, Any] | None:
+    """Build send_kwargs for an everflourish raw variant.
+
+    Extracts the variant suffix (``ef_v1`` … ``ef_v12``) from *model_full* and
+    returns the appropriate dict to pass to ``encode_packet("send", ...)``.
+    Returns ``None`` if the method is unsupported.
+
+    See ``docs/EVERFLOURISH_RESEARCH.md`` for variant descriptions.
+    """
+    # Build raw pulse bytes (used by S-only and hybrid variants)
+    rf_packet = _encode_everflourish_command(house, unit, method_name)
+    if rf_packet is None:
+        return None
+
+    # Extract variant suffix  (e.g. "selflearning-switch:ef_v3" → "ef_v3")
+    variant = ""
+    if ":" in model_full:
+        variant = model_full.split(":", 1)[1]
+
+    # Resolve numeric house/unit for native dicts
+    method_int = _METHOD_INT.get(method_name, 0)
+    try:
+        house_int: Any = int(house)
+    except (TypeError, ValueError):
+        house_int = 0
+    try:
+        unit_int = int(unit)
+    except (TypeError, ValueError):
+        unit_int = 1
+
+    # -- Group A: S-only (no protocol key) ----------------------------------
+    if variant in ("", "ef_v1"):
+        # v1: S-only bytes (current behaviour)
+        return dict(S=rf_packet)
+
+    if variant == "ef_v2":
+        # v2: S bytes + R=4 repeat prefix
+        return dict(S=rf_packet, R=4)
+
+    if variant == "ef_v3":
+        # v3: S bytes + R=10, P=5 (like tellstick-server internal path)
+        return dict(S=rf_packet, R=10, P=5)
+
+    if variant == "ef_v4":
+        # v4: Doubled signal (two copies of the pulse train)
+        return dict(S=rf_packet + rf_packet)
+
+    # -- Group B: Native dict (firmware encodes internally) -----------------
+    if variant == "ef_v5":
+        # v5: Native dict, no unit fix — firmware will add +1 internally
+        return OrderedDict(
+            protocol="everflourish", model="selflearning-switch",
+            house=house_int, unit=unit_int, method=method_int,
+        )
+
+    if variant == "ef_v6":
+        # v6: Native dict, unit-1 fix — compensates for firmware +1 bug
+        return OrderedDict(
+            protocol="everflourish", model="selflearning-switch",
+            house=house_int, unit=unit_int - 1, method=method_int,
+        )
+
+    if variant == "ef_v7":
+        # v7: Native dict, model="selflearning" (firmware canonical name), no fix
+        return OrderedDict(
+            protocol="everflourish", model="selflearning",
+            house=house_int, unit=unit_int, method=method_int,
+        )
+
+    if variant == "ef_v8":
+        # v8: Native dict, model="selflearning", unit-1 fix
+        return OrderedDict(
+            protocol="everflourish", model="selflearning",
+            house=house_int, unit=unit_int - 1, method=method_int,
+        )
+
+    # -- Group C: Hybrid (native dict + our S bytes) -----------------------
+    if variant == "ef_v9":
+        # v9: Native + S, no unit fix
+        d: dict[str, Any] = OrderedDict(
+            protocol="everflourish", model="selflearning-switch",
+            house=house_int, unit=unit_int, method=method_int,
+        )
+        d["S"] = rf_packet
+        return d
+
+    if variant == "ef_v10":
+        # v10: Native + S, unit-1 fix
+        d = OrderedDict(
+            protocol="everflourish", model="selflearning-switch",
+            house=house_int, unit=unit_int - 1, method=method_int,
+        )
+        d["S"] = rf_packet
+        return d
+
+    if variant == "ef_v11":
+        # v11: Native + S + R + P, no unit fix
+        d = OrderedDict(
+            protocol="everflourish", model="selflearning-switch",
+            house=house_int, unit=unit_int, method=method_int,
+        )
+        d["S"] = rf_packet
+        d["R"] = 4
+        d["P"] = 5
+        return d
+
+    if variant == "ef_v12":
+        # v12: Native dict, unit-2 fix (test: firmware+1 AND protocol+1?)
+        return OrderedDict(
+            protocol="everflourish", model="selflearning",
+            house=house_int, unit=unit_int - 2, method=method_int,
+        )
+
+    # Unknown variant: fall back to S-only
+    _LOGGER.warning("Everflourish: unknown variant %r, using S-only", variant)
+    return dict(S=rf_packet)
+
+
 def _encode_generic_command(
     protocol: str, model: str, house: Any, unit: Any, method_name: str,
     *, compensate_unit: bool = True,
@@ -1696,14 +1816,17 @@ class TellStickNetController:
                 dict(S=rf_packet) if isinstance(rf_packet, bytes) else dict(rf_packet)
             )
         elif protocol == "everflourish":
-            # Everflourish raw pulse-train encoder.
-            rf_packet = _encode_everflourish_command(house, unit, method_name)
-            if rf_packet is None:
+            # Everflourish variant dispatch.  The model suffix (e.g. ":ef_v5")
+            # selects the encoding variant.  See _encode_everflourish_variant().
+            ef_result = _encode_everflourish_variant(
+                house, unit, method_name, model_full,
+            )
+            if ef_result is None:
                 _LOGGER.warning(
                     "Net everflourish: unsupported method=%s", method_name
                 )
                 return -1
-            send_kwargs = dict(S=rf_packet)  # raw pulse-train bytes
+            send_kwargs = ef_result
         else:
             # No protocol-specific encoder: fall through to native firmware
             # path.  Compensates for ZNet unit+1 bug but only passes

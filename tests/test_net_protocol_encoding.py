@@ -167,11 +167,13 @@ def run_tests() -> None:
             PROTOCOL_RAW_MAP,
         )
 
-        # Both catalogs now contain ALL protocols (users can test either path)
+        # Raw catalog = full catalog + everflourish raw variants
+        from custom_components.tellstick_local.const import _EF_RAW_VARIANTS
+
         report(
-            "raw catalog = full catalog",
-            len(PROTOCOL_RAW_CATALOG) == len(PROTOCOL_MODEL_CATALOG),
-            f"raw={len(PROTOCOL_RAW_CATALOG)} vs full={len(PROTOCOL_MODEL_CATALOG)}",
+            "raw catalog = full catalog + EF variants",
+            len(PROTOCOL_RAW_CATALOG) == len(PROTOCOL_MODEL_CATALOG) + len(_EF_RAW_VARIANTS),
+            f"raw={len(PROTOCOL_RAW_CATALOG)} vs full={len(PROTOCOL_MODEL_CATALOG)}+{len(_EF_RAW_VARIANTS)}",
         )
         report(
             "native catalog = full catalog",
