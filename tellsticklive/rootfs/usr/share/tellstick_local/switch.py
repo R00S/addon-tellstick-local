@@ -148,14 +148,20 @@ async def async_setup_entry(
             if er.async_get(hass).async_get_entity_id("switch", DOMAIN, unique_id) is not None:
                 return  # entity still active — skip duplicate
             known.discard(uid)  # entity was deleted — fall through to create
-        # Use the stored catalog model (e.g. "selflearning-dimmer:nexa") for
-        # the type check when available.  The synthetic event from the "Add
-        # device" flow uses the RF-normalized model ("selflearning") which
-        # loses the -dimmer/-switch distinction.  Issue #90.
+        # Determine the catalog model for the type check.  Three sources,
+        # in priority order:
+        #   1. _catalog_model from the synthetic event (set by "Add device"
+        #      flow — always correct and independent of entry.options timing)
+        #   2. Stored catalog model from entry.options (correct after restart)
+        #   3. RF event model (fallback — loses -dimmer/-switch distinction)
         stored = entry.options.get(CONF_DEVICES, {}).get(uid, {})
-        check_model = stored.get(CONF_DEVICE_MODEL, model)
+        check_model = (
+            params.get("_catalog_model", "")
+            or stored.get(CONF_DEVICE_MODEL, "")
+            or model
+        )
         if not _is_switch(protocol, check_model):
-            # Stored model says dimmer — clean up any stale switch entity.
+            # Catalog/stored model says dimmer — clean up any stale switch.
             if _is_dimmer_model(check_model):
                 _remove_stale_switch(ent_reg, entry.entry_id, uid)
             return

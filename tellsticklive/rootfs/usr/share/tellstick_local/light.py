@@ -135,12 +135,18 @@ async def async_setup_entry(
             if er.async_get(hass).async_get_entity_id("light", DOMAIN, unique_id) is not None:
                 return  # entity still active — skip duplicate
             known.discard(uid)  # entity was deleted — fall through to create
-        # Use the stored catalog model (e.g. "selflearning-dimmer:nexa") for
-        # the type check when available.  The synthetic event from the "Add
-        # device" flow uses the RF-normalized model ("selflearning") which
-        # loses the -dimmer/-switch distinction.  Issue #90.
+        # Determine the catalog model for the type check.  Three sources,
+        # in priority order:
+        #   1. _catalog_model from the synthetic event (set by "Add device"
+        #      flow — always correct and independent of entry.options timing)
+        #   2. Stored catalog model from entry.options (correct after restart)
+        #   3. RF event model (fallback — loses -dimmer/-switch distinction)
         stored = entry.options.get(CONF_DEVICES, {}).get(uid, {})
-        check_model = stored.get(CONF_DEVICE_MODEL, model)
+        check_model = (
+            params.get("_catalog_model", "")
+            or stored.get(CONF_DEVICE_MODEL, "")
+            or model
+        )
         if not _is_dimmer(protocol, check_model):
             return
         # Clean up stale switch entity for this UID — the device was
@@ -150,7 +156,11 @@ async def async_setup_entry(
         name = stored.get(CONF_DEVICE_NAME) or f"TellStick {uid}"
         # Use stored catalog model for display (shows "selflearning-dimmer"
         # instead of raw RF "selflearning" in the device info).
-        display_model = stored.get(CONF_DEVICE_MODEL) or model
+        display_model = (
+            params.get("_catalog_model", "")
+            or stored.get(CONF_DEVICE_MODEL, "")
+            or model
+        )
         entity = TellStickLight(
             entry_id=entry.entry_id,
             device_uid=uid,
