@@ -303,3 +303,104 @@ def calculateChecksum(x):
 ```
 
 Total signal length: 8 + (16+4+4)×4 + 4 = **108 pulse bytes**
+
+## Cross-Implementation Timing Research (verified 2026-03)
+
+Seven independent implementations produce different pulse timings for the
+same Everflourish protocol. This is why we test 263 variants — the "correct"
+timing depends on which receiver hardware the user has.
+
+| # | Source | Repository/File | Short (µs) | Long (µs) | Ratio | TellStick byte (s/l) |
+|---|--------|-----------------|-----------|-----------|-------|-----|
+| 1 | telldus-core | `telldus/telldus-core/service/ProtocolEverflourish.cpp` | 600 | 1140 | 1.9× | 60/114 |
+| 2 | tellstick-server | `telldus/tellstick-server ProtocolEverflourish.py` | 600 | 1140 | 1.9× | 60/114 |
+| 3 | castoplug PIC18F2550 | `graememorgan/switches-firmware castoplug.c` | 400+940 | 1005+340 | asymmetric | 40/94 |
+| 4 | rfcmd forum patch | `forum.telldus.com/viewtopic.php?t=599` | 230 | 690 | 3.0× | 23/69 |
+| 5 | perivar Arduino RX | `perivar/everflourish-rf433 everflourish_receiver.ino` | 550-650 | 1000-1360 | ~1.9× | ~60/114 |
+| 6 | alexbirkett GNU Radio | `alexbirkett/ever-flourish-remote-control-plug` (USRP N210) | 344 | 975 | 2.8× | 34/98 |
+| 7 | Flipper Zero capture | `Zero-Sploit/FlipperZero-Subghz-DB EverFlourish/3_ON.sub` | 324 | 972 | 3.0× | 32/97 |
+
+Additional sources without dedicated everflourish decoders:
+
+| Source | Notes |
+|--------|-------|
+| RCSwitch (Arduino) | 12 built-in protocol timings (150-650µs base, 1:2 to 1:6 ratios). Everflourish not listed but P1 (350µs) is close to Flipper/GNURadio. |
+| Flipper Zero | Uses **Princeton protocol** decoder. `TE: 324` = base timing element. Key=24 bits. |
+| ESPHome community | Reports short=350-400µs, long=1800µs (4.5×) from `remote_receiver` captures. |
+| pilight/ESPiLight | Protocol file exists but exact path is non-obvious. Manual mentions 420/1260µs base. |
+| OpenMQTTGateway | Uses rtl_433_ESP internally; no dedicated everflourish decoder. |
+| Tasmota RF Bridge | Uses RCSwitch internally; no dedicated everflourish decoder. Raw capture/replay works. |
+| RFLink | No dedicated Everflourish plugin (Plugin_044 is Auriol V3, NOT Everflourish). |
+| rtl_433 | No `src/devices/everflourish.c` found in current master. |
+
+### Key insights from the research
+
+1. **Real remotes transmit at ~324-344µs short / ~972-975µs long (ratio 3×)**,
+   as confirmed by both Flipper Zero capture and GNU Radio USRP analysis.
+
+2. **telldus-core uses 600/1140µs (ratio 1.9×)** — significantly slower than
+   what real remotes produce. This works because everflourish receivers have
+   wide timing acceptance windows, but it's not the "correct" timing.
+
+3. **castoplug uses asymmetric OOK** — bit 0 = HIGH 400µs + LOW 940µs,
+   bit 1 = HIGH 1005µs + LOW 340µs. This is different from the pulse-quartet
+   encoding used by telldus-core. It works because the receiver only checks
+   the total bit period (~1340µs per bit).
+
+4. **rfcmd uses 230/690µs (ratio 3×)** — matches the real remote ratio but
+   at lower absolute timing. Forum thread t=599 on forum.telldus.com.
+
+5. **Flipper Zero identifies the protocol as Princeton** — a generic OOK
+   encoding scheme used by many 433MHz devices (PT2262/EV1527 chipsets).
+
+### Variant organization
+
+Total: **140 RAW + 123 NATIVE = 263 variants**
+
+RAW (S-only pulse bytes — bypass firmware):
+- ef_r01-r12: Standard timing (60/114), repeat sweep 1-20×
+- ef_r13-r18: Timing sweep (30-90µs short)
+- ef_r19-r25: Preamble length sweep (0-16)
+- ef_r26-r31: Double/triple signal copies
+- ef_r32-r40: Frame/terminator combos
+- ef_r41-r43: Inverted bits
+- ef_r44-r46: Bit order variations
+- ef_r47-r52: Cross timing combos
+- ef_r53-r64: **RCSwitch P1-P12 emulation** (verified from RCSwitch.cpp)
+- ef_r65-r68: **Castoplug PIC timing** (verified from castoplug.c)
+- ef_r69-r72: **rfcmd forum timing** (verified from forum.telldus.com t=599)
+- ef_r73-r76: rtl_433 receiver window timing
+- ef_r77-r82: Duo T-table format
+- ef_r83-r90: Ratio sweep (1.5×-3.0× normal/inverted)
+- ef_r91-r98: Absolute level sweep (200-1500µs)
+- ef_r99-r103: Sync pulse prefix
+- ef_r104-r110: Pause (inter-repeat gap) sweep
+- ef_r111-r116: **Flipper Zero Princeton TE=324µs** (verified from capture)
+- ef_r117-r120: **GNU Radio 344/975µs** (verified from USRP capture)
+- ef_r121-r124: **ESPHome community 350/1800µs** (community reports)
+- ef_r125-r127: **Castoplug asymmetric OOK** (verified from castoplug.c)
+- ef_r128-r133: Princeton TE sweep (250-500µs)
+- ef_r134-r140: Cross-source combos
+
+NATIVE (firmware protocol dicts):
+- ef_n01-n07: Model name variations
+- ef_n08-n14: Unit offsets (selflearning-switch)
+- ef_n15-n21: Unit offsets (selflearning)
+- ef_n22-n26: House offsets
+- ef_n27-n34: Native+S hybrids
+- ef_n35-n42: Native+R/P repeats
+- ef_n43-n48: Combo (native+S+R)
+- ef_n49-n53: Edge cases (method as string, etc.)
+- ef_n54-n65: Native+RCSwitch/alt timing S bytes
+- ef_n66-n71: Protocol name/case variations
+- ef_n72-n79: Extended unit offsets
+- ef_n80-n85: Extended house offsets
+- ef_n86-n93: Native+S+varying R/P
+- ef_n94-n97: Native+Duo format S
+- ef_n98-n103: Method+model combos
+- ef_n104-n108: Dict ordering/type variations
+- ef_n109-n112: **Native+Flipper Zero S bytes** (verified from capture)
+- ef_n113-n115: **Native+GNU Radio S bytes** (verified from USRP capture)
+- ef_n116-n117: **Native+ESPHome S bytes** (community reports)
+- ef_n118-n119: **Native+Castoplug S bytes** (verified from castoplug.c)
+- ef_n120-n123: **Native+Princeton TE sweep S bytes**

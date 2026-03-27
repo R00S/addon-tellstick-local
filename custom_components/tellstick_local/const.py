@@ -28,7 +28,7 @@ DOMAIN = "tellstick_local"
 
 
 
-INTEGRATION_VERSION = "3.1.5.4"
+INTEGRATION_VERSION = "3.1.5.5"
 
 
 # Backend type stored in config entry data
@@ -450,9 +450,9 @@ PROTOCOL_RAW_CATALOG: list[tuple[str, str, str, int]] = list(
 # Everflourish encoding variants for ZNet/Net hardware testing.
 #
 # Split into TWO test devices:
-#   1. RAW variants (ef_r01..ef_r52) — S-only pulse-train bytes that bypass
+#   1. RAW variants (ef_r01..ef_r140) — S-only pulse-train bytes that bypass
 #      firmware protocol handling.  These make the ZNet LED blink.
-#   2. NATIVE variants (ef_n01..ef_n53) — firmware protocol dicts that go
+#   2. NATIVE variants (ef_n01..ef_n123) — firmware protocol dicts that go
 #      through the ZNet's handleSend() Python stack.  Currently do NOT make
 #      the ZNet LED blink — exhaustive testing of the native path.
 #
@@ -532,6 +532,118 @@ _EF_TEST_RAW_VARIANTS: list[tuple[str, str, str, int]] = [
     ("EF raw r50 — S short=60 long=95 R=5", "everflourish", "selflearning-switch:ef_r50", 11),
     ("EF raw r51 — S short=40 long=133 R=5", "everflourish", "selflearning-switch:ef_r51", 11),
     ("EF raw r52 — S short=80 long=114 R=5", "everflourish", "selflearning-switch:ef_r52", 11),
+    # --- Group RRC: RCSwitch protocol timing emulation ---
+    # From RCSwitch.cpp: 12 built-in protocols with pulse_length × ratio
+    ("EF raw r53 — RCSw P1 350µs 1:3/3:1", "everflourish", "selflearning-switch:ef_r53", 11),
+    ("EF raw r54 — RCSw P2 650µs 1:2/2:1", "everflourish", "selflearning-switch:ef_r54", 11),
+    ("EF raw r55 — RCSw P3 100µs 4:11/9:6", "everflourish", "selflearning-switch:ef_r55", 11),
+    ("EF raw r56 — RCSw P4 380µs 1:3/3:1", "everflourish", "selflearning-switch:ef_r56", 11),
+    ("EF raw r57 — RCSw P5 500µs 1:2/2:1", "everflourish", "selflearning-switch:ef_r57", 11),
+    ("EF raw r58 — RCSw P6 450µs inv", "everflourish", "selflearning-switch:ef_r58", 11),
+    ("EF raw r59 — RCSw P7 150µs 1:6/6:1", "everflourish", "selflearning-switch:ef_r59", 11),
+    ("EF raw r60 — RCSw P10 365µs inv", "everflourish", "selflearning-switch:ef_r60", 11),
+    ("EF raw r61 — RCSw P11 270µs inv", "everflourish", "selflearning-switch:ef_r61", 11),
+    ("EF raw r62 — RCSw P12 320µs inv", "everflourish", "selflearning-switch:ef_r62", 11),
+    ("EF raw r63 — RCSw P1 inv 350µs", "everflourish", "selflearning-switch:ef_r63", 11),
+    ("EF raw r64 — RCSw P4 inv 380µs", "everflourish", "selflearning-switch:ef_r64", 11),
+    # --- Group RCP: Castoplug PIC18F2550 firmware timing ---
+    # From castoplug.c: bit0 HIGH=400µs LOW=940µs, bit1 HIGH=1005µs LOW=340µs
+    ("EF raw r65 — Castoplug 400/1010µs", "everflourish", "selflearning-switch:ef_r65", 11),
+    ("EF raw r66 — Castoplug 400/940µs", "everflourish", "selflearning-switch:ef_r66", 11),
+    ("EF raw r67 — Castoplug inv", "everflourish", "selflearning-switch:ef_r67", 11),
+    ("EF raw r68 — Castoplug 340/1010µs", "everflourish", "selflearning-switch:ef_r68", 11),
+    # --- Group RFM: rfcmd forum timing ---
+    # From Telldus forum t=599: short=230µs, long=690µs (ratio 3.0)
+    ("EF raw r69 — rfcmd 230/690µs R=5", "everflourish", "selflearning-switch:ef_r69", 11),
+    ("EF raw r70 — rfcmd 230/690µs R=3", "everflourish", "selflearning-switch:ef_r70", 11),
+    ("EF raw r71 — rfcmd 230/690µs R=10", "everflourish", "selflearning-switch:ef_r71", 11),
+    ("EF raw r72 — rfcmd 230/690µs inv", "everflourish", "selflearning-switch:ef_r72", 11),
+    # --- Group RRL: rtl_433 receiver window timing ---
+    ("EF raw r73 — rtl_433 1000/2000µs R=5", "everflourish", "selflearning-switch:ef_r73", 11),
+    ("EF raw r74 — rtl_433 1000/2000µs R=3", "everflourish", "selflearning-switch:ef_r74", 11),
+    ("EF raw r75 — rtl_433 half 500/1000µs R=5", "everflourish", "selflearning-switch:ef_r75", 11),
+    ("EF raw r76 — rtl_433 mid 750/1500µs R=5", "everflourish", "selflearning-switch:ef_r76", 11),
+    # --- Group RDT: Duo format (T-table + sync byte prefix) ---
+    ("EF raw r77 — Duo format R=5", "everflourish", "selflearning-switch:ef_r77", 11),
+    ("EF raw r78 — Duo format R=3", "everflourish", "selflearning-switch:ef_r78", 11),
+    ("EF raw r79 — Duo format R=10", "everflourish", "selflearning-switch:ef_r79", 11),
+    ("EF raw r80 — Duo+rfcmd timing R=5", "everflourish", "selflearning-switch:ef_r80", 11),
+    ("EF raw r81 — Duo+RCSw P1 timing R=5", "everflourish", "selflearning-switch:ef_r81", 11),
+    ("EF raw r82 — Duo+castoplug timing R=5", "everflourish", "selflearning-switch:ef_r82", 11),
+    # --- Group RRT: Ratio sweep (short=60, vary long) ---
+    ("EF raw r83 — ratio 1.5× 600/900µs", "everflourish", "selflearning-switch:ef_r83", 11),
+    ("EF raw r84 — ratio 2.0× 600/1200µs", "everflourish", "selflearning-switch:ef_r84", 11),
+    ("EF raw r85 — ratio 2.5× 600/1500µs", "everflourish", "selflearning-switch:ef_r85", 11),
+    ("EF raw r86 — ratio 3.0× 600/1800µs", "everflourish", "selflearning-switch:ef_r86", 11),
+    ("EF raw r87 — ratio 1.5× inv", "everflourish", "selflearning-switch:ef_r87", 11),
+    ("EF raw r88 — ratio 2.0× inv", "everflourish", "selflearning-switch:ef_r88", 11),
+    ("EF raw r89 — ratio 2.5× inv", "everflourish", "selflearning-switch:ef_r89", 11),
+    ("EF raw r90 — ratio 3.0× inv", "everflourish", "selflearning-switch:ef_r90", 11),
+    # --- Group RAL: Absolute level sweep (ratio≈1.9) ---
+    ("EF raw r91 — 200/380µs", "everflourish", "selflearning-switch:ef_r91", 11),
+    ("EF raw r92 — 250/480µs", "everflourish", "selflearning-switch:ef_r92", 11),
+    ("EF raw r93 — 350/670µs (RCSw territory)", "everflourish", "selflearning-switch:ef_r93", 11),
+    ("EF raw r94 — 450/860µs", "everflourish", "selflearning-switch:ef_r94", 11),
+    ("EF raw r95 — 1000/1900µs", "everflourish", "selflearning-switch:ef_r95", 11),
+    ("EF raw r96 — 1200/2280µs", "everflourish", "selflearning-switch:ef_r96", 11),
+    ("EF raw r97 — 1500/2550µs (max byte)", "everflourish", "selflearning-switch:ef_r97", 11),
+    ("EF raw r98 — 750/1430µs", "everflourish", "selflearning-switch:ef_r98", 11),
+    # --- Group RSY: Sync pulse prefix ---
+    ("EF raw r99 — sync 2550µs + std", "everflourish", "selflearning-switch:ef_r99", 11),
+    ("EF raw r100 — sync 2000µs + std", "everflourish", "selflearning-switch:ef_r100", 11),
+    ("EF raw r101 — sync 1270µs + std", "everflourish", "selflearning-switch:ef_r101", 11),
+    ("EF raw r102 — sync 2000µs + preamble=4", "everflourish", "selflearning-switch:ef_r102", 11),
+    ("EF raw r103 — sync 2000µs + no preamble", "everflourish", "selflearning-switch:ef_r103", 11),
+    # --- Group RPP: Pause sweep (std timing, R=5) ---
+    ("EF raw r104 — P=0 no gap", "everflourish", "selflearning-switch:ef_r104", 11),
+    ("EF raw r105 — P=10 100ms", "everflourish", "selflearning-switch:ef_r105", 11),
+    ("EF raw r106 — P=20 200ms", "everflourish", "selflearning-switch:ef_r106", 11),
+    ("EF raw r107 — P=37 370ms (Duo default)", "everflourish", "selflearning-switch:ef_r107", 11),
+    ("EF raw r108 — P=50 500ms", "everflourish", "selflearning-switch:ef_r108", 11),
+    ("EF raw r109 — P=75 750ms", "everflourish", "selflearning-switch:ef_r109", 11),
+    ("EF raw r110 — P=100 1000ms", "everflourish", "selflearning-switch:ef_r110", 11),
+    # --- Group RFZ: Flipper Zero / Princeton measured timing ---
+    # TE=324µs from actual Flipper Zero capture of Everflourish 3_ON.sub
+    ("EF raw r111 — Flipper 324/972µs R=5", "everflourish", "selflearning-switch:ef_r111", 11),
+    ("EF raw r112 — Flipper 324/972µs R=3", "everflourish", "selflearning-switch:ef_r112", 11),
+    ("EF raw r113 — Flipper 324/972µs R=10", "everflourish", "selflearning-switch:ef_r113", 11),
+    ("EF raw r114 — Flipper 324/972µs inv R=5", "everflourish", "selflearning-switch:ef_r114", 11),
+    ("EF raw r115 — Flipper 324/972µs +term R=5", "everflourish", "selflearning-switch:ef_r115", 11),
+    ("EF raw r116 — Flipper 324/972µs ×2 R=5", "everflourish", "selflearning-switch:ef_r116", 11),
+    # --- Group RGR: GNU Radio measured timing (alexbirkett) ---
+    # Long=975µs carrier, short=344µs from USRP N210 capture
+    ("EF raw r117 — GNURadio 344/975µs R=5", "everflourish", "selflearning-switch:ef_r117", 11),
+    ("EF raw r118 — GNURadio 344/975µs R=3", "everflourish", "selflearning-switch:ef_r118", 11),
+    ("EF raw r119 — GNURadio 344/975µs inv R=5", "everflourish", "selflearning-switch:ef_r119", 11),
+    ("EF raw r120 — GNURadio 344/975µs +term R=5", "everflourish", "selflearning-switch:ef_r120", 11),
+    # --- Group RES: ESPHome community observed timing ---
+    # Short≈350-400µs, long≈1800µs (4.5-5× ratio)
+    ("EF raw r121 — ESPHome 350/1800µs R=5", "everflourish", "selflearning-switch:ef_r121", 11),
+    ("EF raw r122 — ESPHome 400/1800µs R=5", "everflourish", "selflearning-switch:ef_r122", 11),
+    ("EF raw r123 — ESPHome 350/1800µs R=3", "everflourish", "selflearning-switch:ef_r123", 11),
+    ("EF raw r124 — ESPHome 350/1800µs inv R=5", "everflourish", "selflearning-switch:ef_r124", 11),
+    # --- Group RCA: Castoplug asymmetric OOK timing ---
+    # Actual castoplug.c: bit0=HIGH 400µs LOW 940µs, bit1=HIGH 1005µs LOW 340µs
+    ("EF raw r125 — CastoAsym 400/940/1005/340 R=5", "everflourish", "selflearning-switch:ef_r125", 11),
+    ("EF raw r126 — CastoAsym 400/940/1005/340 R=3", "everflourish", "selflearning-switch:ef_r126", 11),
+    ("EF raw r127 — CastoAsym 400/940/1005/340 R=10", "everflourish", "selflearning-switch:ef_r127", 11),
+    # --- Group RPR: Princeton protocol sweep (TE base timing) ---
+    # Flipper uses Princeton — test various TE values
+    ("EF raw r128 — Princeton TE=250 R=5", "everflourish", "selflearning-switch:ef_r128", 11),
+    ("EF raw r129 — Princeton TE=300 R=5", "everflourish", "selflearning-switch:ef_r129", 11),
+    ("EF raw r130 — Princeton TE=350 R=5", "everflourish", "selflearning-switch:ef_r130", 11),
+    ("EF raw r131 — Princeton TE=400 R=5", "everflourish", "selflearning-switch:ef_r131", 11),
+    ("EF raw r132 — Princeton TE=450 R=5", "everflourish", "selflearning-switch:ef_r132", 11),
+    ("EF raw r133 — Princeton TE=500 R=5", "everflourish", "selflearning-switch:ef_r133", 11),
+    # --- Group RCO: Cross-source combos ---
+    # Mix timings from different sources to find receiver acceptance window
+    ("EF raw r134 — Flipper 324µs + Duo repeat R=5 P=37", "everflourish", "selflearning-switch:ef_r134", 11),
+    ("EF raw r135 — GNURadio 344µs + no preamble R=5", "everflourish", "selflearning-switch:ef_r135", 11),
+    ("EF raw r136 — rfcmd 230µs + Flipper ratio 3× R=5", "everflourish", "selflearning-switch:ef_r136", 11),
+    ("EF raw r137 — Flipper 324µs + Duo T-prefix R=5", "everflourish", "selflearning-switch:ef_r137", 11),
+    ("EF raw r138 — GNURadio timing ×2 copies R=3", "everflourish", "selflearning-switch:ef_r138", 11),
+    ("EF raw r139 — ESPHome 350µs + sync prefix R=5", "everflourish", "selflearning-switch:ef_r139", 11),
+    ("EF raw r140 — Castoplug timing + preamble=4 R=5", "everflourish", "selflearning-switch:ef_r140", 11),
 ]
 
 # ---- NATIVE (firmware protocol dict) test variants -----------------------
@@ -605,6 +717,89 @@ _EF_TEST_NATIVE_VARIANTS: list[tuple[str, str, str, int]] = [
     ("EF native n51 — method=2 (TURNOFF)", "everflourish", "selflearning-switch:ef_n51", 11),
     ("EF native n52 — method=16 (LEARN)", "everflourish", "selflearning-switch:ef_n52", 11),
     ("EF native n53 — method=0x80+int", "everflourish", "selflearning-switch:ef_n53", 11),
+    # --- Group NRP: Native + RCSwitch/alt timing S bytes ---
+    ("EF native n54 — native+S RCSw P1 350/1050µs", "everflourish", "selflearning-switch:ef_n54", 11),
+    ("EF native n55 — native+S RCSw P2 650/1300µs", "everflourish", "selflearning-switch:ef_n55", 11),
+    ("EF native n56 — native+S RCSw P4 380/1140µs", "everflourish", "selflearning-switch:ef_n56", 11),
+    ("EF native n57 — native+S RCSw P5 500/1000µs", "everflourish", "selflearning-switch:ef_n57", 11),
+    ("EF native n58 — native+S RCSw P1 sl u-1", "everflourish", "selflearning-switch:ef_n58", 11),
+    ("EF native n59 — native+S RCSw P2 sl u-1", "everflourish", "selflearning-switch:ef_n59", 11),
+    ("EF native n60 — native+S RCSw P4 sl u-1", "everflourish", "selflearning-switch:ef_n60", 11),
+    ("EF native n61 — native+S RCSw P5 sl u-1", "everflourish", "selflearning-switch:ef_n61", 11),
+    ("EF native n62 — native+S castoplug 400/1010µs", "everflourish", "selflearning-switch:ef_n62", 11),
+    ("EF native n63 — native+S rfcmd 230/690µs", "everflourish", "selflearning-switch:ef_n63", 11),
+    ("EF native n64 — native+S rtl_433 1000/2000µs", "everflourish", "selflearning-switch:ef_n64", 11),
+    ("EF native n65 — native+S ratio 2.0×", "everflourish", "selflearning-switch:ef_n65", 11),
+    # --- Group NPC: Protocol name/case variations ---
+    ("EF native n66 — proto=Everflourish cap", "everflourish", "selflearning-switch:ef_n66", 11),
+    ("EF native n67 — proto=EVERFLOURISH upper", "everflourish", "selflearning-switch:ef_n67", 11),
+    ("EF native n68 — model=empty string", "everflourish", "selflearning-switch:ef_n68", 11),
+    ("EF native n69 — extra key code=0", "everflourish", "selflearning-switch:ef_n69", 11),
+    ("EF native n70 — extra key system=0", "everflourish", "selflearning-switch:ef_n70", 11),
+    ("EF native n71 — extra key fade=0", "everflourish", "selflearning-switch:ef_n71", 11),
+    # --- Group NUE: Extended unit offsets ---
+    ("EF native n72 — sl-sw unit-5", "everflourish", "selflearning-switch:ef_n72", 11),
+    ("EF native n73 — sl-sw unit-4", "everflourish", "selflearning-switch:ef_n73", 11),
+    ("EF native n74 — sl-sw unit+4", "everflourish", "selflearning-switch:ef_n74", 11),
+    ("EF native n75 — sl-sw unit+5", "everflourish", "selflearning-switch:ef_n75", 11),
+    ("EF native n76 — sl-sw unit=0 literal", "everflourish", "selflearning-switch:ef_n76", 11),
+    ("EF native n77 — sl-sw unit=255", "everflourish", "selflearning-switch:ef_n77", 11),
+    ("EF native n78 — sl unit=0 literal", "everflourish", "selflearning-switch:ef_n78", 11),
+    ("EF native n79 — sl unit=255", "everflourish", "selflearning-switch:ef_n79", 11),
+    # --- Group NHE: Extended house offsets ---
+    ("EF native n80 — house-5", "everflourish", "selflearning-switch:ef_n80", 11),
+    ("EF native n81 — house-3", "everflourish", "selflearning-switch:ef_n81", 11),
+    ("EF native n82 — house+3", "everflourish", "selflearning-switch:ef_n82", 11),
+    ("EF native n83 — house+5", "everflourish", "selflearning-switch:ef_n83", 11),
+    ("EF native n84 — house=0 literal", "everflourish", "selflearning-switch:ef_n84", 11),
+    ("EF native n85 — house=16383 max", "everflourish", "selflearning-switch:ef_n85", 11),
+    # --- Group NSR: Native + S + varying R/P ---
+    ("EF native n86 — sl-sw+S R=1", "everflourish", "selflearning-switch:ef_n86", 11),
+    ("EF native n87 — sl-sw+S R=3 P=5", "everflourish", "selflearning-switch:ef_n87", 11),
+    ("EF native n88 — sl-sw+S R=5 P=37", "everflourish", "selflearning-switch:ef_n88", 11),
+    ("EF native n89 — sl-sw+S R=10 P=50", "everflourish", "selflearning-switch:ef_n89", 11),
+    ("EF native n90 — sl-sw+S R=15", "everflourish", "selflearning-switch:ef_n90", 11),
+    ("EF native n91 — sl-sw+S R=20", "everflourish", "selflearning-switch:ef_n91", 11),
+    ("EF native n92 — sl+S R=5 P=100", "everflourish", "selflearning-switch:ef_n92", 11),
+    ("EF native n93 — sl+S R=10 P=150", "everflourish", "selflearning-switch:ef_n93", 11),
+    # --- Group NDU: Native + Duo format S bytes ---
+    ("EF native n94 — native+Duo S", "everflourish", "selflearning-switch:ef_n94", 11),
+    ("EF native n95 — native+Duo S R=5", "everflourish", "selflearning-switch:ef_n95", 11),
+    ("EF native n96 — native u-1+Duo S", "everflourish", "selflearning-switch:ef_n96", 11),
+    ("EF native n97 — native sl+Duo S", "everflourish", "selflearning-switch:ef_n97", 11),
+    # --- Group NMC: Method + model combos ---
+    ("EF native n98 — method=15 (ON action)", "everflourish", "selflearning-switch:ef_n98", 11),
+    ("EF native n99 — method=0 (OFF action)", "everflourish", "selflearning-switch:ef_n99", 11),
+    ("EF native n100 — method=10 (LEARN action)", "everflourish", "selflearning-switch:ef_n100", 11),
+    ("EF native n101 — method str 'on'", "everflourish", "selflearning-switch:ef_n101", 11),
+    ("EF native n102 — method str 'off'", "everflourish", "selflearning-switch:ef_n102", 11),
+    ("EF native n103 — method str 'learn'", "everflourish", "selflearning-switch:ef_n103", 11),
+    # --- Group NDD: Dict ordering/type variations ---
+    ("EF native n104 — regular dict (not OrderedDict)", "everflourish", "selflearning-switch:ef_n104", 11),
+    ("EF native n105 — S key first in dict", "everflourish", "selflearning-switch:ef_n105", 11),
+    ("EF native n106 — house as string", "everflourish", "selflearning-switch:ef_n106", 11),
+    ("EF native n107 — unit as string", "everflourish", "selflearning-switch:ef_n107", 11),
+    ("EF native n108 — house+unit as strings sl", "everflourish", "selflearning-switch:ef_n108", 11),
+    # --- Group NFZ: Native + Flipper Zero (Princeton TE=324) S bytes ---
+    ("EF native n109 — native+S Flipper 324/972µs", "everflourish", "selflearning-switch:ef_n109", 11),
+    ("EF native n110 — native+S Flipper u-1", "everflourish", "selflearning-switch:ef_n110", 11),
+    ("EF native n111 — native sl+S Flipper", "everflourish", "selflearning-switch:ef_n111", 11),
+    ("EF native n112 — native+S Flipper R=5", "everflourish", "selflearning-switch:ef_n112", 11),
+    # --- Group NGR: Native + GNU Radio (344/975) S bytes ---
+    ("EF native n113 — native+S GNURadio 344/975µs", "everflourish", "selflearning-switch:ef_n113", 11),
+    ("EF native n114 — native+S GNURadio u-1", "everflourish", "selflearning-switch:ef_n114", 11),
+    ("EF native n115 — native+S GNURadio R=5", "everflourish", "selflearning-switch:ef_n115", 11),
+    # --- Group NES: Native + ESPHome (350/1800) S bytes ---
+    ("EF native n116 — native+S ESPHome 350/1800µs", "everflourish", "selflearning-switch:ef_n116", 11),
+    ("EF native n117 — native+S ESPHome u-1", "everflourish", "selflearning-switch:ef_n117", 11),
+    # --- Group NCA: Native + Castoplug asymmetric S bytes ---
+    ("EF native n118 — native+S CastoAsym", "everflourish", "selflearning-switch:ef_n118", 11),
+    ("EF native n119 — native+S CastoAsym R=5", "everflourish", "selflearning-switch:ef_n119", 11),
+    # --- Group NPT: Native + Princeton TE sweep S bytes ---
+    ("EF native n120 — native+S Princeton TE=250", "everflourish", "selflearning-switch:ef_n120", 11),
+    ("EF native n121 — native+S Princeton TE=350", "everflourish", "selflearning-switch:ef_n121", 11),
+    ("EF native n122 — native+S Princeton TE=450", "everflourish", "selflearning-switch:ef_n122", 11),
+    ("EF native n123 — native+S Princeton TE=500", "everflourish", "selflearning-switch:ef_n123", 11),
 ]
 
 # Legacy alias (old 20 variants) — kept so existing devices still work
@@ -636,8 +831,8 @@ PROTOCOL_RAW_CATALOG.extend(_EF_TEST_NATIVE_VARIANTS)
 
 # ---------------------------------------------------------------------------
 # EF test device — two separate test device flows:
-#   1. RAW: 52 S-only pulse-train variants + 1 sequence button
-#   2. NATIVE: 53 firmware dict variants + 1 sequence button
+#   1. RAW: 140 S-only pulse-train variants + 1 sequence button
+#   2. NATIVE: 123 firmware dict variants + 1 sequence button
 # ---------------------------------------------------------------------------
 
 EF_TEST_RAW_VARIANTS: list[tuple[str, str]] = [
