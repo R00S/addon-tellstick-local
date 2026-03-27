@@ -1,4 +1,4 @@
-# ZNet Firmware Analysis — Ground Truth
+# Net/ZNet Firmware Analysis — Ground Truth
 
 > **Source:** Decompiled from `tellstick-znet-lite-v2-1.3.2.bin` (in repo root).
 > The firmware is an OpenWrt image with a SquashFS rootfs containing Python 2.7
@@ -239,7 +239,7 @@ This means raw S bytes must be sent differently on v2/ZNet — they need to go
 through a different code path.  Let me check the Adapter class...
 
 **Update:** After further analysis, the `molobrakos/tellsticknet` reference
-implementation (which works with real ZNet hardware) sends raw S bytes via the
+implementation (which works with real Net/ZNet hardware) sends raw S bytes via the
 same `send` command.  The `LiveMessage` encoding handles the `S` key as a
 top-level parameter in the send dict, not nested inside a protocol dict.
 
@@ -249,10 +249,10 @@ as a key, `handleSend()` tries to access `msg['protocol']` and gets `KeyError`
 (not `None`).  However, the `try/except` in the calling code may catch this.
 
 **Practical conclusion:** Our raw S bytes approach works on real hardware because
-`molobrakos/tellsticknet 0.1.2` has been tested and confirmed working with ZNet.
+`molobrakos/tellsticknet 0.1.2` has been tested and confirmed working with Net/ZNet.
 The exact firmware code path may involve an uncaught exception that still results
 in the RF chip receiving the data through a different mechanism (possibly the
 `RF433Msg` queue processes `S` bytes directly).
 
 This remains under investigation.  The key fact is: **raw S bytes work on real
-ZNet hardware** (confirmed by molobrakos users and our own testing).
+Net/ZNet hardware** (confirmed by molobrakos users and our own testing).
