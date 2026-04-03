@@ -95,18 +95,25 @@ This avoids:
 - The v2 `handleSend()` missing parameter passthrough
 - Any firmware-specific protocol encoding differences
 
-The raw S bytes approach is what the tellstick-server ITSELF uses internally
-when sending device commands: `DeviceNode._command()` calls
-`protocol.stringForMethod()` → gets `{'S': raw_bytes}` → sends to RF chip
-via `RF433Msg('S', msg['S'], prefixes)`.  We do exactly the same thing, just
-from our Python code instead of the firmware's Python code.
+**IMPORTANT: Raw S bytes via the UDP "send" command have NO proven success on
+ZNet.**  When a packet with only an `S` key is received, `handleSend()` crashes
+immediately at `Protocol.protocolInstance(msg['protocol'])` because `msg['protocol']`
+raises `KeyError`.  When `protocol` and `model` keys are included alongside `S`,
+`handleSend()` ignores `S` entirely and re-encodes using the firmware's own protocol
+stack (crashing later at `msg['house']` if house/unit are absent, or at
+`None / 16` if a DIM level is missing).
+
+The only reliable approach for each version is:
+- **v1 (C firmware)**: Native arctech selflearning dict only
+- **v2/ZNet (Python firmware)**: Native dict through `handleSend()` (with unit-1
+  compensation for the `unit + 1` bug)
 
 ## Current Status of Each TX Protocol
 
-| Protocol       | Net/ZNet TX Status | Method Used                          | Source Ported From                             |
-| -------------- | ----------------- | ------------------------------------ | ---------------------------------------------- |
-| `arctech`      | ✅ Working        | Native dict (on/off/learn) + raw `S` bytes (dim) | `molobrakos/tellsticknet` + `tellstick-server/ProtocolArctech.py` |
-| `everflourish` | 🔬 Testing²       | 20 variants (S-only / native / hybrid / timing) | `tellstick-server/ProtocolEverflourish.py`     |
+| Protocol       | Net/ZNet TX Status | Method Used                                    | Source                                         |
+| -------------- | ----------------- | ---------------------------------------------- | ---------------------------------------------- |
+| `arctech`      | ✅ Working        | Native dict (on/off/learn); DIM→full brightness via TURNON+selflearning-dimmer model | `tellstick-server/ProtocolArctech.py` |
+| `everflourish` | 🔬 Testing²       | Native dict variants (ef_n*); raw S-only variants have no proven success | `tellstick-server/ProtocolEverflourish.py` |
 | `brateck`      | ❌ **Needs port** | Falls through to generic dict (BROKEN) | `tellstick-server/ProtocolBrateck.py`          |
 | `comen`        | ❌ **Needs port** | Falls through to generic dict (BROKEN) | `tellstick-server/ProtocolComen.py`¹           |
 | `fuhaote`      | ❌ **Needs port** | Falls through to generic dict (BROKEN) | `tellstick-server/ProtocolFuhaote.py`          |
@@ -124,21 +131,37 @@ from our Python code instead of the firmware's Python code.
   `stringSelflearningForCode()` or `stringForCodeSwitch()`.
   `yidong` extends `ProtocolSartano` — it reuses sartano's `stringForCode()`.
 
-² Everflourish raw S-only encoder (v1) produces **no blinking** on Net/ZNet —
-  `handleSend()` requires a `protocol` key and drops S-only dicts.  Native
-  firmware path **does produce blinking** (both with and without unit-1 fix).
-  12 encoding variants (EF raw v1–v12) are available in the "by protocol
-  (raw)" menu for empirical testing.  v13–v20 test timing variations
-  (half/double/inverted), Duo-style repeat (R=5), `+` terminator, and
-  sync prefix — all based on the actual TellStick protocol specification
-  (10 µs per byte unit).  See `docs/EVERFLOURISH_RESEARCH.md`.
-  Cross-TellStick RX remains untested (Duo signals not picked up by Net/ZNet).
+² Everflourish native dict variants (ef_n*) go through the firmware's protocol
+  stack and are under active testing.  Raw S-only variants (ef_r*, ef_v1–v4,
+  ef_v13–v20) have **no proven success**: `handleSend()` drops packets without
+  a `protocol` key.  Hybrid variants (ef_v9–v11, ef_v20) include both a native
+  dict and `S` bytes, but `handleSend()` ignores the `S` key and re-encodes
+  from the protocol stack regardless.
+  See `docs/EVERFLOURISH_RESEARCH.md`.
 
 > **Note:** The Duo backend (telldusd + socat TCP) handles all protocols
-> natively — the issue is ONLY with the Net/ZNet UDP backend.  On ZNet v2,
-> native dicts theoretically work through the Python protocol stack, but the
-> `handleSend()` bugs (unit offset, missing parameters) make them unreliable.
-> Raw S bytes is the safe universal approach for all versions.
+> natively — the issue is ONLY with the Net/ZNet UDP backend.
+
+### Arctech dim limitation on ZNet
+
+Variable-level dimming is **not supported** via the ZNet UDP interface.
+`handleSend()` always passes `None` as the level to `stringForMethod()`:
+
+```python
+msg = protocol.stringForMethod(msg['method'], None)  # level always None
+```
+
+For `selflearning-dimmer` + method `TURNON`, the firmware's built-in workaround
+applies:
+```python
+if method == Device.TURNON and self.model == 'selflearning-dimmer':
+    return self.stringForSelflearning(Device.DIM, 255)  # full brightness
+```
+
+So our integration maps any dim-to-level request to TURNON with
+`model="selflearning-dimmer"`, which makes the receiver go to **full brightness**.
+The brightness slider in HA moves, but the physical device always goes to 100%
+(level 255) for any non-zero brightness value.  TURNOFF (level 0) works correctly.
 
 ## How to Port a Protocol — Step by Step
 
