@@ -1132,7 +1132,13 @@ _METHOD_INT: dict[str, int] = {
 
 
 def _arctech_dim_pulse_train(house: int, unit0: int, level: int) -> bytes:
-    """Build raw arctech selflearning dim pulse train (unit is 0-indexed)."""
+    """Build raw arctech selflearning dim pulse train (unit is 0-indexed).
+
+    NOTE: This function is no longer called.  Raw S-byte payloads sent via the
+    ZNet UDP "send" command are silently dropped: ``handleSend()`` crashes with
+    a KeyError on the missing ``house`` key before the RF chip is ever reached.
+    Kept for reference only.  See docs/ZNET_PROTOCOL_PORTING_GUIDE.md.
+    """
     code = _SHORT + bytes([255])
     for i in range(25, -1, -1):
         code += _ONE if house & (1 << i) else _ZERO
@@ -1148,11 +1154,19 @@ def _arctech_dim_pulse_train(house: int, unit0: int, level: int) -> bytes:
 
 def _encode_arctech_command(
     model: str, house: Any, unit: Any, method_name: str, param: Any = None
-) -> dict | bytes | None:
-    """Encode an arctech RF command.
+) -> dict | None:
+    """Encode an arctech RF command as a native firmware dict.
 
-    Returns an OrderedDict (native firmware dict for on/off/learn), raw bytes
-    (dim pulse train), or None if the combination is not supported.
+    Returns an OrderedDict for the ZNet ``handleSend()`` path, or None if the
+    combination is not supported.
+
+    Variable-level dimming is NOT supported via the ZNet UDP interface:
+    ``handleSend()`` always passes ``None`` as the level parameter to
+    ``stringForMethod()``, which causes a ``TypeError`` (``None / 16``) inside
+    ``stringSelflearningForCode()``.  The only working dim-related path is
+    sending TURNON with ``model="selflearning-dimmer"``: the ZNet firmware's
+    built-in workaround converts that to ``DIM(255)`` (full brightness).
+    DIM(0) is mapped to TURNOFF above.
     """
     method_int = _METHOD_INT.get(method_name)
     if method_int is None:
@@ -1187,10 +1201,22 @@ def _encode_arctech_command(
             method=method_int,
         )
     if method_int == _DIM:
+        # Variable-level dimming is impossible via ZNet UDP (handleSend does not
+        # pass the level to stringForMethod).  Use the firmware's built-in
+        # TURNON→DIM(255) conversion for selflearning-dimmer so the receiver at
+        # least transitions to full brightness rather than silently failing.
         if not isinstance(house_val, int):
-            _LOGGER.warning("Arctech dim: non-integer house %r (codeswitch cannot dim)", house)
+            _LOGGER.warning(
+                "Arctech dim: non-integer house %r; codeswitch does not support dim", house
+            )
             return None
-        return _arctech_dim_pulse_train(house_val, unit0, int(param or 128))
+        return OrderedDict(
+            protocol="arctech",
+            model="selflearning-dimmer",
+            house=house_val,
+            unit=unit0,
+            method=_TURNON,
+        )
     return None
 
 
@@ -1206,9 +1232,10 @@ def _encode_arctech_command(
 #   through the full protocol stack, BUT handleSend() has bugs (unit+1
 #   offset, limited parameter passthrough, no R/P prefixes).
 #
-# Raw pulse-train bytes via the "S" key work on ALL versions and bypass
-# all firmware dispatch bugs.  Encoding ported from tellstick-server
-# ProtocolEverflourish.stringForMethod():
+# Raw S-only packets have NO proven success on ZNet: handleSend() crashes at
+# Protocol.protocolInstance(msg['protocol']) when no 'protocol' key is present.
+# Native dict variants (ef_n*) go through the firmware protocol stack.
+# Encoding ported from tellstick-server ProtocolEverflourish.stringForMethod():
 #   https://github.com/telldus/tellstick-server/blob/master/rf433/src/rf433/ProtocolEverflourish.py
 #
 # See docs/ZNET_PROTOCOL_PORTING_GUIDE.md for full details.
@@ -1453,7 +1480,9 @@ def _encode_everflourish_variant(
     # LEGACY variants ef_v1..ef_v20 (backward compat)
     # ==================================================================
 
-    # -- Group A: S-only (no protocol key) ----------------------------------
+    # -- Group A: S-only (no protocol key) — NO PROVEN SUCCESS on ZNet ------
+    # handleSend() requires a "protocol" key; packets without one are silently
+    # dropped at the Protocol.protocolInstance(msg['protocol']) guard.
     if variant in ("", "ef_v1"):
         return dict(S=rf_packet)
 
@@ -1491,7 +1520,10 @@ def _encode_everflourish_variant(
             house=house_int, unit=unit_int - 1, method=method_int,
         )
 
-    # -- Group C: Hybrid (native dict + our S bytes) -----------------------
+    # -- Group C: Hybrid (native dict + our S bytes) — NO PROVEN SUCCESS ------
+    # Including S bytes alongside a native dict is redundant: handleSend()
+    # ignores the S key and re-encodes from the protocol stack.  If protocol
+    # stack encoding fails (e.g. missing level for DIM), adding S changes nothing.
     if variant == "ef_v9":
         d: dict[str, Any] = OrderedDict(
             protocol="everflourish", model="selflearning-switch",
@@ -1524,7 +1556,8 @@ def _encode_everflourish_variant(
             house=house_int, unit=unit_int - 2, method=method_int,
         )
 
-    # -- Group D: Timing variations (S-only) --------------------------------
+    # -- Group D: Timing variations (S-only) — NO PROVEN SUCCESS on ZNet ----
+    # S-only packets are dropped: handleSend() crashes at msg['protocol'].
     if variant == "ef_v13":
         pkt = _everflourish_pulse_train_ex(
             house_clamped, unit_clamped, action, short=30, long=57,
@@ -1550,7 +1583,7 @@ def _encode_everflourish_variant(
         )
         return dict(S=pkt)
 
-    # -- Group E: Repeat/terminator (S-only) --------------------------------
+    # -- Group E: Repeat/terminator (S-only) — NO PROVEN SUCCESS on ZNet ----
     if variant == "ef_v17":
         return dict(S=rf_packet, R=5)
 
@@ -1560,7 +1593,7 @@ def _encode_everflourish_variant(
     if variant == "ef_v19":
         return dict(S=rf_packet + b"+", R=5, P=37)
 
-    # -- Group F: Hybrid with repeat ----------------------------------------
+    # -- Group F: Hybrid with repeat — NO PROVEN SUCCESS (see Group C note) --
     if variant == "ef_v20":
         d = OrderedDict(
             protocol="everflourish", model="selflearning",
@@ -1572,6 +1605,9 @@ def _encode_everflourish_variant(
 
     # ==================================================================
     # NEW RAW variants ef_r01..ef_r52 (S-only pulse-train bytes)
+    # NO PROVEN SUCCESS on ZNet: S-only packets are dropped by handleSend()
+    # because msg['protocol'] raises KeyError (no protocol key present).
+    # These variants remain available for empirical testing only.
     # ==================================================================
 
     # --- Group RS: Standard timing (60/114), varying repeat count ---
@@ -2777,25 +2813,18 @@ class TellStickNetController:
                 )
             )
         elif protocol == "arctech":
-            # Arctech-specific encoder (pre-split behaviour, proven stable).
-            # Returns native OrderedDict for on/off/learn (with proper model
-            # normalisation, letter house codes, 0-indexed unit) and raw
-            # pulse-train bytes for dim.
-            rf_packet = _encode_arctech_command(model, house, unit, method_name, param)
-            if rf_packet is None:
+            # Arctech-specific encoder.  Always returns a native firmware dict
+            # (protocol/model/house/unit/method) for all methods including dim.
+            # Raw S-byte paths were removed: handleSend() crashes before the RF
+            # chip is reached when house/unit keys are absent from the dict.
+            # See docs/ZNET_PROTOCOL_PORTING_GUIDE.md for details.
+            arctech_dict = _encode_arctech_command(model, house, unit, method_name, param)
+            if arctech_dict is None:
                 _LOGGER.warning(
                     "Net arctech: unsupported method=%s model=%s", method_name, model
                 )
                 return -1
-            if isinstance(rf_packet, bytes):
-                # Raw dim pulse bytes: include protocol metadata so the ZNet
-                # firmware's handleSend() doesn't silently drop the packet
-                # (it requires a "protocol" key to pass the initial guard).
-                send_kwargs = dict(
-                    protocol="arctech", model="selflearning", S=rf_packet,
-                )
-            else:
-                send_kwargs = dict(rf_packet)
+            send_kwargs = dict(arctech_dict)
         elif protocol == "everflourish":
             # Everflourish variant dispatch.  The model suffix (e.g. ":ef_v5")
             # selects the encoding variant.  See _encode_everflourish_variant().
