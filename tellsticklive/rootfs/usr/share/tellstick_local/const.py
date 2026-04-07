@@ -28,7 +28,7 @@ DOMAIN = "tellstick_local"
 
 
 
-INTEGRATION_VERSION = "3.1.8.3"
+INTEGRATION_VERSION = "3.1.8.4"
 
 
 # Backend type stored in config entry data
@@ -998,16 +998,28 @@ def luxorparts_build_raw_command(
     code: int,
     variant: str = "",
 ) -> bytes:
-    """Build a complete TellStick raw command ``S…+`` for a Luxorparts code.
+    """Build a complete TellStick raw command for a Luxorparts code.
+
+    Uses the firmware ``R<count>`` repeat prefix so the firmware handles
+    repetitions internally.  This keeps the command at ~56 bytes — well
+    within the TellStick Duo firmware's 512-byte receive buffer.
+
+    Without the ``R`` prefix, embedding 10+ repeats of the 52-byte single
+    packet in the ``S`` data produces 520+ bytes which **overflows** the
+    firmware buffer, silently corrupting the command (the firmware prints
+    ``Unknown command`` and never transmits).
+
+    Format: ``R<count>S<single_packet>+``
 
     Returns bytes ready for ``TellStickController.send_raw_command()``.
     """
     repeats, pulse, gap_s, gap_l, gap_i = luxorparts_variant_params(variant)
-    pulse_data = luxorparts_build_packet(
-        code, repeats=repeats,
-        pulse=pulse, gap_short=gap_s, gap_long=gap_l, gap_inter=gap_i,
+    single = luxorparts_bits_to_pulse_bytes(
+        code, pulse=pulse, gap_short=gap_s, gap_long=gap_l, gap_inter=gap_i,
     )
-    return b"S" + pulse_data + b"+"
+    # R<count> tells firmware to repeat the S packet <count> times.
+    # Firmware default pause between repeats is 11 ms (P=11 implicit).
+    return bytes([0x52, repeats]) + b"S" + single + b"+"
 
 
 # ---------------------------------------------------------------------------

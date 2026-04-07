@@ -331,7 +331,14 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
             self._device_uid, variant, action, code, len(raw_cmd),
         )
         result = await self._controller.send_raw_command(raw_cmd)
-        if result != 0:
+        # telldusd waits only ~25 ms for firmware ACK, but RF transmission
+        # takes ~400+ ms.  Result -5 (TELLSTICK_ERROR_COMMUNICATION) means
+        # the ACK timed out — the hardware still transmits successfully.
+        if result == -5:
+            _LOGGER.info(
+                "LX raw TX: ACK timeout (expected for long TX), hardware should still transmit"
+            )
+        elif result != 0:
             _LOGGER.warning("LX raw TX failed: result=%d", result)
         else:
             _LOGGER.info("LX raw TX success: result=%d", result)
