@@ -28,7 +28,7 @@ DOMAIN = "tellstick_local"
 
 
 
-INTEGRATION_VERSION = "3.1.9.0"
+INTEGRATION_VERSION = "3.1.8.10"
 
 
 # Backend type stored in config entry data
@@ -1050,7 +1050,7 @@ def luxorparts_build_raw_command(
       Raw byte value, NOT ASCII.
 
     OOK-PWM encoding: 25 bits × 2 bytes = 50 bytes per packet.
-    Full command: ``P\\x00 R<n> S<50 bytes> +`` = 55 bytes.
+    Full command: ``P\\x00 R<n> S<50 bytes> +`` = 56 bytes.
     Well within the firmware's 512-byte USART receive buffer.
 
     Returns bytes ready for ``TellStickController.send_raw_command()``.

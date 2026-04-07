@@ -221,7 +221,7 @@ class TellStickLearnButton(ButtonEntity):
         """Send a Luxorparts learn signal (ON code with 48 repeats).
 
         Uses a single R-prefix command with P0 (zero pause):
-        ``P\\x00 R\\x30 S<50 bytes> +`` = 57 bytes.
+        ``P\\x00 R\\x30 S<50 bytes> +`` = 56 bytes.
 
         The firmware's ``P`` byte sets the inter-repeat pause to 0 ms
         (default is 11 ms).  The inter-packet gap is already embedded

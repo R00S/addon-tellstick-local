@@ -298,7 +298,7 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
         """Send raw Luxorparts pulse data via tdSendRawCommand (Duo path).
 
         Bypasses telldusd protocol registration entirely — sends the raw
-        OOK-PPM pulse train directly to the TellStick hardware.
+        OOK-PWM pulse train directly to the TellStick hardware.
         """
         try:
             house_int = int(self._house) if self._house else 0
