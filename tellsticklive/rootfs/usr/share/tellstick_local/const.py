@@ -28,7 +28,7 @@ DOMAIN = "tellstick_local"
 
 
 
-INTEGRATION_VERSION = "3.1.8.4"
+INTEGRATION_VERSION = "3.1.8.6"
 
 
 # Backend type stored in config entry data
@@ -860,11 +860,15 @@ EF_TEST_UNIT = "1"
 # OOK-PWM protocol (NOT arctech selflearning).  The protocol was decoded
 # from a Homey se.luxorparts-1 driver and confirmed with RTL-SDR captures.
 #
-# Physical layer (OOK-PWM):
+# Physical layer (OOK-PWM — Pulse Width Modulation):
 #   - Carrier: 433.92 MHz
-#   - Bit encoding: short pulse + gap (short gap = 1, long gap = 0)
-#   - Timing:  pulse ≈ 392 µs, short gap ≈ 352 µs, long gap ≈ 1112 µs
-#   - Frame: 25 data bits followed by a long inter-packet gap ≈ 2252 µs
+#   - Bit encoding (from Homey signal definition):
+#       bit 0: HIGH ≈ 375 µs, LOW ≈ 1125 µs  (short pulse, long gap)
+#       bit 1: HIGH ≈ 1125 µs, LOW ≈ 375 µs  (long pulse, short gap)
+#     Every bit has the SAME total period ≈ 1500 µs.
+#     The pulse WIDTH varies — NOT the gap width.
+#   - SOF (preamble): HIGH ≈ 375 µs, LOW ≈ 2250 µs
+#   - Frame: SOF + 25 data bits
 #   - Repetitions: 10 for normal TX, 48 for learn/pairing
 #
 # Data format (25 bits, MSB first):
@@ -875,9 +879,8 @@ EF_TEST_UNIT = "1"
 # Each byte value × ~10 µs = real microseconds.
 # ---------------------------------------------------------------------------
 
-LX_PULSE = 39        # pulse width:  39 × 10 µs = 390 µs  (≈392)
-LX_GAP_SHORT = 35    # short gap:    35 × 10 µs = 350 µs  (≈352)
-LX_GAP_LONG = 111    # long gap:    111 × 10 µs = 1110 µs (≈1112)
+LX_T_SHORT = 38      # short duration: 38 × 10 µs = 380 µs  (≈375)
+LX_T_LONG = 112      # long duration: 112 × 10 µs = 1120 µs (≈1125)
 LX_GAP_INTER = 225   # inter-packet: 225 × 10 µs = 2250 µs (≈2252)
 
 # Ground-truth ON/OFF codes captured from real Luxorparts 50969 remote.
@@ -894,31 +897,35 @@ def luxorparts_bits_to_pulse_bytes(
     code: int,
     *,
     n_bits: int = 25,
-    pulse: int = LX_PULSE,
-    gap_short: int = LX_GAP_SHORT,
-    gap_long: int = LX_GAP_LONG,
+    t_short: int = LX_T_SHORT,
+    t_long: int = LX_T_LONG,
     gap_inter: int = LX_GAP_INTER,
 ) -> bytes:
     """Convert a Luxorparts code integer to raw pulse-train bytes.
 
-    OOK-PWM encoding:
-      bit 1 → [pulse, gap_short]   (short gap = "1")
-      bit 0 → [pulse, gap_long]    (long gap = "0")
+    OOK-PWM encoding (Pulse Width Modulation):
+      bit 0 → [t_short, t_long]    (short pulse, long gap)
+      bit 1 → [t_long,  t_short]   (long pulse,  short gap)
 
-    After all bits: [pulse, gap_inter] (inter-packet gap).
+    Every bit has the same total period (t_short + t_long = 1500 µs).
+    After all bits: [t_short, gap_inter] (SOF / inter-packet gap).
 
     >>> len(luxorparts_bits_to_pulse_bytes(0x5e14538))
     52
-    >>> luxorparts_bits_to_pulse_bytes(0x5e14538)[0]
-    39
+    >>> luxorparts_bits_to_pulse_bytes(0x5e14538)[0]  # bit 1 → long pulse
+    112
     """
     out = bytearray()
     for i in range(n_bits - 1, -1, -1):
         bit = (code >> i) & 1
-        out.append(pulse)
-        out.append(gap_short if bit == 1 else gap_long)
-    # Inter-packet gap (pulse + long pause)
-    out.append(pulse)
+        if bit:
+            out.append(t_long)     # long pulse
+            out.append(t_short)    # short gap
+        else:
+            out.append(t_short)    # short pulse
+            out.append(t_long)     # long gap
+    # Inter-packet gap / SOF for next repeat (short pulse + long pause)
+    out.append(t_short)
     out.append(gap_inter)
     return bytes(out)
 
@@ -927,9 +934,8 @@ def luxorparts_build_packet(
     code: int,
     *,
     repeats: int = 10,
-    pulse: int = LX_PULSE,
-    gap_short: int = LX_GAP_SHORT,
-    gap_long: int = LX_GAP_LONG,
+    t_short: int = LX_T_SHORT,
+    t_long: int = LX_T_LONG,
     gap_inter: int = LX_GAP_INTER,
 ) -> bytes:
     """Build a complete multi-repeat Luxorparts raw S packet.
@@ -942,55 +948,54 @@ def luxorparts_build_packet(
     520
     """
     single = luxorparts_bits_to_pulse_bytes(
-        code, pulse=pulse, gap_short=gap_short,
-        gap_long=gap_long, gap_inter=gap_inter,
+        code, t_short=t_short, t_long=t_long, gap_inter=gap_inter,
     )
     return single * repeats
 
 
-# Variant → (repeats, pulse, gap_short, gap_long, gap_inter) mapping.
+# Variant → (repeats, t_short, t_long, gap_inter) mapping.
 # Used by both Duo (switch.py) and Net (net_client.py) paths.
-_LX_VARIANT_PARAMS: dict[str, tuple[int, int, int, int, int]] = {
+_LX_VARIANT_PARAMS: dict[str, tuple[int, int, int, int]] = {
     # Group T: Standard timing, 3 house/unit combos
-    "lx_t01": (10, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
-    "lx_t02": (10, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
-    "lx_t03": (10, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
+    "lx_t01": (10, LX_T_SHORT, LX_T_LONG, LX_GAP_INTER),
+    "lx_t02": (10, LX_T_SHORT, LX_T_LONG, LX_GAP_INTER),
+    "lx_t03": (10, LX_T_SHORT, LX_T_LONG, LX_GAP_INTER),
     # Group TS: Same as T (S+proto distinction only matters for ZNet)
-    "lx_t04": (10, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
-    "lx_t05": (10, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
-    "lx_t06": (10, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
+    "lx_t04": (10, LX_T_SHORT, LX_T_LONG, LX_GAP_INTER),
+    "lx_t05": (10, LX_T_SHORT, LX_T_LONG, LX_GAP_INTER),
+    "lx_t06": (10, LX_T_SHORT, LX_T_LONG, LX_GAP_INTER),
     # Group TR: Varying repeat counts
-    "lx_t07": (5, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
-    "lx_t08": (15, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
-    "lx_t09": (20, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
-    "lx_t10": (48, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
+    "lx_t07": (5, LX_T_SHORT, LX_T_LONG, LX_GAP_INTER),
+    "lx_t08": (15, LX_T_SHORT, LX_T_LONG, LX_GAP_INTER),
+    "lx_t09": (20, LX_T_SHORT, LX_T_LONG, LX_GAP_INTER),
+    "lx_t10": (48, LX_T_SHORT, LX_T_LONG, LX_GAP_INTER),
     # Group TRS: Varying repeats (same as TR for Duo)
-    "lx_t11": (5, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
-    "lx_t12": (15, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
-    "lx_t13": (20, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
-    "lx_t14": (48, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
-    # Group TT: Timing variations
-    "lx_t15": (10, 35, 32, 100, 203),   # ~-10%
-    "lx_t16": (10, 43, 39, 122, 248),   # ~+10%
-    "lx_t17": (10, 31, 28, 89, 180),    # ~-20%
-    "lx_t18": (10, 47, 42, 133, 255),   # ~+20% (gap_inter capped at 255)
-    "lx_t19": (10, 39, 39, 111, 225),   # symmetric pulse = gap_short
-    "lx_t20": (10, 39, 35, 111, 200),   # shorter inter-packet gap
+    "lx_t11": (5, LX_T_SHORT, LX_T_LONG, LX_GAP_INTER),
+    "lx_t12": (15, LX_T_SHORT, LX_T_LONG, LX_GAP_INTER),
+    "lx_t13": (20, LX_T_SHORT, LX_T_LONG, LX_GAP_INTER),
+    "lx_t14": (48, LX_T_SHORT, LX_T_LONG, LX_GAP_INTER),
+    # Group TT: Timing variations (scale both t_short and t_long)
+    "lx_t15": (10, 34, 101, 203),   # ~-10% period
+    "lx_t16": (10, 42, 123, 248),   # ~+10% period
+    "lx_t17": (10, 30, 90, 180),    # ~-20% period
+    "lx_t18": (10, 46, 134, 255),   # ~+20% period (gap_inter capped at 255)
+    "lx_t19": (10, 50, 100, 225),   # wider duty cycle (33%→50/100 ratio)
+    "lx_t20": (10, 38, 112, 150),   # shorter inter-packet gap
     # Group TTS: Timing variations (same as TT for Duo)
-    "lx_t21": (10, 35, 32, 100, 203),
-    "lx_t22": (10, 43, 39, 122, 248),
-    "lx_t23": (10, 31, 28, 89, 180),
-    "lx_t24": (10, 47, 42, 133, 255),
+    "lx_t21": (10, 34, 101, 203),
+    "lx_t22": (10, 42, 123, 248),
+    "lx_t23": (10, 30, 90, 180),
+    "lx_t24": (10, 46, 134, 255),
 }
 
 # Default parameters when variant is not found
-_LX_DEFAULT_PARAMS = (10, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER)
+_LX_DEFAULT_PARAMS = (10, LX_T_SHORT, LX_T_LONG, LX_GAP_INTER)
 
 
 def luxorparts_variant_params(
     variant: str,
-) -> tuple[int, int, int, int, int]:
-    """Return (repeats, pulse, gap_short, gap_long, gap_inter) for a variant."""
+) -> tuple[int, int, int, int]:
+    """Return (repeats, t_short, t_long, gap_inter) for a variant."""
     return _LX_VARIANT_PARAMS.get(variant, _LX_DEFAULT_PARAMS)
 
 
@@ -1013,9 +1018,9 @@ def luxorparts_build_raw_command(
 
     Returns bytes ready for ``TellStickController.send_raw_command()``.
     """
-    repeats, pulse, gap_s, gap_l, gap_i = luxorparts_variant_params(variant)
+    repeats, t_s, t_l, gap_i = luxorparts_variant_params(variant)
     single = luxorparts_bits_to_pulse_bytes(
-        code, pulse=pulse, gap_short=gap_s, gap_long=gap_l, gap_inter=gap_i,
+        code, t_short=t_s, t_long=t_l, gap_inter=gap_i,
     )
     # R<count> tells firmware to repeat the S packet <count> times.
     # Firmware default pause between repeats is 11 ms (P=11 implicit).

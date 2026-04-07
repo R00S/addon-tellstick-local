@@ -35,8 +35,10 @@ from .const import (
     ENTRY_DEVICE_ID_MAP,
     ENTRY_MIRRORS,
     ENTRY_TELLSTICK_CONTROLLER,
+    LX_GROUND_TRUTH_CODES,
     LX_TEST_VARIANTS,
     SIGNAL_NEW_DEVICE,
+    luxorparts_build_raw_command,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -185,6 +187,18 @@ class TellStickLearnButton(ButtonEntity):
             )
             return
 
+        # Luxorparts: device_or_id is a dict, not an int.  Send raw command
+        # with high repeat count (48) for learn/pairing.
+        if isinstance(device_or_id, dict) and device_or_id.get(CONF_DEVICE_PROTOCOL) == "luxorparts":
+            if not hasattr(controller, "send_raw_command"):
+                _LOGGER.warning(
+                    "LX learn: controller has no send_raw_command for %s",
+                    self._device_uid,
+                )
+                return
+            await self._send_luxorparts_learn(controller, device_or_id)
+            return
+
         _LOGGER.debug("Sending learn signal for %s (id/dict %s)", self._device_uid, device_or_id)
         await controller.learn(device_or_id)
 
@@ -200,6 +214,57 @@ class TellStickLearnButton(ButtonEntity):
                         self._device_uid,
                         exc_info=True,
                     )
+
+    async def _send_luxorparts_learn(
+        self, controller: Any, device_dict: dict[str, Any],
+    ) -> None:
+        """Send a Luxorparts learn signal (ON code with 48 repeats)."""
+        try:
+            house_int = int(device_dict.get(CONF_DEVICE_HOUSE, 0))
+            unit_int = int(device_dict.get(CONF_DEVICE_UNIT, 0))
+        except (TypeError, ValueError):
+            _LOGGER.warning(
+                "LX learn: invalid house=%r unit=%r",
+                device_dict.get(CONF_DEVICE_HOUSE),
+                device_dict.get(CONF_DEVICE_UNIT),
+            )
+            return
+
+        codes = LX_GROUND_TRUTH_CODES.get((house_int, unit_int))
+        if codes is None:
+            _LOGGER.warning(
+                "LX learn: no ground-truth code for h=%d u=%d",
+                house_int, unit_int,
+            )
+            return
+
+        code = codes["on"]
+
+        # Extract variant suffix for timing parameters
+        model = device_dict.get(CONF_DEVICE_MODEL, "")
+        variant = model.split(":", 1)[1] if ":" in model else ""
+
+        # Override repeat count to 48 for learn/pairing
+        from .const import luxorparts_variant_params, luxorparts_bits_to_pulse_bytes
+        _, t_s, t_l, gap_i = luxorparts_variant_params(variant)
+        single = luxorparts_bits_to_pulse_bytes(
+            code, t_short=t_s, t_long=t_l, gap_inter=gap_i,
+        )
+        raw_cmd = bytes([0x52, 48]) + b"S" + single + b"+"
+
+        _LOGGER.info(
+            "LX learn: uid=%s variant=%s code=0x%x repeats=48 bytes=%d",
+            self._device_uid, variant, code, len(raw_cmd),
+        )
+        result = await controller.send_raw_command(raw_cmd)
+        if result == -5:
+            _LOGGER.info(
+                "LX learn: ACK timeout (expected for long TX), hardware should still transmit"
+            )
+        elif result != 0:
+            _LOGGER.warning("LX learn failed: result=%d", result)
+        else:
+            _LOGGER.info("LX learn success: result=%d", result)
 
 
 # ---------------------------------------------------------------------------
