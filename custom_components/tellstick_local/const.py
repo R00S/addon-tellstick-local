@@ -28,7 +28,7 @@ DOMAIN = "tellstick_local"
 
 
 
-INTEGRATION_VERSION = "3.1.8.9"
+INTEGRATION_VERSION = "3.1.9.0"
 
 
 # Backend type stored in config entry data
@@ -897,9 +897,9 @@ LX_GAP_INTER = 225   # inter-packet: 225 × 10 µs = 2250 µs (≈2248)
 # Backward compatibility alias
 LX_PULSE = LX_PULSE_SHORT
 
-# Maximum repeats that fit in one inline S command (firmware 512-byte buffer).
-# 25 bits × 2 bytes/bit = 50 bytes/packet.  S + 50×10 + "+" = 502 < 512.
-LX_MAX_INLINE = 10
+# Maximum single-byte repeat count for R-prefix (firmware uses unsigned char).
+# With P0 (zero pause), total command is only 55 bytes regardless of repeats.
+LX_MAX_REPEATS = 255
 
 # Ground-truth ON/OFF codes captured from real Luxorparts 50969 remote.
 # Format: { (house, unit): {"on": hex_code, "off": hex_code} }
@@ -1040,25 +1040,32 @@ def luxorparts_build_raw_command(
 ) -> bytes:
     """Build a complete TellStick raw command for a Luxorparts code.
 
-    Uses **inline repeats** to embed multiple copies of the pulse-train
-    data in a single ``S`` command.  This gives precise control of the
-    inter-packet gap (~2250 µs) which is critical — the firmware ``R``
-    prefix inserts an 11 ms pause between repeats, far too long for the
-    Luxorparts protocol.
+    Uses the firmware's ``P`` and ``R`` prefix bytes to control timing:
+
+    - ``P\\x00`` — sets inter-repeat pause to 0 ms (default is 11 ms).
+      The inter-packet gap is already embedded as the last byte of the
+      pulse data (``LX_GAP_INTER`` = 2250 µs), so firmware needs no
+      additional pause.  This matches Telldus Live's measured gap.
+    - ``R<n>`` — firmware repeats the ``S`` data *n* times.
+      Raw byte value, NOT ASCII.
 
     OOK-PWM encoding: 25 bits × 2 bytes = 50 bytes per packet.
-    10 inline repeats: ``S`` + 500 + ``+`` = 502 bytes (< 512 buffer).
+    Full command: ``P\\x00 R<n> S<50 bytes> +`` = 55 bytes.
+    Well within the firmware's 512-byte USART receive buffer.
 
     Returns bytes ready for ``TellStickController.send_raw_command()``.
+
+    Verified against TellStick Duo firmware source:
+    ``telldus/tellstick-duo/firmware/usart.c`` — ``handleMessage()``.
     """
     repeats, t_p, t_gs, t_gl, gap_i = luxorparts_variant_params(variant)
-    # Cap at max inline repeats to stay within firmware 512-byte buffer
-    repeats = min(repeats, LX_MAX_INLINE)
-    packet_data = luxorparts_build_packet(
-        code, repeats=repeats,
+    single = luxorparts_bits_to_pulse_bytes(
+        code,
         t_pulse=t_p, t_gap_short=t_gs, t_gap_long=t_gl, gap_inter=gap_i,
     )
-    return b"S" + packet_data + b"+"
+    # P\x00 = pause 0 ms between repeats (firmware default is 11 ms)
+    # R<n>  = repeat n times (raw byte, firmware reads buffer[p+1])
+    return bytes([0x50, 0x00, 0x52, repeats]) + b"S" + single + b"+"
 
 
 # ---------------------------------------------------------------------------

@@ -220,8 +220,17 @@ class TellStickLearnButton(ButtonEntity):
     ) -> None:
         """Send a Luxorparts learn signal (ON code with 48 repeats).
 
-        Uses the firmware R-prefix to request 48 repeats in a single
-        command (~56 bytes, well within the 512-byte firmware buffer).
+        Uses a single R-prefix command with P0 (zero pause):
+        ``P\\x00 R\\x30 S<50 bytes> +`` = 57 bytes.
+
+        The firmware's ``P`` byte sets the inter-repeat pause to 0 ms
+        (default is 11 ms).  The inter-packet gap is already embedded
+        as the last byte of the pulse data (``LX_GAP_INTER`` = 2250 µs).
+        With P0, the only gap between repeats is this embedded gap,
+        matching Telldus Live's measured timing exactly.
+
+        The firmware's ``R`` byte sets repeat count to 48 (raw byte 0x30).
+        Total TX time: 48 × 25 bits × 1.5 ms/bit ≈ 1.8 seconds.
         """
         try:
             house_int = int(device_dict.get(CONF_DEVICE_HOUSE, 0))
@@ -248,24 +257,28 @@ class TellStickLearnButton(ButtonEntity):
         model = device_dict.get(CONF_DEVICE_MODEL, "")
         variant = model.split(":", 1)[1] if ":" in model else ""
 
-        # Build a single R-prefix learn command (R48 S<single>+)
+        # Build single R-prefix command with 48 repeats for learn.
+        # luxorparts_build_raw_command uses the variant's repeat count,
+        # so we override to 48 by replacing the R byte in the command.
         raw_cmd = luxorparts_build_raw_command(code, variant=variant)
-        # Override repeats to 48 for learn: replace R<old_count> with R<48>
-        raw_cmd = bytes([0x52, 48]) + raw_cmd[2:]
+        # Replace R<variant_repeats> with R<48>: byte at index 3
+        raw_cmd = raw_cmd[:3] + bytes([48]) + raw_cmd[4:]
 
         _LOGGER.info(
             "LX learn: uid=%s variant=%s code=0x%x repeats=48 cmd_len=%d",
             self._device_uid, variant, code, len(raw_cmd),
         )
+
         result = await controller.send_raw_command(raw_cmd)
         if result == -5:
             _LOGGER.info(
-                "LX learn: ACK timeout (expected), hardware should transmit",
+                "LX learn: ACK timeout (expected for 48 repeats, "
+                "firmware is still transmitting ~1.8 seconds)",
             )
         elif result != 0:
             _LOGGER.warning("LX learn failed: result=%d", result)
         else:
-            _LOGGER.info("LX learn success")
+            _LOGGER.info("LX learn: command sent successfully")
 
 
 # ---------------------------------------------------------------------------
