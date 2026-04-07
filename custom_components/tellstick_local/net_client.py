@@ -2706,10 +2706,10 @@ def _encode_luxorparts_variant(
     # --- Group TT: Timing variations (±10%, ±20%) on house 14466 unit 1 ---
     # Timings are tuples: (pulse, gap_short, gap_long, gap_inter)
     _tt_timings: dict[str, tuple[int, int, int, int]] = {
-        "lx_t15": (35, 32, 100, 203),   # -10% all
-        "lx_t16": (43, 39, 122, 248),   # +10% all
-        "lx_t17": (31, 28, 89, 180),    # -20% all
-        "lx_t18": (47, 42, 133, 255),   # +20% all (gap_inter capped at 255)
+        "lx_t15": (35, 32, 100, 203),   # ~-10% all
+        "lx_t16": (43, 39, 122, 248),   # ~+10% all
+        "lx_t17": (31, 28, 89, 180),    # ~-20% all
+        "lx_t18": (47, 42, 133, 255),   # ~+20% all (gap_inter capped at 255)
         "lx_t19": (39, 39, 111, 225),   # pulse = gap_short (symmetric)
         "lx_t20": (39, 35, 111, 200),   # shorter inter-packet gap
     }
@@ -2722,10 +2722,10 @@ def _encode_luxorparts_variant(
 
     # --- Group TTS: Timing variations + dummy protocol ---
     _tts_timings: dict[str, tuple[int, int, int, int]] = {
-        "lx_t21": (35, 32, 100, 203),   # -10% + protocol
-        "lx_t22": (43, 39, 122, 248),   # +10% + protocol
-        "lx_t23": (31, 28, 89, 180),    # -20% + protocol
-        "lx_t24": (47, 42, 133, 255),   # +20% + protocol (gap_inter capped at 255)
+        "lx_t21": (35, 32, 100, 203),   # ~-10% + protocol
+        "lx_t22": (43, 39, 122, 248),   # ~+10% + protocol
+        "lx_t23": (31, 28, 89, 180),    # ~-20% + protocol
+        "lx_t24": (47, 42, 133, 255),   # ~+20% + protocol (gap_inter capped at 255)
     }
     if variant in _tts_timings:
         p, gs, gl, gi = _tts_timings[variant]
