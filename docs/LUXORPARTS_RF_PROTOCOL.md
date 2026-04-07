@@ -23,23 +23,26 @@
 
 ## 2. Physical Layer
 
-| Parameter         | Value       |
-| ----------------- | ----------- |
-| Frequency         | 433.92 MHz  |
-| Modulation        | OOK PPM     |
-| Pulse width       | 392 µs (fixed for all bits) |
-| Short gap (bit 1) | 352 µs      |
-| Long gap (bit 0)  | 1112 µs     |
-| Inter-packet gap  | 2252 µs     |
+| Parameter            | Value       |
+| -------------------- | ----------- |
+| Frequency            | 433.92 MHz  |
+| Modulation           | OOK PWM     |
+| Short pulse (bit 1)  | 392 µs      |
+| Long pulse (bit 0)   | 1148 µs     |
+| Short gap            | 352 µs      |
+| Long gap             | 1108 µs     |
+| Period               | ~1500 µs (constant) |
+| Inter-packet gap     | 2252 µs     |
 
 ## 3. Symbol Encoding
 
-| Symbol | Pulse   | Gap      |
-| ------ | ------- | -------- |
-| 0      | 392 µs  | 1112 µs  |
-| 1      | 392 µs  | 352 µs   |
+| Symbol | Pulse    | Gap      |
+| ------ | -------- | -------- |
+| 1      | 392 µs   | 1108 µs  |
+| 0      | 1148 µs  | 352 µs   |
 
-Pulse width is constant. Bit value is encoded in gap width.
+Pulse width varies. Bit value is encoded in pulse width (PWM).
+Period is constant at ~1500 µs (pulse + gap always sums to ~1500 µs).
 
 ## 4. Packet Structure
 
@@ -119,7 +122,7 @@ is **unknown**. Attempts to match against:
 For sniffing/verification only:
 
 ```
--X 'n=Luxorparts,m=OOK_PPM,s=392,l=1112,r=2260,g=1132,t=302,y=0'
+-X 'n=Luxorparts,m=OOK_PWM,s=392,l=1148,r=2260,g=1132,t=302,y=0'
 ```
 
 ## 9. Open Questions
@@ -151,5 +154,7 @@ variations across firmware versions.
 
 The integration stores ground-truth codes in `LX_GROUND_TRUTH_CODES` in `const.py`
 and sends them as raw pulse data via `tdSendRawCommand` (Duo) or UDP raw bytes
-(Net/ZNet). The `R<count>` firmware prefix handles repeats to avoid exceeding the
-512-byte firmware USART buffer.
+(Net/ZNet). Inline repeats within the `S` command handle repetitions to stay
+within the 512-byte firmware USART buffer. The firmware's `R<count>` prefix is
+**NOT used** — it causes the TellStick Duo to not transmit at all (see
+`docs/LUXORPARTS_TIMELINE.md` for the full regression history).

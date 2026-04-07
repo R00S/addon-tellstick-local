@@ -905,7 +905,9 @@ LX_MAX_INLINE_REPEATS = 10
 
 # Ground-truth ON/OFF codes captured from real Luxorparts 50969 remote.
 # Format: { (house, unit): {"on": hex_code, "off": hex_code} }
-# Each hex_code is a 25-bit integer (MSB first, bit 0 = 0 stop bit).
+# Each hex_code is a 28-bit integer (MSB first).  The actual 25-bit code
+# occupies the top 25 bits; the bottom 3 bits are zero padding.
+# The encoder right-shifts by 3 to extract the correct 25 bits.
 LX_GROUND_TRUTH_CODES: dict[tuple[int, int], dict[str, int]] = {
     (14466, 1): {"on": 0x5E14538, "off": 0x5A59738},
     (14468, 2): {"on": 0x559DBA8, "off": 0x5CCC0A8},
