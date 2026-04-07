@@ -36,6 +36,7 @@ from .const import (
     ENTRY_MIRRORS,
     ENTRY_TELLSTICK_CONTROLLER,
     LX_GROUND_TRUTH_CODES,
+    LX_MAX_INLINE,
     LX_TEST_VARIANTS,
     SIGNAL_NEW_DEVICE,
     luxorparts_build_raw_command,
@@ -218,10 +219,12 @@ class TellStickLearnButton(ButtonEntity):
     async def _send_luxorparts_learn(
         self, controller: Any, device_dict: dict[str, Any],
     ) -> None:
-        """Send a Luxorparts learn signal (ON code with 48 repeats).
+        """Send a Luxorparts learn signal (ON code with ~48 repeats).
 
-        Uses the firmware R-prefix to request 48 repeats in a single
-        command (~56 bytes, well within the 512-byte firmware buffer).
+        Uses multiple sequential inline S commands to achieve 48+ repeats.
+        Each burst contains up to LX_MAX_INLINE repeats (502 bytes < 512).
+        The inline approach ensures correct inter-packet gap (~2250 µs)
+        which is critical for receiver decoding.
         """
         try:
             house_int = int(device_dict.get(CONF_DEVICE_HOUSE, 0))
@@ -248,24 +251,37 @@ class TellStickLearnButton(ButtonEntity):
         model = device_dict.get(CONF_DEVICE_MODEL, "")
         variant = model.split(":", 1)[1] if ":" in model else ""
 
-        # Build a single R-prefix learn command (R48 S<single>+)
-        raw_cmd = luxorparts_build_raw_command(code, variant=variant)
-        # Override repeats to 48 for learn: replace R<old_count> with R<48>
-        raw_cmd = bytes([0x52, 48]) + raw_cmd[2:]
+        # Send multiple bursts to reach ~48 repeats total.
+        # Each burst: inline S command with up to LX_MAX_INLINE repeats.
+        total_repeats = 50  # 5 × 10 (slightly over 48 is fine)
+        n_bursts = (total_repeats + LX_MAX_INLINE - 1) // LX_MAX_INLINE
 
         _LOGGER.info(
-            "LX learn: uid=%s variant=%s code=0x%x repeats=48 cmd_len=%d",
-            self._device_uid, variant, code, len(raw_cmd),
+            "LX learn: uid=%s variant=%s code=0x%x bursts=%d repeats=%d",
+            self._device_uid, variant, code, n_bursts,
+            n_bursts * LX_MAX_INLINE,
         )
-        result = await controller.send_raw_command(raw_cmd)
-        if result == -5:
-            _LOGGER.info(
-                "LX learn: ACK timeout (expected), hardware should transmit",
-            )
-        elif result != 0:
-            _LOGGER.warning("LX learn failed: result=%d", result)
-        else:
-            _LOGGER.info("LX learn success")
+        for burst_idx in range(n_bursts):
+            raw_cmd = luxorparts_build_raw_command(code, variant=variant)
+            result = await controller.send_raw_command(raw_cmd)
+            if result == -5:
+                _LOGGER.debug(
+                    "LX learn burst %d/%d: ACK timeout (expected)",
+                    burst_idx + 1, n_bursts,
+                )
+            elif result != 0:
+                _LOGGER.warning(
+                    "LX learn burst %d/%d failed: result=%d",
+                    burst_idx + 1, n_bursts, result,
+                )
+            else:
+                _LOGGER.debug(
+                    "LX learn burst %d/%d sent", burst_idx + 1, n_bursts,
+                )
+            # Small delay between bursts for firmware to finish transmitting
+            if burst_idx < n_bursts - 1:
+                await asyncio.sleep(0.6)
+        _LOGGER.info("LX learn: all %d bursts sent", n_bursts)
 
 
 # ---------------------------------------------------------------------------
