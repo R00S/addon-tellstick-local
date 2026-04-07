@@ -860,28 +860,38 @@ EF_TEST_UNIT = "1"
 # OOK-PWM protocol (NOT arctech selflearning).  The protocol was decoded
 # from a Homey se.luxorparts-1 driver and confirmed with RTL-SDR captures.
 #
-# Physical layer (OOK-PWM — Pulse Width Modulation):
+# Physical layer (OOK-PPM — Pulse Position Modulation):
 #   - Carrier: 433.92 MHz
-#   - Bit encoding (from Homey signal definition):
-#       bit 0: HIGH ≈ 375 µs, LOW ≈ 1125 µs  (short pulse, long gap)
-#       bit 1: HIGH ≈ 1125 µs, LOW ≈ 375 µs  (long pulse, short gap)
-#     Every bit has the SAME total period ≈ 1500 µs.
-#     The pulse WIDTH varies — NOT the gap width.
-#   - SOF (preamble): HIGH ≈ 375 µs, LOW ≈ 2250 µs
-#   - Frame: SOF + 25 data bits
+#   - Bit encoding (confirmed by RTL-SDR capture of Telldus Live):
+#       bit 1: pulse ≈ 392 µs + gap ≈ 352 µs  (short gap = "1")
+#       bit 0: pulse ≈ 392 µs + gap ≈ 1112 µs (long gap = "0")
+#     Pulse width is ALWAYS the same.  Bit value is encoded in gap width.
+#   - Inter-packet gap: ≈ 2252 µs
+#   - Frame: 25 data bits + inter-packet gap
 #   - Repetitions: 10 for normal TX, 48 for learn/pairing
 #
 # Data format (25 bits, MSB first):
-#   Bits 24-1:  encrypted device/channel/state payload (24 bits)
-#   Bit 0:      always 0 (stop bit / frame marker)
+#   Fixed preamble (bits 0–3): always 0101
+#   Variable payload (bits 4–23): 20 bits encoding house + unit + command
+#   Fixed suffix (bit 24): always 1
+#
+# Ground-truth codes are stored as 28-bit hex integers.  The real 25-bit
+# code occupies the TOP 25 bits; the bottom 3 bits are zero padding.
+# The encoder right-shifts by 3 to extract the correct 25 bits.
 #
 # TellStick firmware pulse byte resolution:
 # Each byte value × ~10 µs = real microseconds.
 # ---------------------------------------------------------------------------
 
-LX_T_SHORT = 38      # short duration: 38 × 10 µs = 380 µs  (≈375)
-LX_T_LONG = 112      # long duration: 112 × 10 µs = 1120 µs (≈1125)
+LX_PULSE = 39        # pulse width:  39 × 10 µs = 390 µs  (≈392)
+LX_GAP_SHORT = 35    # short gap:    35 × 10 µs = 350 µs  (≈352)
+LX_GAP_LONG = 111    # long gap:    111 × 10 µs = 1110 µs (≈1112)
 LX_GAP_INTER = 225   # inter-packet: 225 × 10 µs = 2250 µs (≈2252)
+
+# Max repeats that fit inline in a single S command within the firmware's
+# 512-byte USART receive buffer: 9 × 52 bytes + 2 (S and +) = 470 < 512.
+# 10 repeats would be 522 bytes → buffer overflow → silent corruption.
+LX_MAX_INLINE_REPEATS = 9
 
 # Ground-truth ON/OFF codes captured from real Luxorparts 50969 remote.
 # Format: { (house, unit): {"on": hex_code, "off": hex_code} }
