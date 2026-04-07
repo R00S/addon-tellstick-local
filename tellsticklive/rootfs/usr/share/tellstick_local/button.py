@@ -38,7 +38,7 @@ from .const import (
     LX_GROUND_TRUTH_CODES,
     LX_TEST_VARIANTS,
     SIGNAL_NEW_DEVICE,
-    luxorparts_build_raw_command,
+    luxorparts_learn_commands,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -218,7 +218,12 @@ class TellStickLearnButton(ButtonEntity):
     async def _send_luxorparts_learn(
         self, controller: Any, device_dict: dict[str, Any],
     ) -> None:
-        """Send a Luxorparts learn signal (ON code with 48 repeats)."""
+        """Send a Luxorparts learn signal (ON code with 48 repeats).
+
+        Learn requires many repeats.  Each burst is capped at
+        LX_MAX_INLINE_REPEATS (8) to stay within the firmware's 512-byte
+        buffer.  Multiple bursts are sent sequentially: 6 × 8 = 48.
+        """
         try:
             house_int = int(device_dict.get(CONF_DEVICE_HOUSE, 0))
             unit_int = int(device_dict.get(CONF_DEVICE_UNIT, 0))
@@ -244,27 +249,24 @@ class TellStickLearnButton(ButtonEntity):
         model = device_dict.get(CONF_DEVICE_MODEL, "")
         variant = model.split(":", 1)[1] if ":" in model else ""
 
-        # Override repeat count to 48 for learn/pairing
-        from .const import luxorparts_variant_params, luxorparts_bits_to_pulse_bytes
-        _, t_s, t_l, gap_i = luxorparts_variant_params(variant)
-        single = luxorparts_bits_to_pulse_bytes(
-            code, t_short=t_s, t_long=t_l, gap_inter=gap_i,
-        )
-        raw_cmd = bytes([0x52, 48]) + b"S" + single + b"+"
+        # Build multi-burst learn commands (6 × 8 = 48 repeats)
+        commands = luxorparts_learn_commands(code, total_repeats=48, variant=variant)
 
         _LOGGER.info(
-            "LX learn: uid=%s variant=%s code=0x%x repeats=48 bytes=%d",
-            self._device_uid, variant, code, len(raw_cmd),
+            "LX learn: uid=%s variant=%s code=0x%x repeats=48 bursts=%d",
+            self._device_uid, variant, code, len(commands),
         )
-        result = await controller.send_raw_command(raw_cmd)
-        if result == -5:
-            _LOGGER.info(
-                "LX learn: ACK timeout (expected for long TX), hardware should still transmit"
-            )
-        elif result != 0:
-            _LOGGER.warning("LX learn failed: result=%d", result)
-        else:
-            _LOGGER.info("LX learn success: result=%d", result)
+        for i, raw_cmd in enumerate(commands):
+            result = await controller.send_raw_command(raw_cmd)
+            if result == -5:
+                _LOGGER.info(
+                    "LX learn burst %d/%d: ACK timeout (expected), hardware should transmit",
+                    i + 1, len(commands),
+                )
+            elif result != 0:
+                _LOGGER.warning("LX learn burst %d/%d failed: result=%d", i + 1, len(commands), result)
+            else:
+                _LOGGER.info("LX learn burst %d/%d success", i + 1, len(commands))
 
 
 # ---------------------------------------------------------------------------

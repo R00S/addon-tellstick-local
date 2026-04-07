@@ -28,7 +28,7 @@ DOMAIN = "tellstick_local"
 
 
 
-INTEGRATION_VERSION = "3.1.8.6"
+INTEGRATION_VERSION = "3.1.8.7"
 
 
 # Backend type stored in config entry data
@@ -860,28 +860,38 @@ EF_TEST_UNIT = "1"
 # OOK-PWM protocol (NOT arctech selflearning).  The protocol was decoded
 # from a Homey se.luxorparts-1 driver and confirmed with RTL-SDR captures.
 #
-# Physical layer (OOK-PWM — Pulse Width Modulation):
+# Physical layer (OOK-PPM — Pulse Position Modulation):
 #   - Carrier: 433.92 MHz
-#   - Bit encoding (from Homey signal definition):
-#       bit 0: HIGH ≈ 375 µs, LOW ≈ 1125 µs  (short pulse, long gap)
-#       bit 1: HIGH ≈ 1125 µs, LOW ≈ 375 µs  (long pulse, short gap)
-#     Every bit has the SAME total period ≈ 1500 µs.
-#     The pulse WIDTH varies — NOT the gap width.
-#   - SOF (preamble): HIGH ≈ 375 µs, LOW ≈ 2250 µs
-#   - Frame: SOF + 25 data bits
+#   - Bit encoding (confirmed by RTL-SDR capture of Telldus Live):
+#       bit 1: pulse ≈ 392 µs + gap ≈ 352 µs  (short gap = "1")
+#       bit 0: pulse ≈ 392 µs + gap ≈ 1112 µs (long gap = "0")
+#     Pulse width is ALWAYS the same.  Bit value is encoded in gap width.
+#   - Inter-packet gap: ≈ 2252 µs
+#   - Frame: 25 data bits + inter-packet gap
 #   - Repetitions: 10 for normal TX, 48 for learn/pairing
 #
 # Data format (25 bits, MSB first):
-#   Bits 24-1:  encrypted device/channel/state payload (24 bits)
-#   Bit 0:      always 0 (stop bit / frame marker)
+#   Fixed preamble (bits 0–3): always 0101
+#   Variable payload (bits 4–23): 20 bits encoding house + unit + command
+#   Fixed suffix (bit 24): always 1
+#
+# Ground-truth codes are stored as 28-bit hex integers.  The real 25-bit
+# code occupies the TOP 25 bits; the bottom 3 bits are zero padding.
+# The encoder right-shifts by 3 to extract the correct 25 bits.
 #
 # TellStick firmware pulse byte resolution:
 # Each byte value × ~10 µs = real microseconds.
 # ---------------------------------------------------------------------------
 
-LX_T_SHORT = 38      # short duration: 38 × 10 µs = 380 µs  (≈375)
-LX_T_LONG = 112      # long duration: 112 × 10 µs = 1120 µs (≈1125)
+LX_PULSE = 39        # pulse width:  39 × 10 µs = 390 µs  (≈392)
+LX_GAP_SHORT = 35    # short gap:    35 × 10 µs = 350 µs  (≈352)
+LX_GAP_LONG = 111    # long gap:    111 × 10 µs = 1110 µs (≈1112)
 LX_GAP_INTER = 225   # inter-packet: 225 × 10 µs = 2250 µs (≈2252)
+
+# Max repeats that fit inline in a single S command within the firmware's
+# 512-byte USART receive buffer: 8 × 52 bytes + 2 (S and +) = 418 < 512.
+# 9 repeats = 470, 10 = 522 (overflow).  Using 8 for extra safety margin.
+LX_MAX_INLINE_REPEATS = 8
 
 # Ground-truth ON/OFF codes captured from real Luxorparts 50969 remote.
 # Format: { (house, unit): {"on": hex_code, "off": hex_code} }
@@ -897,35 +907,41 @@ def luxorparts_bits_to_pulse_bytes(
     code: int,
     *,
     n_bits: int = 25,
-    t_short: int = LX_T_SHORT,
-    t_long: int = LX_T_LONG,
+    t_pulse: int = LX_PULSE,
+    t_gap_short: int = LX_GAP_SHORT,
+    t_gap_long: int = LX_GAP_LONG,
     gap_inter: int = LX_GAP_INTER,
 ) -> bytes:
     """Convert a Luxorparts code integer to raw pulse-train bytes.
 
-    OOK-PWM encoding (Pulse Width Modulation):
-      bit 0 → [t_short, t_long]    (short pulse, long gap)
-      bit 1 → [t_long,  t_short]   (long pulse,  short gap)
+    OOK-PPM encoding (Pulse Position Modulation):
+      bit 1 → [t_pulse, t_gap_short]   (fixed pulse, short gap)
+      bit 0 → [t_pulse, t_gap_long]    (fixed pulse, long gap)
 
-    Every bit has the same total period (t_short + t_long = 1500 µs).
-    After all bits: [t_short, gap_inter] (SOF / inter-packet gap).
+    Pulse width is always the same.  Bit value is encoded in gap width.
+    After all bits: [t_pulse, gap_inter] (inter-packet gap).
+
+    Ground-truth codes are stored as 28-bit hex integers.  The real 25-bit
+    code occupies the top 25 bits; the bottom 3 bits are zero padding.
+    This function right-shifts by 3 to extract the correct 25 bits.
 
     >>> len(luxorparts_bits_to_pulse_bytes(0x5e14538))
     52
-    >>> luxorparts_bits_to_pulse_bytes(0x5e14538)[0]  # bit 1 → long pulse
-    112
+    >>> luxorparts_bits_to_pulse_bytes(0x5e14538)[0]  # pulse byte (always same)
+    39
     """
+    # Right-shift to extract top 25 bits from 28-bit padded hex codes
+    code = code >> 3
     out = bytearray()
     for i in range(n_bits - 1, -1, -1):
         bit = (code >> i) & 1
+        out.append(t_pulse)            # pulse is always the same
         if bit:
-            out.append(t_long)     # long pulse
-            out.append(t_short)    # short gap
+            out.append(t_gap_short)    # short gap = "1"
         else:
-            out.append(t_short)    # short pulse
-            out.append(t_long)     # long gap
-    # Inter-packet gap / SOF for next repeat (short pulse + long pause)
-    out.append(t_short)
+            out.append(t_gap_long)     # long gap = "0"
+    # Inter-packet gap (pulse + long pause)
+    out.append(t_pulse)
     out.append(gap_inter)
     return bytes(out)
 
@@ -934,8 +950,9 @@ def luxorparts_build_packet(
     code: int,
     *,
     repeats: int = 10,
-    t_short: int = LX_T_SHORT,
-    t_long: int = LX_T_LONG,
+    t_pulse: int = LX_PULSE,
+    t_gap_short: int = LX_GAP_SHORT,
+    t_gap_long: int = LX_GAP_LONG,
     gap_inter: int = LX_GAP_INTER,
 ) -> bytes:
     """Build a complete multi-repeat Luxorparts raw S packet.
@@ -948,54 +965,55 @@ def luxorparts_build_packet(
     520
     """
     single = luxorparts_bits_to_pulse_bytes(
-        code, t_short=t_short, t_long=t_long, gap_inter=gap_inter,
+        code, t_pulse=t_pulse, t_gap_short=t_gap_short,
+        t_gap_long=t_gap_long, gap_inter=gap_inter,
     )
     return single * repeats
 
 
-# Variant → (repeats, t_short, t_long, gap_inter) mapping.
+# Variant → (repeats, t_pulse, t_gap_short, t_gap_long, gap_inter) mapping.
 # Used by both Duo (switch.py) and Net (net_client.py) paths.
-_LX_VARIANT_PARAMS: dict[str, tuple[int, int, int, int]] = {
+_LX_VARIANT_PARAMS: dict[str, tuple[int, int, int, int, int]] = {
     # Group T: Standard timing, 3 house/unit combos
-    "lx_t01": (10, LX_T_SHORT, LX_T_LONG, LX_GAP_INTER),
-    "lx_t02": (10, LX_T_SHORT, LX_T_LONG, LX_GAP_INTER),
-    "lx_t03": (10, LX_T_SHORT, LX_T_LONG, LX_GAP_INTER),
+    "lx_t01": (10, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
+    "lx_t02": (10, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
+    "lx_t03": (10, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
     # Group TS: Same as T (S+proto distinction only matters for ZNet)
-    "lx_t04": (10, LX_T_SHORT, LX_T_LONG, LX_GAP_INTER),
-    "lx_t05": (10, LX_T_SHORT, LX_T_LONG, LX_GAP_INTER),
-    "lx_t06": (10, LX_T_SHORT, LX_T_LONG, LX_GAP_INTER),
+    "lx_t04": (10, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
+    "lx_t05": (10, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
+    "lx_t06": (10, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
     # Group TR: Varying repeat counts
-    "lx_t07": (5, LX_T_SHORT, LX_T_LONG, LX_GAP_INTER),
-    "lx_t08": (15, LX_T_SHORT, LX_T_LONG, LX_GAP_INTER),
-    "lx_t09": (20, LX_T_SHORT, LX_T_LONG, LX_GAP_INTER),
-    "lx_t10": (48, LX_T_SHORT, LX_T_LONG, LX_GAP_INTER),
+    "lx_t07": (5, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
+    "lx_t08": (15, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
+    "lx_t09": (20, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
+    "lx_t10": (48, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
     # Group TRS: Varying repeats (same as TR for Duo)
-    "lx_t11": (5, LX_T_SHORT, LX_T_LONG, LX_GAP_INTER),
-    "lx_t12": (15, LX_T_SHORT, LX_T_LONG, LX_GAP_INTER),
-    "lx_t13": (20, LX_T_SHORT, LX_T_LONG, LX_GAP_INTER),
-    "lx_t14": (48, LX_T_SHORT, LX_T_LONG, LX_GAP_INTER),
-    # Group TT: Timing variations (scale both t_short and t_long)
-    "lx_t15": (10, 34, 101, 203),   # ~-10% period
-    "lx_t16": (10, 42, 123, 248),   # ~+10% period
-    "lx_t17": (10, 30, 90, 180),    # ~-20% period
-    "lx_t18": (10, 46, 134, 255),   # ~+20% period (gap_inter capped at 255)
-    "lx_t19": (10, 50, 100, 225),   # wider duty cycle (33%→50/100 ratio)
-    "lx_t20": (10, 38, 112, 150),   # shorter inter-packet gap
+    "lx_t11": (5, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
+    "lx_t12": (15, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
+    "lx_t13": (20, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
+    "lx_t14": (48, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
+    # Group TT: Timing variations (scale all timings proportionally)
+    "lx_t15": (10, 35, 32, 100, 203),    # ~-10% all
+    "lx_t16": (10, 43, 39, 122, 248),    # ~+10% all
+    "lx_t17": (10, 31, 28, 89, 180),     # ~-20% all
+    "lx_t18": (10, 47, 42, 133, 255),    # ~+20% all (gap_inter capped at 255)
+    "lx_t19": (10, 50, 35, 111, 225),    # wider pulse, standard gaps
+    "lx_t20": (10, 39, 35, 111, 150),    # shorter inter-packet gap
     # Group TTS: Timing variations (same as TT for Duo)
-    "lx_t21": (10, 34, 101, 203),
-    "lx_t22": (10, 42, 123, 248),
-    "lx_t23": (10, 30, 90, 180),
-    "lx_t24": (10, 46, 134, 255),
+    "lx_t21": (10, 35, 32, 100, 203),
+    "lx_t22": (10, 43, 39, 122, 248),
+    "lx_t23": (10, 31, 28, 89, 180),
+    "lx_t24": (10, 47, 42, 133, 255),
 }
 
 # Default parameters when variant is not found
-_LX_DEFAULT_PARAMS = (10, LX_T_SHORT, LX_T_LONG, LX_GAP_INTER)
+_LX_DEFAULT_PARAMS = (10, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER)
 
 
 def luxorparts_variant_params(
     variant: str,
-) -> tuple[int, int, int, int]:
-    """Return (repeats, t_short, t_long, gap_inter) for a variant."""
+) -> tuple[int, int, int, int, int]:
+    """Return (repeats, t_pulse, t_gap_short, t_gap_long, gap_inter) for a variant."""
     return _LX_VARIANT_PARAMS.get(variant, _LX_DEFAULT_PARAMS)
 
 
@@ -1005,26 +1023,54 @@ def luxorparts_build_raw_command(
 ) -> bytes:
     """Build a complete TellStick raw command for a Luxorparts code.
 
-    Uses the firmware ``R<count>`` repeat prefix so the firmware handles
-    repetitions internally.  This keeps the command at ~56 bytes — well
-    within the TellStick Duo firmware's 512-byte receive buffer.
+    Embeds repeats inline in the ``S`` data so the inter-packet gap is
+    controlled by our ``gap_inter`` byte (~2250 µs), not the firmware's
+    hardcoded ~11 ms ``R``-repeat pause.
 
-    Without the ``R`` prefix, embedding 10+ repeats of the 52-byte single
-    packet in the ``S`` data produces 520+ bytes which **overflows** the
-    firmware buffer, silently corrupting the command (the firmware prints
-    ``Unknown command`` and never transmits).
+    Repeats are capped at ``LX_MAX_INLINE_REPEATS`` (8) per command to
+    stay within the firmware's 512-byte USART receive buffer.
+    8 × 52 = 416 + 2 = 418 bytes — safe under 512.
 
-    Format: ``R<count>S<single_packet>+``
+    For higher repeat counts (e.g. learn = 48), callers must send
+    multiple sequential commands (see ``luxorparts_learn_commands``).
+
+    Format: ``S<single_packet × repeats>+``
 
     Returns bytes ready for ``TellStickController.send_raw_command()``.
     """
-    repeats, t_s, t_l, gap_i = luxorparts_variant_params(variant)
+    repeats, t_p, t_gs, t_gl, gap_i = luxorparts_variant_params(variant)
+    # Cap repeats to avoid firmware buffer overflow
+    repeats = min(repeats, LX_MAX_INLINE_REPEATS)
     single = luxorparts_bits_to_pulse_bytes(
-        code, t_short=t_s, t_long=t_l, gap_inter=gap_i,
+        code, t_pulse=t_p, t_gap_short=t_gs, t_gap_long=t_gl, gap_inter=gap_i,
     )
-    # R<count> tells firmware to repeat the S packet <count> times.
-    # Firmware default pause between repeats is 11 ms (P=11 implicit).
-    return bytes([0x52, repeats]) + b"S" + single + b"+"
+    return b"S" + single * repeats + b"+"
+
+
+def luxorparts_learn_commands(
+    code: int,
+    total_repeats: int = 48,
+    variant: str = "",
+) -> list[bytes]:
+    """Build a list of raw commands for Luxorparts learn/pairing.
+
+    Learn requires many repeats (typically 48).  Each command is capped at
+    ``LX_MAX_INLINE_REPEATS`` to fit the 512-byte firmware buffer.
+    Callers should send each command sequentially.
+
+    Returns a list of bytes, each ready for ``send_raw_command()``.
+    """
+    _, t_p, t_gs, t_gl, gap_i = luxorparts_variant_params(variant)
+    single = luxorparts_bits_to_pulse_bytes(
+        code, t_pulse=t_p, t_gap_short=t_gs, t_gap_long=t_gl, gap_inter=gap_i,
+    )
+    commands: list[bytes] = []
+    remaining = total_repeats
+    while remaining > 0:
+        burst = min(remaining, LX_MAX_INLINE_REPEATS)
+        commands.append(b"S" + single * burst + b"+")
+        remaining -= burst
+    return commands
 
 
 # ---------------------------------------------------------------------------

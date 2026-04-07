@@ -2517,8 +2517,8 @@ from .const import (  # noqa: E402 — grouped with the block that uses them
 
 # TellStick firmware pulse byte resolution:
 # Each byte value × ~10 µs = real microseconds.
-# PWM: t_short ≈ 380 µs → 38 ticks, t_long ≈ 1120 µs → 112 ticks,
-# inter-packet gap ≈ 2250 µs → 225 ticks.
+# PPM: t_pulse ≈ 390 µs → 39 ticks, t_gap_short ≈ 350 µs → 35 ticks,
+# t_gap_long ≈ 1110 µs → 111 ticks, inter-packet gap ≈ 2250 µs → 225 ticks.
 
 def _encode_luxorparts_variant(
     house: Any, unit: Any, method_name: str, model_full: str,
@@ -2614,33 +2614,35 @@ def _encode_luxorparts_variant(
         return d
 
     # --- Group TT: Timing variations (±10%, ±20%) on house 14466 unit 1 ---
-    # Timings are tuples: (t_short, t_long, gap_inter)
-    _tt_timings: dict[str, tuple[int, int, int]] = {
-        "lx_t15": (34, 101, 203),    # ~-10% period
-        "lx_t16": (42, 123, 248),    # ~+10% period
-        "lx_t17": (30, 90, 180),     # ~-20% period
-        "lx_t18": (46, 134, 255),    # ~+20% period (gap_inter capped at 255)
-        "lx_t19": (50, 100, 225),    # wider duty cycle (50/100 ratio)
-        "lx_t20": (38, 112, 150),    # shorter inter-packet gap
+    # Timings are tuples: (t_pulse, t_gap_short, t_gap_long, gap_inter)
+    _tt_timings: dict[str, tuple[int, int, int, int]] = {
+        "lx_t15": (35, 32, 100, 203),    # ~-10% all
+        "lx_t16": (43, 39, 122, 248),    # ~+10% all
+        "lx_t17": (31, 28, 89, 180),     # ~-20% all
+        "lx_t18": (47, 42, 133, 255),    # ~+20% all (gap_inter capped at 255)
+        "lx_t19": (50, 35, 111, 225),    # wider pulse, standard gaps
+        "lx_t20": (39, 35, 111, 150),    # shorter inter-packet gap
     }
     if variant in _tt_timings:
-        ts, tl, gi = _tt_timings[variant]
+        tp, tgs, tgl, gi = _tt_timings[variant]
         raw = luxorparts_build_packet(
-            code, repeats=10, t_short=ts, t_long=tl, gap_inter=gi,
+            code, repeats=10, t_pulse=tp, t_gap_short=tgs,
+            t_gap_long=tgl, gap_inter=gi,
         )
         return dict(S=raw)
 
     # --- Group TTS: Timing variations + dummy protocol ---
-    _tts_timings: dict[str, tuple[int, int, int]] = {
-        "lx_t21": (34, 101, 203),    # ~-10% + protocol
-        "lx_t22": (42, 123, 248),    # ~+10% + protocol
-        "lx_t23": (30, 90, 180),     # ~-20% + protocol
-        "lx_t24": (46, 134, 255),    # ~+20% + protocol (gap_inter capped at 255)
+    _tts_timings: dict[str, tuple[int, int, int, int]] = {
+        "lx_t21": (35, 32, 100, 203),    # ~-10% + protocol
+        "lx_t22": (43, 39, 122, 248),    # ~+10% + protocol
+        "lx_t23": (31, 28, 89, 180),     # ~-20% + protocol
+        "lx_t24": (47, 42, 133, 255),    # ~+20% + protocol (gap_inter capped at 255)
     }
     if variant in _tts_timings:
-        ts, tl, gi = _tts_timings[variant]
+        tp, tgs, tgl, gi = _tts_timings[variant]
         raw = luxorparts_build_packet(
-            code, repeats=10, t_short=ts, t_long=tl, gap_inter=gi,
+            code, repeats=10, t_pulse=tp, t_gap_short=tgs,
+            t_gap_long=tgl, gap_inter=gi,
         )
         d = OrderedDict(protocol="arctech", model="selflearning")
         d["S"] = raw
