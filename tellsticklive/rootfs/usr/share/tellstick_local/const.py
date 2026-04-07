@@ -28,7 +28,7 @@ DOMAIN = "tellstick_local"
 
 
 
-INTEGRATION_VERSION = "3.1.8.7"
+INTEGRATION_VERSION = "3.1.8.8"
 
 
 # Backend type stored in config entry data
@@ -888,11 +888,6 @@ LX_GAP_SHORT = 35    # short gap:    35 × 10 µs = 350 µs  (≈352)
 LX_GAP_LONG = 111    # long gap:    111 × 10 µs = 1110 µs (≈1112)
 LX_GAP_INTER = 225   # inter-packet: 225 × 10 µs = 2250 µs (≈2252)
 
-# Max repeats that fit inline in a single S command within the firmware's
-# 512-byte USART receive buffer: 8 × 52 bytes + 2 (S and +) = 418 < 512.
-# 9 repeats = 470, 10 = 522 (overflow).  Using 8 for extra safety margin.
-LX_MAX_INLINE_REPEATS = 8
-
 # Ground-truth ON/OFF codes captured from real Luxorparts 50969 remote.
 # Format: { (house, unit): {"on": hex_code, "off": hex_code} }
 # Each hex_code is a 25-bit integer (MSB first, bit 0 = 0 stop bit).
@@ -1023,54 +1018,26 @@ def luxorparts_build_raw_command(
 ) -> bytes:
     """Build a complete TellStick raw command for a Luxorparts code.
 
-    Embeds repeats inline in the ``S`` data so the inter-packet gap is
-    controlled by our ``gap_inter`` byte (~2250 µs), not the firmware's
-    hardcoded ~11 ms ``R``-repeat pause.
+    Uses the firmware ``R<count>`` repeat prefix so the firmware handles
+    repetitions internally.  This keeps the command at ~56 bytes — well
+    within the TellStick Duo firmware's 512-byte receive buffer.
 
-    Repeats are capped at ``LX_MAX_INLINE_REPEATS`` (8) per command to
-    stay within the firmware's 512-byte USART receive buffer.
-    8 × 52 = 416 + 2 = 418 bytes — safe under 512.
+    Without the ``R`` prefix, embedding 10+ repeats of the 52-byte single
+    packet in the ``S`` data produces 520+ bytes which **overflows** the
+    firmware buffer, silently corrupting the command (the firmware prints
+    ``Unknown command`` and never transmits).
 
-    For higher repeat counts (e.g. learn = 48), callers must send
-    multiple sequential commands (see ``luxorparts_learn_commands``).
-
-    Format: ``S<single_packet × repeats>+``
+    Format: ``R<count>S<single_packet>+``
 
     Returns bytes ready for ``TellStickController.send_raw_command()``.
     """
     repeats, t_p, t_gs, t_gl, gap_i = luxorparts_variant_params(variant)
-    # Cap repeats to avoid firmware buffer overflow
-    repeats = min(repeats, LX_MAX_INLINE_REPEATS)
     single = luxorparts_bits_to_pulse_bytes(
         code, t_pulse=t_p, t_gap_short=t_gs, t_gap_long=t_gl, gap_inter=gap_i,
     )
-    return b"S" + single * repeats + b"+"
-
-
-def luxorparts_learn_commands(
-    code: int,
-    total_repeats: int = 48,
-    variant: str = "",
-) -> list[bytes]:
-    """Build a list of raw commands for Luxorparts learn/pairing.
-
-    Learn requires many repeats (typically 48).  Each command is capped at
-    ``LX_MAX_INLINE_REPEATS`` to fit the 512-byte firmware buffer.
-    Callers should send each command sequentially.
-
-    Returns a list of bytes, each ready for ``send_raw_command()``.
-    """
-    _, t_p, t_gs, t_gl, gap_i = luxorparts_variant_params(variant)
-    single = luxorparts_bits_to_pulse_bytes(
-        code, t_pulse=t_p, t_gap_short=t_gs, t_gap_long=t_gl, gap_inter=gap_i,
-    )
-    commands: list[bytes] = []
-    remaining = total_repeats
-    while remaining > 0:
-        burst = min(remaining, LX_MAX_INLINE_REPEATS)
-        commands.append(b"S" + single * burst + b"+")
-        remaining -= burst
-    return commands
+    # R<count> tells firmware to repeat the S packet <count> times.
+    # Firmware default pause between repeats is 11 ms (P=11 implicit).
+    return bytes([0x52, repeats]) + b"S" + single + b"+"
 
 
 # ---------------------------------------------------------------------------
