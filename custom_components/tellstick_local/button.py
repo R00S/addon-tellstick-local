@@ -38,7 +38,7 @@ from .const import (
     LX_GROUND_TRUTH_CODES,
     LX_TEST_VARIANTS,
     SIGNAL_NEW_DEVICE,
-    luxorparts_build_raw_command,
+    luxorparts_learn_commands,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -220,17 +220,16 @@ class TellStickLearnButton(ButtonEntity):
     ) -> None:
         """Send a Luxorparts learn signal (ON code with 48 repeats).
 
-        Uses a single R-prefix command with P0 (zero pause):
-        ``P\\x00 R\\x30 S<50 bytes> +`` = 56 bytes.
+        Uses multiple sequential inline S commands.  Each burst contains
+        up to ``LX_MAX_INLINE_REPEATS`` (10) repeats of the 50-byte packet
+        inside a single ``S…+`` command (502 bytes, under the firmware's
+        512-byte buffer).
 
-        The firmware's ``P`` byte sets the inter-repeat pause to 0 ms
-        (default is 11 ms).  The inter-packet gap is already embedded
-        as the last byte of the pulse data (``LX_GAP_INTER`` = 2250 µs).
-        With P0, the only gap between repeats is this embedded gap,
-        matching Telldus Live's measured timing exactly.
+        DO NOT use firmware R-prefix — it causes the Duo to not transmit
+        at all (see ``docs/LUXORPARTS_TIMELINE.md``).
 
-        The firmware's ``R`` byte sets repeat count to 48 (raw byte 0x30).
-        Total TX time: 48 × 25 bits × 1.5 ms/bit ≈ 1.8 seconds.
+        Total: 5 bursts × 10 repeats = 50 repeats.
+        Each burst TX time: ~375 ms.  Total: ~1.9 seconds.
         """
         try:
             house_int = int(device_dict.get(CONF_DEVICE_HOUSE, 0))
@@ -257,28 +256,27 @@ class TellStickLearnButton(ButtonEntity):
         model = device_dict.get(CONF_DEVICE_MODEL, "")
         variant = model.split(":", 1)[1] if ":" in model else ""
 
-        # Build single R-prefix command with 48 repeats for learn.
-        # luxorparts_build_raw_command uses the variant's repeat count,
-        # so we override to 48 by replacing the R byte in the command.
-        raw_cmd = luxorparts_build_raw_command(code, variant=variant)
-        # Replace R<variant_repeats> with R<48>: byte at index 3
-        raw_cmd = raw_cmd[:3] + bytes([48]) + raw_cmd[4:]
+        # Build multi-burst learn commands (5 × 10 = 50 repeats)
+        commands = luxorparts_learn_commands(code, total_repeats=50, variant=variant)
 
         _LOGGER.info(
-            "LX learn: uid=%s variant=%s code=0x%x repeats=48 cmd_len=%d",
-            self._device_uid, variant, code, len(raw_cmd),
+            "LX learn: uid=%s variant=%s code=0x%x repeats=50 bursts=%d",
+            self._device_uid, variant, code, len(commands),
         )
-
-        result = await controller.send_raw_command(raw_cmd)
-        if result == -5:
-            _LOGGER.info(
-                "LX learn: ACK timeout (expected for 48 repeats, "
-                "firmware is still transmitting ~1.8 seconds)",
-            )
-        elif result != 0:
-            _LOGGER.warning("LX learn failed: result=%d", result)
-        else:
-            _LOGGER.info("LX learn: command sent successfully")
+        for i, raw_cmd in enumerate(commands):
+            result = await controller.send_raw_command(raw_cmd)
+            if result == -5:
+                _LOGGER.info(
+                    "LX learn burst %d/%d: ACK timeout (expected), hardware should transmit",
+                    i + 1, len(commands),
+                )
+            elif result != 0:
+                _LOGGER.warning("LX learn burst %d/%d failed: result=%d", i + 1, len(commands), result)
+            else:
+                _LOGGER.info("LX learn burst %d/%d success", i + 1, len(commands))
+            # Short delay between bursts to let telldusd process
+            if i < len(commands) - 1:
+                await asyncio.sleep(0.5)
 
 
 # ---------------------------------------------------------------------------

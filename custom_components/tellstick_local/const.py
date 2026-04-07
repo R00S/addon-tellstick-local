@@ -28,7 +28,7 @@ DOMAIN = "tellstick_local"
 
 
 
-INTEGRATION_VERSION = "3.1.8.10"
+INTEGRATION_VERSION = "3.1.8.11"
 
 
 # Backend type stored in config entry data
@@ -897,9 +897,11 @@ LX_GAP_INTER = 225   # inter-packet: 225 × 10 µs = 2250 µs (≈2248)
 # Backward compatibility alias
 LX_PULSE = LX_PULSE_SHORT
 
-# Maximum single-byte repeat count for R-prefix (firmware uses unsigned char).
-# With P0 (zero pause), total command is only 55 bytes regardless of repeats.
-LX_MAX_REPEATS = 255
+# Maximum inline repeats per S command to stay within the firmware's 512-byte
+# USART receive buffer.  50 bytes/packet × 10 repeats + 2 (S, +) = 502 bytes.
+# DO NOT use firmware R-prefix — it causes the Duo to not transmit at all.
+# See docs/LUXORPARTS_TIMELINE.md for the full regression history.
+LX_MAX_INLINE_REPEATS = 10
 
 # Ground-truth ON/OFF codes captured from real Luxorparts 50969 remote.
 # Format: { (house, unit): {"on": hex_code, "off": hex_code} }
@@ -1040,32 +1042,55 @@ def luxorparts_build_raw_command(
 ) -> bytes:
     """Build a complete TellStick raw command for a Luxorparts code.
 
-    Uses the firmware's ``P`` and ``R`` prefix bytes to control timing:
-
-    - ``P\\x00`` — sets inter-repeat pause to 0 ms (default is 11 ms).
-      The inter-packet gap is already embedded as the last byte of the
-      pulse data (``LX_GAP_INTER`` = 2250 µs), so firmware needs no
-      additional pause.  This matches Telldus Live's measured gap.
-    - ``R<n>`` — firmware repeats the ``S`` data *n* times.
-      Raw byte value, NOT ASCII.
+    Uses **inline repeats** — the pulse data for all repetitions is
+    concatenated inside a single ``S…+`` command.  The firmware's
+    ``R<n>`` prefix is intentionally NOT used because it causes the
+    TellStick Duo to not transmit at all (see ``docs/LUXORPARTS_TIMELINE.md``).
 
     OOK-PWM encoding: 25 bits × 2 bytes = 50 bytes per packet.
-    Full command: ``P\\x00 R<n> S<50 bytes> +`` = 56 bytes.
+    With 10 inline repeats: ``S`` + 500 bytes + ``+`` = 502 bytes.
     Well within the firmware's 512-byte USART receive buffer.
 
-    Returns bytes ready for ``TellStickController.send_raw_command()``.
+    Repeats are capped at ``LX_MAX_INLINE_REPEATS`` (10) to stay under 512.
+    For higher repeat counts (e.g. learn = 48), use
+    ``luxorparts_learn_commands()`` which returns multiple sequential commands.
 
-    Verified against TellStick Duo firmware source:
-    ``telldus/tellstick-duo/firmware/usart.c`` — ``handleMessage()``.
+    Returns bytes ready for ``TellStickController.send_raw_command()``.
     """
     repeats, t_p, t_gs, t_gl, gap_i = luxorparts_variant_params(variant)
+    # Cap repeats to avoid firmware buffer overflow (50 × 10 + 2 = 502 < 512)
+    repeats = min(repeats, LX_MAX_INLINE_REPEATS)
     single = luxorparts_bits_to_pulse_bytes(
         code,
         t_pulse=t_p, t_gap_short=t_gs, t_gap_long=t_gl, gap_inter=gap_i,
     )
-    # P\x00 = pause 0 ms between repeats (firmware default is 11 ms)
-    # R<n>  = repeat n times (raw byte, firmware reads buffer[p+1])
-    return bytes([0x50, 0x00, 0x52, repeats]) + b"S" + single + b"+"
+    return b"S" + single * repeats + b"+"
+
+
+def luxorparts_learn_commands(
+    code: int,
+    total_repeats: int = 48,
+    variant: str = "",
+) -> list[bytes]:
+    """Build a list of raw commands for Luxorparts learn/pairing.
+
+    Learn requires many repeats (typically 48).  Each command is capped at
+    ``LX_MAX_INLINE_REPEATS`` to fit the 512-byte firmware buffer.
+    Callers should send each command sequentially with a short delay.
+
+    Returns a list of bytes, each ready for ``send_raw_command()``.
+    """
+    _, t_p, t_gs, t_gl, gap_i = luxorparts_variant_params(variant)
+    single = luxorparts_bits_to_pulse_bytes(
+        code, t_pulse=t_p, t_gap_short=t_gs, t_gap_long=t_gl, gap_inter=gap_i,
+    )
+    commands: list[bytes] = []
+    remaining = total_repeats
+    while remaining > 0:
+        burst = min(remaining, LX_MAX_INLINE_REPEATS)
+        commands.append(b"S" + single * burst + b"+")
+        remaining -= burst
+    return commands
 
 
 # ---------------------------------------------------------------------------
