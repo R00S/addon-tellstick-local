@@ -38,78 +38,7 @@ RUN apk add --no-cache \
         common/Socket_unix.cpp \
     && python3 -c "f=open('service/ProtocolNexa.cpp'); c=f.read(); f.close(); old='\t\t}\n\t\treturn str;\n\t}\n\treturn getStringSelflearning(method, data);'; new='\t\t} else if (ts->pid() == 0x0c31) {\n\t\t\t// TellStick Duo: use firmware-level repeat for picky receivers\n\t\t\tstr.insert(0, 1, 2);  // Repeat two times\n\t\t\tstr.insert(0, 1, (char)0x52);  // R prefix\n\t\t\tfor (int i = 0; i < 5; ++i) {\n\t\t\t\tcontroller->send(str);\n\t\t\t}\n\t\t}\n\t\treturn str;\n\t}\n\treturn getStringSelflearning(method, data);'; assert old in c, 'Patch target not found in ProtocolNexa.cpp'; c=c.replace(old,new,1); f=open('service/ProtocolNexa.cpp','w'); f.write(c); f.close(); print('ProtocolNexa.cpp patched: TellStick Duo learn signal with R-prefix added')" \
     && grep -q 'pid() == 0x0c31' service/ProtocolNexa.cpp \
-    && python3 -c "
-# --- Patch 2: Binary-safe IPC for tdSendRawCommand ---
-# Clone charToWstring/wideToString as Raw variants (byte-by-byte, no iconv).
-# Originals kept intact so all existing protocols are unaffected.
-#
-# Problem: charToWstring uses iconv(UTF-8) which mangles bytes >= 128.
-# Byte 225 (0xE1) is a UTF-8 3-byte lead byte -- iconv fails, data is
-# truncated, and sendRawCommand returns TELLSTICK_ERROR_COMMUNICATION (-5).
-#
-# Fix: charToWstringRaw treats each byte as Latin-1 (value 0-255 maps 1:1
-# to wchar_t).  wideToStringRaw reverses: wchar_t & 0xFF -> byte.
-# Socket::read() uses the Raw variant so the IPC layer is binary-safe.
-# DeviceManager::sendRawCommand() uses wideToStringRaw for output.
-import sys
-
-# --- Strings.h: add declarations ---
-h = open('common/Strings.h').read()
-marker = 'std::string wideToString(const std::wstring &input);'
-assert marker in h, 'Patch target not found in Strings.h'
-h = h.replace(marker, marker + '''
-\tstd::wstring charToWstringRaw(const char *value, size_t length);
-\tstd::string wideToStringRaw(const std::wstring &input);''')
-open('common/Strings.h','w').write(h)
-print('Strings.h patched: added charToWstringRaw/wideToStringRaw declarations')
-
-# --- Strings.cpp: add implementations (append before final line) ---
-s = open('common/Strings.cpp').read()
-raw_funcs = '''
-// --- Binary-safe (Latin-1) clones for tdSendRawCommand ---
-// Each byte 0-255 maps 1:1 to wchar_t (no iconv, no UTF-8 multibyte).
-std::wstring TelldusCore::charToWstringRaw(const char *value, size_t length) {
-\tstd::wstring result;
-\tresult.reserve(length);
-\tfor (size_t i = 0; i < length; ++i) {
-\t\tresult += static_cast<wchar_t>(static_cast<unsigned char>(value[i]));
-\t}
-\treturn result;
-}
-
-std::string TelldusCore::wideToStringRaw(const std::wstring &input) {
-\tstd::string result;
-\tresult.reserve(input.size());
-\tfor (size_t i = 0; i < input.size(); ++i) {
-\t\tresult += static_cast<char>(input[i] & 0xFF);
-\t}
-\treturn result;
-}
-'''
-s += raw_funcs
-open('common/Strings.cpp','w').write(s)
-print('Strings.cpp patched: added charToWstringRaw/wideToStringRaw implementations')
-
-# --- Socket_unix.cpp: Socket::read() uses charToWstringRaw ---
-sock = open('common/Socket_unix.cpp').read()
-old_read = 'return TelldusCore::charToWstring(msg.c_str());'
-new_read = 'return TelldusCore::charToWstringRaw(msg.data(), msg.size());'
-assert old_read in sock, 'Patch target not found in Socket_unix.cpp'
-sock = sock.replace(old_read, new_read, 1)
-open('common/Socket_unix.cpp','w').write(sock)
-print('Socket_unix.cpp patched: Socket::read() now uses charToWstringRaw')
-
-# --- DeviceManager.cpp: sendRawCommand uses wideToStringRaw ---
-dm = open('service/DeviceManager.cpp').read()
-old_send = 'retval = controller->send(TelldusCore::wideToString(command));'
-new_send = 'retval = controller->send(TelldusCore::wideToStringRaw(command));'
-count = dm.count(old_send)
-assert count == 2, f'Expected 2 occurrences in DeviceManager.cpp, found {count}'
-dm = dm.replace(old_send, new_send)
-open('service/DeviceManager.cpp','w').write(dm)
-print('DeviceManager.cpp patched: sendRawCommand now uses wideToStringRaw')
-print('All binary-safe IPC patches applied successfully')
-" \
+    && python3 -c "h=open('common/Strings.h').read(); marker='std::string wideToString(const std::wstring &input);'; assert marker in h, 'Patch target not found in Strings.h'; h=h.replace(marker, marker+'\n\tstd::wstring charToWstringRaw(const char *value, size_t length);\n\tstd::string wideToStringRaw(const std::wstring &input);'); open('common/Strings.h','w').write(h); print('Strings.h patched'); s=open('common/Strings.cpp').read(); raw_funcs='\n// Binary-safe (Latin-1) clones for tdSendRawCommand -- byte 0-255 maps 1:1 to wchar_t (no iconv)\nstd::wstring TelldusCore::charToWstringRaw(const char *value, size_t length) {\n\tstd::wstring result;\n\tresult.reserve(length);\n\tfor (size_t i = 0; i < length; ++i) {\n\t\tresult += static_cast<wchar_t>(static_cast<unsigned char>(value[i]));\n\t}\n\treturn result;\n}\n\nstd::string TelldusCore::wideToStringRaw(const std::wstring &input) {\n\tstd::string result;\n\tresult.reserve(input.size());\n\tfor (size_t i = 0; i < input.size(); ++i) {\n\t\tresult += static_cast<char>(input[i] & 0xFF);\n\t}\n\treturn result;\n}\n'; s+=raw_funcs; open('common/Strings.cpp','w').write(s); print('Strings.cpp patched'); sock=open('common/Socket_unix.cpp').read(); old_read='return TelldusCore::charToWstring(msg.c_str());'; new_read='return TelldusCore::charToWstringRaw(msg.data(), msg.size());'; assert old_read in sock, 'Patch target not found in Socket_unix.cpp'; sock=sock.replace(old_read, new_read, 1); open('common/Socket_unix.cpp','w').write(sock); print('Socket_unix.cpp patched'); dm=open('service/DeviceManager.cpp').read(); old_send='retval = controller->send(TelldusCore::wideToString(command));'; new_send='retval = controller->send(TelldusCore::wideToStringRaw(command));'; count=dm.count(old_send); assert count==2, 'Expected 2 occurrences in DeviceManager.cpp, found %d' % count; dm=dm.replace(old_send, new_send); open('service/DeviceManager.cpp','w').write(dm); print('DeviceManager.cpp patched'); print('All binary-safe IPC patches applied successfully')" \
     && grep -q 'charToWstringRaw' common/Strings.h \
     && grep -q 'charToWstringRaw' common/Strings.cpp \
     && grep -q 'charToWstringRaw' common/Socket_unix.cpp \
