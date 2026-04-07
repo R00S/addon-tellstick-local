@@ -2508,107 +2508,17 @@ def _encode_generic_command(
     )
 
 
-# ---------------------------------------------------------------------------
-# Luxorparts / Cleverio raw pulse encoder
-#
-# Luxorparts 50969/50970/50972 433 MHz receivers use a proprietary
-# OOK-PWM protocol (NOT arctech selflearning).  The protocol was decoded
-# from a Homey se.luxorparts-1 driver and confirmed with RTL-SDR captures.
-#
-# Physical layer (OOK-PWM):
-#   - Carrier: 433.92 MHz
-#   - Bit encoding: short pulse + gap (short gap = 1, long gap = 0)
-#   - Timing:  pulse ≈ 392 µs, short gap ≈ 352 µs, long gap ≈ 1112 µs
-#   - Frame: 25 data bits followed by a long inter-packet gap ≈ 2252 µs
-#   - Repetitions: 10 for normal TX, 48 for learn/pairing
-#
-# Data format (25 bits, MSB first):
-#   Bits 24-1:  encrypted device/channel/state payload (24 bits)
-#   Bit 0:      always 0 (stop bit / frame marker)
-#
-# The 24-bit payload is encrypted with a nibble substitution cipher +
-# XOR chain (see Homey PayloadEncryption.js).  We do NOT implement the
-# cipher — instead we use the 6 known ground-truth codes captured from
-# the user's Luxorparts 50969 remote.
-# ---------------------------------------------------------------------------
+# Luxorparts pulse encoder constants and functions are in const.py.
+# Import them for use in _encode_luxorparts_variant().
+from .const import (  # noqa: E402 — grouped with the block that uses them
+    LX_GROUND_TRUTH_CODES,
+    luxorparts_build_packet,
+)
 
 # TellStick firmware pulse byte resolution:
 # Each byte value × ~10 µs = real microseconds.
 # pulse ≈ 392 µs → 39 ticks, short gap ≈ 352 µs → 35 ticks,
 # long gap ≈ 1112 µs → 111 ticks, inter-packet gap ≈ 2252 µs → 225 ticks.
-
-_LX_PULSE = 39       # pulse width:  39 × 10 µs = 390 µs  (≈392)
-_LX_GAP_SHORT = 35   # short gap:    35 × 10 µs = 350 µs  (≈352)
-_LX_GAP_LONG = 111   # long gap:    111 × 10 µs = 1110 µs (≈1112)
-_LX_GAP_INTER = 225  # inter-packet: 225 × 10 µs = 2250 µs (≈2252)
-
-# Ground-truth ON/OFF codes captured from real Luxorparts 50969 remote.
-# Format: { (house, unit): {"on": hex_code, "off": hex_code} }
-# Each hex_code is a 25-bit integer (MSB first, bit 0 = 0 stop bit).
-LX_GROUND_TRUTH_CODES: dict[tuple[int, int], dict[str, int]] = {
-    (14466, 1): {"on": 0x5e14538, "off": 0x5a59738},
-    (14468, 2): {"on": 0x559dba8, "off": 0x5ccc0a8},
-    (14268, 4): {"on": 0x51b1088, "off": 0x5bd4b88},
-}
-
-
-def _luxorparts_bits_to_pulse_bytes(
-    code: int,
-    *,
-    n_bits: int = 25,
-    pulse: int = _LX_PULSE,
-    gap_short: int = _LX_GAP_SHORT,
-    gap_long: int = _LX_GAP_LONG,
-    gap_inter: int = _LX_GAP_INTER,
-) -> bytes:
-    """Convert a Luxorparts code integer to raw pulse-train bytes.
-
-    OOK-PWM encoding:
-      bit 1 → [pulse, gap_short]   (short gap = "1")
-      bit 0 → [pulse, gap_long]    (long gap = "0")
-
-    After all bits: [pulse, gap_inter] (inter-packet gap).
-
-    >>> len(_luxorparts_bits_to_pulse_bytes(0x5e14538))
-    52
-    >>> _luxorparts_bits_to_pulse_bytes(0x5e14538)[0]
-    39
-    """
-    out = bytearray()
-    for i in range(n_bits - 1, -1, -1):
-        bit = (code >> i) & 1
-        out.append(pulse)
-        out.append(gap_short if bit == 1 else gap_long)
-    # Inter-packet gap (pulse + long pause)
-    out.append(pulse)
-    out.append(gap_inter)
-    return bytes(out)
-
-
-def _luxorparts_build_packet(
-    code: int,
-    *,
-    repeats: int = 10,
-    pulse: int = _LX_PULSE,
-    gap_short: int = _LX_GAP_SHORT,
-    gap_long: int = _LX_GAP_LONG,
-    gap_inter: int = _LX_GAP_INTER,
-) -> bytes:
-    """Build a complete multi-repeat Luxorparts raw S packet.
-
-    Returns concatenated pulse bytes for *repeats* copies of the code.
-
-    >>> len(_luxorparts_build_packet(0x5e14538, repeats=1))
-    52
-    >>> len(_luxorparts_build_packet(0x5e14538, repeats=10))
-    520
-    """
-    single = _luxorparts_bits_to_pulse_bytes(
-        code, pulse=pulse, gap_short=gap_short,
-        gap_long=gap_long, gap_inter=gap_inter,
-    )
-    return single * repeats
-
 
 def _encode_luxorparts_variant(
     house: Any, unit: Any, method_name: str, model_full: str,
@@ -2660,7 +2570,7 @@ def _encode_luxorparts_variant(
         "lx_t03": 10,  # House 14268 Unit 4 — standard 10 reps
     }
     if variant in _t_repeats:
-        raw = _luxorparts_build_packet(code, repeats=_t_repeats[variant])
+        raw = luxorparts_build_packet(code, repeats=_t_repeats[variant])
         # S-only packet — simplest path, but ZNet may drop it (no protocol key)
         return dict(S=raw)
 
@@ -2671,7 +2581,7 @@ def _encode_luxorparts_variant(
         "lx_t06": 10,  # H14268 U4, S + protocol
     }
     if variant in _ts_repeats:
-        raw = _luxorparts_build_packet(code, repeats=_ts_repeats[variant])
+        raw = luxorparts_build_packet(code, repeats=_ts_repeats[variant])
         # Include dummy protocol/model to satisfy ZNet firmware's handleSend()
         d: dict[str, Any] = OrderedDict(
             protocol="arctech", model="selflearning",
@@ -2687,7 +2597,7 @@ def _encode_luxorparts_variant(
         "lx_t10": 48,  # learn-mode repeat count
     }
     if variant in _tr_repeats:
-        raw = _luxorparts_build_packet(code, repeats=_tr_repeats[variant])
+        raw = luxorparts_build_packet(code, repeats=_tr_repeats[variant])
         return dict(S=raw)
 
     # --- Group TRS: Varying repeat counts + dummy protocol ---
@@ -2698,7 +2608,7 @@ def _encode_luxorparts_variant(
         "lx_t14": 48,
     }
     if variant in _trs_repeats:
-        raw = _luxorparts_build_packet(code, repeats=_trs_repeats[variant])
+        raw = luxorparts_build_packet(code, repeats=_trs_repeats[variant])
         d = OrderedDict(protocol="arctech", model="selflearning")
         d["S"] = raw
         return d
@@ -2715,7 +2625,7 @@ def _encode_luxorparts_variant(
     }
     if variant in _tt_timings:
         p, gs, gl, gi = _tt_timings[variant]
-        raw = _luxorparts_build_packet(
+        raw = luxorparts_build_packet(
             code, repeats=10, pulse=p, gap_short=gs, gap_long=gl, gap_inter=gi,
         )
         return dict(S=raw)
@@ -2729,7 +2639,7 @@ def _encode_luxorparts_variant(
     }
     if variant in _tts_timings:
         p, gs, gl, gi = _tts_timings[variant]
-        raw = _luxorparts_build_packet(
+        raw = luxorparts_build_packet(
             code, repeats=10, pulse=p, gap_short=gs, gap_long=gl, gap_inter=gi,
         )
         d = OrderedDict(protocol="arctech", model="selflearning")

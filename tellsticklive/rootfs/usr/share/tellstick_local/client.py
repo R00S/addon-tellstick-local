@@ -279,19 +279,47 @@ class TellStickController:
             "tdStop", [_encode_int(device_id)]
         )
 
-    async def send_raw_command(self, command: str, reserved: int = 0) -> int:
-        """Send tdSendRawCommand — transmit a raw pulse string via the hardware.
+    async def send_raw_command(self, command: bytes, reserved: int = 0) -> int:
+        """Send tdSendRawCommand — transmit raw pulse bytes via the hardware.
 
-        The *command* string is a TellStick firmware pulse-train encoding
-        (e.g. ``S$k$k$k…+``).  The *reserved* parameter is always 0.
+        *command* is the raw firmware pulse-train data including the ``S``
+        prefix and ``+`` suffix (e.g. ``b"S" + pulse_bytes + b"+"``).
 
-        This bypasses protocol registration entirely — the raw pulse string is
-        sent directly to the TellStick hardware via controller->send().
+        This bypasses protocol registration entirely — the raw pulse data is
+        sent directly to the TellStick hardware via ``controller->send()``.
         Used for protocols that telldusd doesn't know natively (e.g. Luxorparts).
+
+        **Binary-safe:** builds the TCP message manually so that raw pulse
+        bytes > 127 are NOT corrupted by UTF-8 multi-byte encoding.
+        telldusd's ``Message::takeString()`` reads *N* raw bytes (no charset
+        conversion), so we must send each byte value as a single byte.
         """
-        return await self._call_int(
-            "tdSendRawCommand", [_encode_string(command), _encode_int(reserved)]
+        # Build the telldusd text-protocol message manually.
+        # Format: <func_string><arg1_string><arg2_int>
+        #   func:  "19:tdSendRawCommand"  (ASCII length-prefixed)
+        #   arg1:  "<len>:<raw_bytes>"    (binary, NOT UTF-8)
+        #   arg2:  "i0s"                  (ASCII int encoding)
+        func_name = "tdSendRawCommand"
+        func_part = f"{len(func_name)}:{func_name}".encode("ascii")
+        cmd_part = f"{len(command)}:".encode("ascii") + command
+        reserved_part = f"i{reserved}s".encode("ascii")
+        raw_msg = func_part + cmd_part + reserved_part
+
+        reader, writer = await asyncio.open_connection(
+            self.host, self.command_port
         )
+        try:
+            writer.write(raw_msg)
+            await writer.drain()
+            raw_resp = await asyncio.wait_for(reader.readline(), timeout=10.0)
+            resp = raw_resp.decode("utf-8", errors="replace").rstrip("\n")
+            return _parse_int_response(resp)
+        finally:
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except Exception:  # noqa: BLE001
+                pass
 
     async def ping(self) -> bool:
         """Try to get the device count to confirm the connection is alive."""

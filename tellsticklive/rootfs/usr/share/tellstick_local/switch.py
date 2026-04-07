@@ -24,9 +24,11 @@ from .const import (
     DOMAIN,
     ENTRY_DEVICE_ID_MAP,
     ENTRY_TELLSTICK_CONTROLLER,
+    LX_GROUND_TRUTH_CODES,
     SIGNAL_EVENT,
     SIGNAL_NEW_DEVICE,
     TELLSTICK_TURNON,
+    luxorparts_build_raw_command,
 )
 from .entity import TellStickEntity
 
@@ -260,7 +262,9 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
             "turn_on: uid=%s controller=%s device_id=%r",
             self._device_uid, type(self._controller).__name__, self._telldusd_device_id,
         )
-        if self._telldusd_device_id is not None:
+        if self._protocol == "luxorparts" and hasattr(self._controller, "send_raw_command"):
+            await self._send_luxorparts_raw("on")
+        elif self._telldusd_device_id is not None:
             await self._controller.turn_on(self._telldusd_device_id)
         else:
             _LOGGER.warning(
@@ -277,7 +281,9 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
             "turn_off: uid=%s controller=%s device_id=%r",
             self._device_uid, type(self._controller).__name__, self._telldusd_device_id,
         )
-        if self._telldusd_device_id is not None:
+        if self._protocol == "luxorparts" and hasattr(self._controller, "send_raw_command"):
+            await self._send_luxorparts_raw("off")
+        elif self._telldusd_device_id is not None:
             await self._controller.turn_off(self._telldusd_device_id)
         else:
             _LOGGER.warning(
@@ -287,3 +293,45 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
         await self._async_mirror_command("turn_off")
         self._attr_is_on = False
         self.async_write_ha_state()
+
+    async def _send_luxorparts_raw(self, action: str) -> None:
+        """Send raw Luxorparts pulse data via tdSendRawCommand (Duo path).
+
+        Bypasses telldusd protocol registration entirely — sends the raw
+        OOK-PWM pulse train directly to the TellStick hardware.
+        """
+        try:
+            house_int = int(self._house) if self._house else 0
+            unit_int = int(self._unit) if self._unit else 0
+        except (TypeError, ValueError):
+            _LOGGER.warning(
+                "LX raw TX: invalid house=%r unit=%r", self._house, self._unit,
+            )
+            return
+
+        codes = LX_GROUND_TRUTH_CODES.get((house_int, unit_int))
+        if codes is None:
+            _LOGGER.warning(
+                "LX raw TX: no ground-truth code for h=%s u=%s",
+                self._house, self._unit,
+            )
+            return
+
+        code = codes.get(action)
+        if code is None:
+            _LOGGER.warning("LX raw TX: no code for action=%s", action)
+            return
+
+        # Extract variant suffix (e.g. "selflearning-switch:lx_t01" → "lx_t01")
+        variant = self._model.split(":", 1)[1] if ":" in self._model else ""
+
+        raw_cmd = luxorparts_build_raw_command(code, variant)
+        _LOGGER.info(
+            "LX raw TX: uid=%s variant=%s action=%s code=0x%x bytes=%d",
+            self._device_uid, variant, action, code, len(raw_cmd),
+        )
+        result = await self._controller.send_raw_command(raw_cmd)
+        if result != 0:
+            _LOGGER.warning("LX raw TX failed: result=%d", result)
+        else:
+            _LOGGER.info("LX raw TX success: result=%d", result)
