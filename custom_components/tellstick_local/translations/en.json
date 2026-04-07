@@ -12,6 +12,9 @@
       },
       "ef_test_native_sequence": {
         "name": "Test ALL native EF variants (sequence)"
+      },
+      "lx_test_sequence": {
+        "name": "Test ALL LX variants (sequence)"
       }
     }
   },
@@ -246,7 +249,8 @@
             "by_protocol_native_nofix": "Add by protocol (TellStick native — no unit fix)",
             "ef_test_device": "⚡ Add EF test device (all 20 variants)",
             "ef_test_raw": "⚡ Add EF test — RAW (S-only pulse variants)",
-            "ef_test_native": "⚡ Add EF test — NATIVE (firmware dict variants)"
+            "ef_test_native": "⚡ Add EF test — NATIVE (firmware dict variants)",
+            "lx_test": "🔌 Add Luxorparts test device (24 variants)"
           }
         },
         "by_brand": {
@@ -327,6 +331,14 @@
           "data": {
             "house": "House code (0–16383)",
             "unit": "Unit (1–4)"
+          }
+        },
+        "lx_test": {
+          "title": "Add Luxorparts test device",
+          "description": "Creates **{count} switch entities** + **1 sequence button** for Luxorparts 50969/50970/50972 TX testing.\n\nUses **hardcoded ground-truth codes** captured from a real remote. The house/unit must match one of the known combos: (14466,1), (14468,2), or (14268,4).\n\nVariations include: S-only vs S+protocol, repeat counts (5/10/15/20/48), and timing tolerances (±10%, ±20%).",
+          "data": {
+            "house": "House code",
+            "unit": "Unit"
           }
         }
       },

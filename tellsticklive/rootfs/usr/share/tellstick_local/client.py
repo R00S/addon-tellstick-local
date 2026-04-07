@@ -257,6 +257,42 @@ class TellStickController:
             "tdDim", [_encode_int(device_id), _encode_int(level)]
         )
 
+    async def up(self, device_id: int) -> int:
+        """Send tdUp command (blinds open/up). Returns 0 on success.
+
+        Mirrors the turn_on/turn_off pattern — one TCP connection per command.
+        Used by cover entities (hasta, brateck protocols).
+        """
+        return await self._call_int(
+            "tdUp", [_encode_int(device_id)]
+        )
+
+    async def down(self, device_id: int) -> int:
+        """Send tdDown command (blinds close/down). Returns 0 on success."""
+        return await self._call_int(
+            "tdDown", [_encode_int(device_id)]
+        )
+
+    async def stop(self, device_id: int) -> int:
+        """Send tdStop command (blinds stop). Returns 0 on success."""
+        return await self._call_int(
+            "tdStop", [_encode_int(device_id)]
+        )
+
+    async def send_raw_command(self, command: str, reserved: int = 0) -> int:
+        """Send tdSendRawCommand — transmit a raw pulse string via the hardware.
+
+        The *command* string is a TellStick firmware pulse-train encoding
+        (e.g. ``S$k$k$k…+``).  The *reserved* parameter is always 0.
+
+        This bypasses protocol registration entirely — the raw pulse string is
+        sent directly to the TellStick hardware via controller->send().
+        Used for protocols that telldusd doesn't know natively (e.g. Luxorparts).
+        """
+        return await self._call_int(
+            "tdSendRawCommand", [_encode_string(command), _encode_int(reserved)]
+        )
+
     async def ping(self) -> bool:
         """Try to get the device count to confirm the connection is alive."""
         try:
@@ -359,6 +395,20 @@ class TellStickController:
             except Exception:  # noqa: BLE001
                 continue
         return devices
+
+    async def get_device_name_model(self, device_id: int) -> tuple[str, str]:
+        """Return (name, model) for a telldusd device ID.
+
+        Used only by the app-config import path — not called during normal
+        operation so it does not affect the existing startup or command flows.
+        Returns empty strings on any error.
+        """
+        try:
+            name = await self._call_str("tdGetName", [_encode_int(device_id)]) or ""
+            model = await self._call_str("tdGetModel", [_encode_int(device_id)]) or ""
+        except Exception:  # noqa: BLE001
+            return "", ""
+        return name, model
 
     async def find_or_add_device(
         self,

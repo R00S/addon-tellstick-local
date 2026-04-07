@@ -2509,6 +2509,238 @@ def _encode_generic_command(
 
 
 # ---------------------------------------------------------------------------
+# Luxorparts / Cleverio raw pulse encoder
+#
+# Luxorparts 50969/50970/50972 433 MHz receivers use a proprietary
+# OOK-PWM protocol (NOT arctech selflearning).  The protocol was decoded
+# from a Homey se.luxorparts-1 driver and confirmed with RTL-SDR captures.
+#
+# Physical layer (OOK-PWM):
+#   - Carrier: 433.92 MHz
+#   - Bit encoding: short pulse + gap (short gap = 1, long gap = 0)
+#   - Timing:  pulse ≈ 392 µs, short gap ≈ 352 µs, long gap ≈ 1112 µs
+#   - Frame: 25 data bits followed by a long inter-packet gap ≈ 2252 µs
+#   - Repetitions: 10 for normal TX, 48 for learn/pairing
+#
+# Data format (25 bits, MSB first):
+#   Bits 24-1:  encrypted device/channel/state payload (24 bits)
+#   Bit 0:      always 0 (stop bit / frame marker)
+#
+# The 24-bit payload is encrypted with a nibble substitution cipher +
+# XOR chain (see Homey PayloadEncryption.js).  We do NOT implement the
+# cipher — instead we use the 6 known ground-truth codes captured from
+# the user's Luxorparts 50969 remote.
+# ---------------------------------------------------------------------------
+
+# TellStick firmware pulse byte resolution:
+# Each byte value × ~10 µs = real microseconds.
+# pulse ≈ 392 µs → 39 ticks, short gap ≈ 352 µs → 35 ticks,
+# long gap ≈ 1112 µs → 111 ticks, inter-packet gap ≈ 2252 µs → 225 ticks.
+
+_LX_PULSE = 39       # pulse width:  39 × 10 µs = 390 µs  (≈392)
+_LX_GAP_SHORT = 35   # short gap:    35 × 10 µs = 350 µs  (≈352)
+_LX_GAP_LONG = 111   # long gap:    111 × 10 µs = 1110 µs (≈1112)
+_LX_GAP_INTER = 225  # inter-packet: 225 × 10 µs = 2250 µs (≈2252)
+
+# Ground-truth ON/OFF codes captured from real Luxorparts 50969 remote.
+# Format: { (house, unit): {"on": hex_code, "off": hex_code} }
+# Each hex_code is a 25-bit integer (MSB first, bit 0 = 0 stop bit).
+LX_GROUND_TRUTH_CODES: dict[tuple[int, int], dict[str, int]] = {
+    (14466, 1): {"on": 0x5e14538, "off": 0x5a59738},
+    (14468, 2): {"on": 0x559dba8, "off": 0x5ccc0a8},
+    (14268, 4): {"on": 0x51b1088, "off": 0x5bd4b88},
+}
+
+
+def _luxorparts_bits_to_pulse_bytes(
+    code: int,
+    *,
+    n_bits: int = 25,
+    pulse: int = _LX_PULSE,
+    gap_short: int = _LX_GAP_SHORT,
+    gap_long: int = _LX_GAP_LONG,
+    gap_inter: int = _LX_GAP_INTER,
+) -> bytes:
+    """Convert a Luxorparts code integer to raw pulse-train bytes.
+
+    OOK-PWM encoding:
+      bit 1 → [pulse, gap_short]   (short gap = "1")
+      bit 0 → [pulse, gap_long]    (long gap = "0")
+
+    After all bits: [pulse, gap_inter] (inter-packet gap).
+
+    >>> len(_luxorparts_bits_to_pulse_bytes(0x5e14538))
+    52
+    >>> _luxorparts_bits_to_pulse_bytes(0x5e14538)[0]
+    39
+    """
+    out = bytearray()
+    for i in range(n_bits - 1, -1, -1):
+        bit = (code >> i) & 1
+        out.append(pulse)
+        out.append(gap_short if bit == 1 else gap_long)
+    # Inter-packet gap (pulse + long pause)
+    out.append(pulse)
+    out.append(gap_inter)
+    return bytes(out)
+
+
+def _luxorparts_build_packet(
+    code: int,
+    *,
+    repeats: int = 10,
+    pulse: int = _LX_PULSE,
+    gap_short: int = _LX_GAP_SHORT,
+    gap_long: int = _LX_GAP_LONG,
+    gap_inter: int = _LX_GAP_INTER,
+) -> bytes:
+    """Build a complete multi-repeat Luxorparts raw S packet.
+
+    Returns concatenated pulse bytes for *repeats* copies of the code.
+
+    >>> len(_luxorparts_build_packet(0x5e14538, repeats=1))
+    52
+    >>> len(_luxorparts_build_packet(0x5e14538, repeats=10))
+    520
+    """
+    single = _luxorparts_bits_to_pulse_bytes(
+        code, pulse=pulse, gap_short=gap_short,
+        gap_long=gap_long, gap_inter=gap_inter,
+    )
+    return single * repeats
+
+
+def _encode_luxorparts_variant(
+    house: Any, unit: Any, method_name: str, model_full: str,
+) -> dict[str, Any] | None:
+    """Build send_kwargs for a Luxorparts test variant.
+
+    Looks up the hardcoded ground-truth code for (house, unit) and ON/OFF,
+    then builds the appropriate raw S packet based on the variant suffix
+    extracted from model_full.
+
+    Returns ``None`` if no matching code exists or method is unsupported.
+    """
+    # Map method names
+    if method_name in ("turnon", "learn"):
+        code_key = "on"
+    elif method_name == "turnoff":
+        code_key = "off"
+    else:
+        return None
+
+    # Look up ground-truth code
+    try:
+        house_int = int(house)
+        unit_int = int(unit)
+    except (TypeError, ValueError):
+        return None
+
+    codes = LX_GROUND_TRUTH_CODES.get((house_int, unit_int))
+    if codes is None:
+        _LOGGER.warning(
+            "Luxorparts: no ground-truth code for house=%s unit=%s", house, unit
+        )
+        return None
+
+    code = codes[code_key]
+
+    # Extract variant suffix (e.g. "selflearning-switch:lx_t01" → "lx_t01")
+    variant = ""
+    if ":" in model_full:
+        variant = model_full.split(":", 1)[1]
+
+    # Variant dispatch — each variant tests different encoding strategies
+    # to find what the Luxorparts receiver actually accepts.
+
+    # --- Group T: Standard timing, different repeat counts ---
+    _t_repeats: dict[str, int] = {
+        "lx_t01": 10,  # House 14466 Unit 1 — standard 10 reps
+        "lx_t02": 10,  # House 14468 Unit 2 — standard 10 reps
+        "lx_t03": 10,  # House 14268 Unit 4 — standard 10 reps
+    }
+    if variant in _t_repeats:
+        raw = _luxorparts_build_packet(code, repeats=_t_repeats[variant])
+        # S-only packet — simplest path, but ZNet may drop it (no protocol key)
+        return dict(S=raw)
+
+    # --- Group TS: S + dummy protocol (satisfies ZNet handleSend) ---
+    _ts_repeats: dict[str, int] = {
+        "lx_t04": 10,  # H14466 U1, S + protocol
+        "lx_t05": 10,  # H14468 U2, S + protocol
+        "lx_t06": 10,  # H14268 U4, S + protocol
+    }
+    if variant in _ts_repeats:
+        raw = _luxorparts_build_packet(code, repeats=_ts_repeats[variant])
+        # Include dummy protocol/model to satisfy ZNet firmware's handleSend()
+        d: dict[str, Any] = OrderedDict(
+            protocol="arctech", model="selflearning",
+        )
+        d["S"] = raw
+        return d
+
+    # --- Group TR: Varying repeat counts (S-only, house 14466 unit 1) ---
+    _tr_repeats: dict[str, int] = {
+        "lx_t07": 5,
+        "lx_t08": 15,
+        "lx_t09": 20,
+        "lx_t10": 48,  # learn-mode repeat count
+    }
+    if variant in _tr_repeats:
+        raw = _luxorparts_build_packet(code, repeats=_tr_repeats[variant])
+        return dict(S=raw)
+
+    # --- Group TRS: Varying repeat counts + dummy protocol ---
+    _trs_repeats: dict[str, int] = {
+        "lx_t11": 5,
+        "lx_t12": 15,
+        "lx_t13": 20,
+        "lx_t14": 48,
+    }
+    if variant in _trs_repeats:
+        raw = _luxorparts_build_packet(code, repeats=_trs_repeats[variant])
+        d = OrderedDict(protocol="arctech", model="selflearning")
+        d["S"] = raw
+        return d
+
+    # --- Group TT: Timing variations (±10%, ±20%) on house 14466 unit 1 ---
+    # Timings are tuples: (pulse, gap_short, gap_long, gap_inter)
+    _tt_timings: dict[str, tuple[int, int, int, int]] = {
+        "lx_t15": (35, 32, 100, 203),   # -10% all
+        "lx_t16": (43, 39, 122, 248),   # +10% all
+        "lx_t17": (31, 28, 89, 180),    # -20% all
+        "lx_t18": (47, 42, 133, 255),   # +20% all (gap_inter capped at 255)
+        "lx_t19": (39, 39, 111, 225),   # pulse = gap_short (symmetric)
+        "lx_t20": (39, 35, 111, 200),   # shorter inter-packet gap
+    }
+    if variant in _tt_timings:
+        p, gs, gl, gi = _tt_timings[variant]
+        raw = _luxorparts_build_packet(
+            code, repeats=10, pulse=p, gap_short=gs, gap_long=gl, gap_inter=gi,
+        )
+        return dict(S=raw)
+
+    # --- Group TTS: Timing variations + dummy protocol ---
+    _tts_timings: dict[str, tuple[int, int, int, int]] = {
+        "lx_t21": (35, 32, 100, 203),   # -10% + protocol
+        "lx_t22": (43, 39, 122, 248),   # +10% + protocol
+        "lx_t23": (31, 28, 89, 180),    # -20% + protocol
+        "lx_t24": (47, 42, 133, 255),   # +20% + protocol (gap_inter capped at 255)
+    }
+    if variant in _tts_timings:
+        p, gs, gl, gi = _tts_timings[variant]
+        raw = _luxorparts_build_packet(
+            code, repeats=10, pulse=p, gap_short=gs, gap_long=gl, gap_inter=gi,
+        )
+        d = OrderedDict(protocol="arctech", model="selflearning")
+        d["S"] = raw
+        return d
+
+    _LOGGER.warning("Luxorparts: unknown variant %r", variant)
+    return None
+
+
+# ---------------------------------------------------------------------------
 # UDP discovery  (port of molobrakos/tellsticknet/discovery.py)
 # ---------------------------------------------------------------------------
 
@@ -2837,6 +3069,19 @@ class TellStickNetController:
                 )
                 return -1
             send_kwargs = ef_result
+        elif protocol == "luxorparts":
+            # Luxorparts test device dispatch.  Uses hardcoded ground-truth
+            # codes and the model suffix selects encoding variant.
+            lx_result = _encode_luxorparts_variant(
+                house, unit, method_name, model_full,
+            )
+            if lx_result is None:
+                _LOGGER.warning(
+                    "Net luxorparts: unsupported method=%s or no code for h=%s u=%s",
+                    method_name, house, unit,
+                )
+                return -1
+            send_kwargs = lx_result
         else:
             # No protocol-specific encoder: fall through to native firmware
             # path.  Compensates for ZNet unit+1 bug but only passes

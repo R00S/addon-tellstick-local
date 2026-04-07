@@ -279,6 +279,20 @@ class TellStickController:
             "tdStop", [_encode_int(device_id)]
         )
 
+    async def send_raw_command(self, command: str, reserved: int = 0) -> int:
+        """Send tdSendRawCommand — transmit a raw pulse string via the hardware.
+
+        The *command* string is a TellStick firmware pulse-train encoding
+        (e.g. ``S$k$k$k…+``).  The *reserved* parameter is always 0.
+
+        This bypasses protocol registration entirely — the raw pulse string is
+        sent directly to the TellStick hardware via controller->send().
+        Used for protocols that telldusd doesn't know natively (e.g. Luxorparts).
+        """
+        return await self._call_int(
+            "tdSendRawCommand", [_encode_string(command), _encode_int(reserved)]
+        )
+
     async def ping(self) -> bool:
         """Try to get the device count to confirm the connection is alive."""
         try:

@@ -28,7 +28,7 @@ DOMAIN = "tellstick_local"
 
 
 
-INTEGRATION_VERSION = "3.1.7.0"
+INTEGRATION_VERSION = "3.1.8.0"
 
 
 # Backend type stored in config entry data
@@ -852,6 +852,59 @@ EF_TEST_GROUP_UID = "ef_test"
 # Default test house/unit (can be overridden in the flow).
 EF_TEST_HOUSE = "100"
 EF_TEST_UNIT = "1"
+
+# ---------------------------------------------------------------------------
+# Luxorparts test device — hardcoded ground-truth codes
+#
+# Three remote buttons (house/unit combos) × 24 encoding variants = 72 total.
+# Variants test different repeat counts, timing tolerances, and S vs S+protocol
+# packet structures to determine what the Luxorparts 50969 receiver accepts.
+# ---------------------------------------------------------------------------
+
+_LX_TEST_VARIANTS: list[tuple[str, str, str, int]] = [
+    # --- Group T: Standard timing, 3 house/unit combos (S-only) ---
+    ("LX t01 — H14466 U1 R=10 S-only", "luxorparts", "selflearning-switch:lx_t01", 11),
+    ("LX t02 — H14468 U2 R=10 S-only", "luxorparts", "selflearning-switch:lx_t02", 11),
+    ("LX t03 — H14268 U4 R=10 S-only", "luxorparts", "selflearning-switch:lx_t03", 11),
+    # --- Group TS: Standard timing, 3 combos (S + dummy protocol) ---
+    ("LX t04 — H14466 U1 R=10 S+proto", "luxorparts", "selflearning-switch:lx_t04", 11),
+    ("LX t05 — H14468 U2 R=10 S+proto", "luxorparts", "selflearning-switch:lx_t05", 11),
+    ("LX t06 — H14268 U4 R=10 S+proto", "luxorparts", "selflearning-switch:lx_t06", 11),
+    # --- Group TR: Varying repeats on H14466 U1 (S-only) ---
+    ("LX t07 — H14466 U1 R=5 S-only", "luxorparts", "selflearning-switch:lx_t07", 11),
+    ("LX t08 — H14466 U1 R=15 S-only", "luxorparts", "selflearning-switch:lx_t08", 11),
+    ("LX t09 — H14466 U1 R=20 S-only", "luxorparts", "selflearning-switch:lx_t09", 11),
+    ("LX t10 — H14466 U1 R=48 S-only", "luxorparts", "selflearning-switch:lx_t10", 11),
+    # --- Group TRS: Varying repeats on H14466 U1 (S + dummy protocol) ---
+    ("LX t11 — H14466 U1 R=5 S+proto", "luxorparts", "selflearning-switch:lx_t11", 11),
+    ("LX t12 — H14466 U1 R=15 S+proto", "luxorparts", "selflearning-switch:lx_t12", 11),
+    ("LX t13 — H14466 U1 R=20 S+proto", "luxorparts", "selflearning-switch:lx_t13", 11),
+    ("LX t14 — H14466 U1 R=48 S+proto", "luxorparts", "selflearning-switch:lx_t14", 11),
+    # --- Group TT: Timing variations on H14466 U1 (S-only) ---
+    ("LX t15 — H14466 U1 timing -10%", "luxorparts", "selflearning-switch:lx_t15", 11),
+    ("LX t16 — H14466 U1 timing +10%", "luxorparts", "selflearning-switch:lx_t16", 11),
+    ("LX t17 — H14466 U1 timing -20%", "luxorparts", "selflearning-switch:lx_t17", 11),
+    ("LX t18 — H14466 U1 timing +20%", "luxorparts", "selflearning-switch:lx_t18", 11),
+    ("LX t19 — H14466 U1 symmetric pulse", "luxorparts", "selflearning-switch:lx_t19", 11),
+    ("LX t20 — H14466 U1 short inter-pkt", "luxorparts", "selflearning-switch:lx_t20", 11),
+    # --- Group TTS: Timing variations + dummy protocol ---
+    ("LX t21 — H14466 U1 timing -10% S+proto", "luxorparts", "selflearning-switch:lx_t21", 11),
+    ("LX t22 — H14466 U1 timing +10% S+proto", "luxorparts", "selflearning-switch:lx_t22", 11),
+    ("LX t23 — H14466 U1 timing -20% S+proto", "luxorparts", "selflearning-switch:lx_t23", 11),
+    ("LX t24 — H14466 U1 timing +20% S+proto", "luxorparts", "selflearning-switch:lx_t24", 11),
+]
+
+# Add LX test variants to the raw protocol catalog for visibility
+PROTOCOL_RAW_CATALOG.extend(_LX_TEST_VARIANTS)
+
+LX_TEST_VARIANTS: list[tuple[str, str]] = [
+    (entry[2].split(":", 1)[1], entry[0])
+    for entry in _LX_TEST_VARIANTS
+]
+LX_TEST_GROUP_UID = "lx_test"
+# Default house/unit for the first test device (most codes are for H14466 U1)
+LX_TEST_HOUSE = "14466"
+LX_TEST_UNIT = "1"
 
 PROTOCOL_NATIVE_CATALOG: list[tuple[str, str, str, int]] = list(
     PROTOCOL_MODEL_CATALOG

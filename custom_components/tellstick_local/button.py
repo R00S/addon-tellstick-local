@@ -35,6 +35,7 @@ from .const import (
     ENTRY_DEVICE_ID_MAP,
     ENTRY_MIRRORS,
     ENTRY_TELLSTICK_CONTROLLER,
+    LX_TEST_VARIANTS,
     SIGNAL_NEW_DEVICE,
 )
 
@@ -63,26 +64,30 @@ async def async_setup_entry(
 
         model = device_cfg.get(CONF_DEVICE_MODEL, "")
 
-        # EF test "sequence ALL" markers → create the appropriate sequence button
-        _EF_SEQ_MODELS: dict[str, tuple[list[tuple[str, str]], str]] = {
-            "ef_test_sequence": (EF_TEST_VARIANTS, "ef_test_sequence"),
-            "ef_test_raw_sequence": (EF_TEST_RAW_VARIANTS, "ef_test_raw_sequence"),
-            "ef_test_native_sequence": (EF_TEST_NATIVE_VARIANTS, "ef_test_native_sequence"),
+        # EF/LX test "sequence ALL" markers → create the appropriate sequence button
+        # Maps model → (variants_list, translation_key, protocol, uid_prefix)
+        _SEQ_MODELS: dict[str, tuple[list[tuple[str, str]], str, str, str]] = {
+            "ef_test_sequence": (EF_TEST_VARIANTS, "ef_test_sequence", "everflourish", "ef_test"),
+            "ef_test_raw_sequence": (EF_TEST_RAW_VARIANTS, "ef_test_raw_sequence", "everflourish", "ef_test"),
+            "ef_test_native_sequence": (EF_TEST_NATIVE_VARIANTS, "ef_test_native_sequence", "everflourish", "ef_test"),
+            "lx_test_sequence": (LX_TEST_VARIANTS, "lx_test_sequence", "luxorparts", "lx_test"),
         }
 
-        # EF test "sequence ALL" marker → create the sequence button
-        if model in _EF_SEQ_MODELS:
-            variants_list, translation_key = _EF_SEQ_MODELS[model]
+        # Sequence "ALL" marker → create the sequence button
+        if model in _SEQ_MODELS:
+            variants_list, translation_key, seq_proto, seq_prefix = _SEQ_MODELS[model]
             stored_entities.append(
                 EFTestSequenceButton(
                     entry_id=entry.entry_id,
                     device_uid=device_uid,
-                    name=device_cfg.get(CONF_DEVICE_NAME, "EF test — sequence ALL"),
+                    name=device_cfg.get(CONF_DEVICE_NAME, "Test — sequence ALL"),
                     house=device_cfg.get(CONF_DEVICE_HOUSE, "100"),
                     unit=device_cfg.get(CONF_DEVICE_UNIT, "1"),
                     group_uid=device_cfg.get("group_uid") or None,
                     variants_list=variants_list,
                     translation_key_override=translation_key,
+                    protocol=seq_proto,
+                    uid_prefix=seq_prefix,
                 )
             )
             continue
@@ -227,13 +232,17 @@ class EFTestSequenceButton(ButtonEntity):
         group_uid: str | None = None,
         variants_list: list[tuple[str, str]] | None = None,
         translation_key_override: str = "ef_test_sequence",
+        protocol: str = "everflourish",
+        uid_prefix: str = "ef_test",
     ) -> None:
-        """Initialize the EF sequence button."""
+        """Initialize the EF/LX sequence button."""
         self._entry_id = entry_id
         self._device_uid = device_uid
         self._house = house
         self._unit = unit
         self._variants = variants_list or EF_TEST_VARIANTS
+        self._protocol = protocol
+        self._uid_prefix = uid_prefix
         self._attr_translation_key = translation_key_override
         self._attr_unique_id = f"{entry_id}_{device_uid}_ef_seq"
         self._running = False
@@ -283,14 +292,14 @@ class EFTestSequenceButton(ButtonEntity):
 
                 # Build the device dict for this variant
                 model = f"selflearning-switch:{variant_suffix}"
-                # Use same custom UID format as config_flow ef_test_device step
-                device_uid = f"ef_test_{variant_suffix}_{self._house}_{self._unit}"
+                # Use same custom UID format as config_flow test device step
+                device_uid = f"{self._uid_prefix}_{variant_suffix}_{self._house}_{self._unit}"
                 device_dict = device_id_map.get(device_uid)
 
                 if device_dict is None:
                     # Build one on the fly if not in the map
                     device_dict = {
-                        "protocol": "everflourish",
+                        "protocol": self._protocol,
                         "model": model,
                         "house": self._house,
                         "unit": self._unit,
