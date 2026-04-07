@@ -857,7 +857,7 @@ EF_TEST_UNIT = "1"
 # Luxorparts / Cleverio raw pulse encoder
 #
 # Luxorparts 50969/50970/50972 433 MHz receivers use a proprietary
-# OOK-PWM protocol (NOT arctech selflearning).  The protocol was decoded
+# OOK-PPM protocol (NOT arctech selflearning).  The protocol was decoded
 # from a Homey se.luxorparts-1 driver and confirmed with RTL-SDR captures.
 #
 # Physical layer (OOK-PPM — Pulse Position Modulation):

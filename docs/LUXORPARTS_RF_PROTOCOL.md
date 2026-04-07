@@ -12,7 +12,7 @@
 - The Luxorparts 50969/50970/50972 does **NOT** use the standard Nexa self-learning
   PPM protocol (`ProtocolNexa::getStringSelflearning`). That produces a 64-bit
   OOK_PPM signal which the 50969 ignores.
-- Telldus Live sends a separate **OOK_PWM 25-bit** protocol when the Luxorparts
+- Telldus Live sends a separate **OOK_PPM 25-bit** protocol when the Luxorparts
   device type is selected.
 - This protocol is not ProtocolNexa, ProtocolSilvanChip, or any other identified
   Telldus Core open-source protocol.
@@ -26,11 +26,10 @@
 | Parameter         | Value       |
 | ----------------- | ----------- |
 | Frequency         | 433.92 MHz  |
-| Modulation        | OOK PWM     |
-| Short pulse       | 392 µs      |
-| Long pulse        | 1148 µs     |
-| Short gap         | 352 µs      |
-| Long gap          | 1112 µs     |
+| Modulation        | OOK PPM     |
+| Pulse width       | 392 µs (fixed for all bits) |
+| Short gap (bit 1) | 352 µs      |
+| Long gap (bit 0)  | 1112 µs     |
 | Inter-packet gap  | 2252 µs     |
 
 ## 3. Symbol Encoding
@@ -120,7 +119,7 @@ is **unknown**. Attempts to match against:
 For sniffing/verification only:
 
 ```
--X 'n=Luxorparts,m=OOK_PWM,s=392,l=1148,r=2260,g=1132,t=302,y=0'
+-X 'n=Luxorparts,m=OOK_PPM,s=392,l=1112,r=2260,g=1132,t=302,y=0'
 ```
 
 ## 9. Open Questions
