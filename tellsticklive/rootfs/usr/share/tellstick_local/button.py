@@ -38,6 +38,7 @@ from .const import (
     LX_GROUND_TRUTH_CODES,
     LX_TEST_VARIANTS,
     SIGNAL_NEW_DEVICE,
+    luxorparts_generate_codes,
     luxorparts_learn_commands,
 )
 
@@ -218,15 +219,11 @@ class TellStickLearnButton(ButtonEntity):
     async def _send_luxorparts_learn(
         self, controller: Any, device_dict: dict[str, Any],
     ) -> None:
-        """Send a Luxorparts learn signal (ON code with 48 repeats).
+        """Send a Luxorparts learn signal (ON code with many repeats).
 
-        Uses R-prefix with P-prefix (``P\\x02 R<48> S<single_packet> +``).
-        The entire learn burst fits in a single 56-byte command.
+        Uses R-prefix with P-prefix (``P\\x02 R<n> S<single_packet> +``).
 
         See ``docs/LUXORPARTS_TIMELINE.md`` for the full regression history.
-
-        Total: 5 bursts × 10 repeats = 50 repeats.
-        Each burst TX time: ~375 ms.  Total: ~1.9 seconds.
         """
         try:
             house_int = int(device_dict.get(CONF_DEVICE_HOUSE, 0))
@@ -239,13 +236,7 @@ class TellStickLearnButton(ButtonEntity):
             )
             return
 
-        codes = LX_GROUND_TRUTH_CODES.get((house_int, unit_int))
-        if codes is None:
-            _LOGGER.warning(
-                "LX learn: no ground-truth code for h=%d u=%d",
-                house_int, unit_int,
-            )
-            return
+        codes = luxorparts_generate_codes(house_int, unit_int)
 
         code = codes["on"]
 

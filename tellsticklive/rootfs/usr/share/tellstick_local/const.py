@@ -916,33 +916,90 @@ LX_GAP_INTER_DUO = 25
 # occupies the top 25 bits; the bottom 3 bits are zero padding.
 # The encoder right-shifts by 3 to extract the correct 25 bits.
 #
-# Verified 2026-04-08 via RTL-433 capture of Telldus Live transmission
-# (off→on→learn sequence for H14268/U4).  Learn = ON code × 50 repeats.
+# Verified 2026-04-08 via RTL-433 capture of Telldus Live transmissions.
 LX_GROUND_TRUTH_CODES: dict[tuple[int, int], dict[str, int]] = {
     (14466, 1): {"on": 0x5E14538, "off": 0x5A59738},
     (14468, 2): {"on": 0x559DBA8, "off": 0x5CCC0A8},
     (14268, 4): {"on": 0x5BD4B88, "off": 0x51B1088},
+    (21900, 1): {"on": 0x340EBF8, "off": 0x39785F8},
 }
 
 
-def luxorparts_generate_codes(house: int, unit: int) -> dict[str, int]:
-    """Generate unique ON/OFF codes for a Luxorparts (house, unit) pair.
+# ---------------------------------------------------------------------------
+# Luxorparts encryption — ported from Homey ``se.luxorparts-1`` app
+#
+# Source: TheHomeyAppBackupRepositories/se.luxorparts-1  lib/PayloadEncryption.js
+# License: proprietary Homey app (encryption tables reverse-engineered from
+# the published backup).  Tables are mathematical constants (not copyrightable).
+#
+# The Luxorparts receiver firmware contains these same tables.  It decrypts
+# incoming 24-bit payloads and extracts {address, count, state, unit}.
+# This is the ONLY way to generate ON/OFF codes that the receiver can
+# distinguish — raw codes (CRC32 etc.) are treated as opaque patterns and
+# the receiver cannot derive the ON/OFF state from them.
+#
+# Payload structure (plaintext, 3 bytes = 24 bits):
+#   byte 0: address >> 8   (high byte of 16-bit address)
+#   byte 1: address & 0xFF (low byte of 16-bit address)
+#   byte 2: (count << 6) | (state << 5) | (unit & 0x1F)
+#     count: 2-bit counter (0–3), typically 1
+#     state: 1 = ON, 0 = OFF
+#     unit:  5-bit unit number (0–31)
+#
+# The encrypted 24-bit payload becomes the 25-bit RF code as:
+#   [0 (start bit)] [24-bit encrypted payload]
+# Which we store as 28-bit hex: encrypted_24 << 3
+# ---------------------------------------------------------------------------
+_LX_ENC_TABLE = (
+    (10, 0, 4, 12, 2, 14, 7, 5, 1, 15, 11, 13, 9, 6, 3, 8),
+    (2, 12, 5, 14, 7, 4, 1, 15, 11, 13, 6, 3, 8, 9, 10, 0),
+)
 
-    The Luxorparts 50969/50970/50972 receivers learn whatever 25-bit code
-    they hear during learn mode.  We don't need to match Telldus Live's
-    proprietary encoding — we just need each (house, unit) to produce a
-    unique, stable pair of codes.
+
+def _lx_encrypt_payload(payload: tuple[int, int, int]) -> int:
+    """Encrypt a 3-byte Luxorparts plaintext → 24-bit ciphertext integer.
+
+    Implements the nibble substitution + XOR chain cipher from the Homey
+    Luxorparts app (``lib/PayloadEncryption.js``).
+    """
+    table = _LX_ENC_TABLE[(payload[0] >> 5) & 1]
+    nibbles = []
+    for byte_val in payload:
+        nibbles.append((byte_val >> 4) & 0xF)
+        nibbles.append(byte_val & 0xF)
+
+    # Encrypt: start from nibble 5 (LSB), chain XOR backwards
+    enc = [0] * 6
+    enc[0] = table[nibbles[5]]
+    xor_count = 0
+    for i in range(4, 0, -1):
+        enc[4 - i + 1] = table[(nibbles[i] ^ enc[xor_count]) & 0xF]
+        xor_count += 1
+    enc[5] = nibbles[0] ^ 9
+    # Reverse — last added nibble is actually the MSB
+    enc.reverse()
+
+    return (enc[0] << 20) | (enc[1] << 16) | (enc[2] << 12) | (enc[3] << 8) | (enc[4] << 4) | enc[5]
+
+
+def luxorparts_generate_codes(house: int, unit: int) -> dict[str, int]:
+    """Generate ON/OFF codes for a Luxorparts (house, unit) pair.
+
+    Uses the Luxorparts nibble-substitution cipher (ported from the Homey
+    ``se.luxorparts-1`` app).  The receiver firmware contains the matching
+    decryption tables, so it can extract the state bit and distinguish
+    ON from OFF.
+
+    The ``house`` value (1–65535) is used directly as the 16-bit address.
+    The ``unit`` value (1–8 in the UI) is mapped to 0–7 internally.
+    The ``count`` field is set to 1 (matches Telldus Live captures).
 
     If the (house, unit) pair exists in ``LX_GROUND_TRUTH_CODES`` (captured
     from Telldus Live via RTL-433), those verified codes are returned instead.
 
-    Structure per code: ``[0101][20 variable bits][1]`` = 25 bits.
-    Returned as 28-bit hex integers (25 bits << 3) for compatibility with
-    ``luxorparts_bits_to_pulse_bytes()`` which right-shifts by 3.
+    Returns 28-bit hex integers (24-bit cipher << 3 with start bit 0).
 
-    >>> codes = luxorparts_generate_codes(1, 1)
-    >>> (codes['on'] >> 3) >> 21 == 0b0101  # preamble check
-    True
+    >>> codes = luxorparts_generate_codes(100, 1)
     >>> codes['on'] != codes['off']
     True
     """
@@ -951,23 +1008,19 @@ def luxorparts_generate_codes(house: int, unit: int) -> dict[str, int]:
     if gt is not None:
         return dict(gt)
 
-    import binascii
+    # Map UI unit (1-based) to protocol unit (0-based, 5-bit, 0–31)
+    proto_unit = max(0, unit - 1) & 0x1F
+    address = house & 0xFFFF
+    count = 1  # matches typical Telldus Live captures
 
-    preamble = 0b0101  # bits 24–21
-    suffix = 0b1       # bit 0
+    on_plain = (address >> 8, address & 0xFF, (count << 6) | (1 << 5) | proto_unit)
+    off_plain = (address >> 8, address & 0xFF, (count << 6) | (0 << 5) | proto_unit)
 
-    on_hash = binascii.crc32(f"lx:{house}:{unit}:on".encode()) & 0xFFFFF
-    off_hash = binascii.crc32(f"lx:{house}:{unit}:off".encode()) & 0xFFFFF
+    on_cipher = _lx_encrypt_payload(on_plain)
+    off_cipher = _lx_encrypt_payload(off_plain)
 
-    # Ensure ON and OFF are different (CRC32 collision is near-impossible
-    # for these inputs, but be safe)
-    if on_hash == off_hash:
-        off_hash ^= 0x55555
-
-    on_25 = (preamble << 21) | (on_hash << 1) | suffix
-    off_25 = (preamble << 21) | (off_hash << 1) | suffix
-
-    return {"on": on_25 << 3, "off": off_25 << 3}
+    # 28-bit format: cipher_24 << 3  (start bit 0 is implicit — top bit is 0)
+    return {"on": on_cipher << 3, "off": off_cipher << 3}
 
 
 def luxorparts_bits_to_pulse_bytes(
@@ -1133,14 +1186,15 @@ def luxorparts_learn_commands(
 
 
 # ---------------------------------------------------------------------------
-# Luxorparts test device — single Live-mimic entity
+# Luxorparts device flow — user-configurable house/unit
 #
-# One entity that exactly reproduces the Telldus Live signal for H14268 U4.
-# Codes verified 2026-04-08 via RTL-433 capture of Telldus Live.
+# Uses Homey encryption to generate proper ON/OFF codes that the receiver
+# firmware can decrypt.  Any house (1–65535) and unit (1–8) works.
+# Ground-truth codes (from Telldus Live) are used when available.
 # ---------------------------------------------------------------------------
 
 _LX_TEST_VARIANTS: list[tuple[str, str, str, int]] = [
-    ("LX Live — H14268 U4", "luxorparts", "selflearning-switch:lx_live", 11),
+    ("Luxorparts", "luxorparts", "selflearning-switch:lx_live", 11),
 ]
 
 # Add LX test variants to the raw protocol catalog for visibility
