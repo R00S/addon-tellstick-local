@@ -347,7 +347,8 @@ correct, the switch won't respond because it was taught Live's codes, not ours.
 | Our Duo (H14466/U1) | `{25}5E14538` | `{25}5A59738` |
 | Telldus Live | `{25}340EBF8` ⚠️ | `{25}5BD4B88` |
 
-- Live packet 2 (`5BD4B88`) matches ground truth **H14268/U4/OFF** ✅
+- Live packet 2 (`5BD4B88`) matches ground truth **H14268/U4/ON** ✅ (was incorrectly
+  labelled OFF in the ground truth — swapped in v3.1.8.14)
 - Live packet 1 (`340EBF8`) matches **NO known ground truth code** ⚠️
 - Our Duo sends H14466/U1 codes — **completely different from what Live sends**
 
@@ -387,13 +388,34 @@ the ground truth table. Either the Live entity uses an uncaptured house/unit
 combo, or it was reconfigured after ground truth was recorded. Need to identify
 the Live entity's house/unit to add the correct codes to `LX_GROUND_TRUTH_CODES`.
 
+### Ground truth correction (2026-04-08, version 3.1.8.14)
+
+Definitive RTL-433 capture of Telldus Live performing **off→on→learn** for
+house=14268, unit=4:
+
+| Sequence | Code (25 bits) | Repeats | Action |
+|----------|---------------|---------|--------|
+| 1st burst | `{25}51b1088` | 10 | **OFF** |
+| 2nd burst | `{25}5bd4b88` | 10 | **ON** |
+| 3rd burst | `{25}5bd4b88` | 50 (48+2) | **LEARN** |
+
+**Previous ground truth had ON and OFF swapped for (14268, 4).**
+Fixed: `ON = 0x5BD4B88`, `OFF = 0x51B1088`.
+
+Learn = ON code × 50 repeats (same code, many repeats).
+
+**Changes in v3.1.8.14:**
+- Swapped ON/OFF codes for (14268, 4) in `LX_GROUND_TRUTH_CODES`
+- Fixed inter-packet gap: `LX_GAP_INTER_DUO = 25` (Duo R-prefix path only).
+  Compensates for P\x02 additive pause: 25×10µs + 2×1000µs = 2250µs ≈ Live's 2248µs
+- Removed all 24 test variants. Single entity "LX Live — H14268 U4" mimics Live exactly
+- Hardcoded house=14268, unit=4 (no form, no other house/unit codes)
+
 ### Next steps (priority order)
 
-1. **Fix inter-packet gap** — reduce `LX_GAP_INTER` to 25 (compensate for P\x02)
-2. **Confirm which codes the switch is paired to** — capture the exact Live codes
-   the switch was taught with, add to ground truth
-3. **Re-learn the switch with Duo's codes** — once learn is fixed
-4. **Fix learn** — investigate why R=50 doesn't make Duo flash (secondary)
+1. **Deploy v3.1.8.14 and test** — does the switch respond to on/off?
+2. **Test learn** — does learn with 50 repeats teach the receiver?
+3. **If both work:** declare Luxorparts protocol complete for H14268/U4
 
 ---
 

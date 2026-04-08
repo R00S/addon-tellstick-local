@@ -2712,21 +2712,14 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         seq_model: str,
         step_id: str,
     ) -> SubentryFlowResult:
-        """Shared helper for Luxorparts test flows.
+        """Create the single Luxorparts Live-mimic entity.
 
-        Creates one switch entity per variant + one sequence button,
-        persists to options, reloads the integration entry, and reports
-        progress.
-
-        The house/unit values determine which ground-truth code set is
-        used — they must match one of the 3 known combos: (14466,1),
-        (14468,2), (14268,4).
+        Hardcoded to H14268/U4 — the house/unit verified by RTL-433
+        against Telldus Live.  No house/unit form.
         """
-        errors: dict[str, str] = {}
-
         if user_input is not None:
-            house = str(user_input.get("house", LX_TEST_HOUSE))
-            unit = str(user_input.get("unit", LX_TEST_UNIT))
+            house = LX_TEST_HOUSE
+            unit = LX_TEST_UNIT
 
             entry = self._get_entry()
             entry_data = self.hass.data[DOMAIN].get(entry.entry_id, {})
@@ -2735,7 +2728,6 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             )
 
             existing_devices = dict(entry.options.get(CONF_DEVICES, {}))
-            group_uid = f"{group_prefix}_{house}_{unit}"
             created = 0
 
             # --- Create one switch entity per variant ---
@@ -2761,21 +2753,6 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                     CONF_DEVICE_HOUSE: house,
                     CONF_DEVICE_UNIT: unit,
                     CONF_DEVICE_ENCODING: "",
-                    "group_uid": group_uid,
-                }
-                created += 1
-
-            # --- Create the "sequence all" marker device ---
-            seq_uid = f"lx_test_{group_prefix}_seq_{house}_{unit}"
-            if seq_uid not in existing_devices:
-                existing_devices[seq_uid] = {
-                    CONF_DEVICE_NAME: f"LX test — sequence ALL (h={house} u={unit})",
-                    CONF_DEVICE_PROTOCOL: "luxorparts",
-                    CONF_DEVICE_MODEL: seq_model,
-                    CONF_DEVICE_HOUSE: house,
-                    CONF_DEVICE_UNIT: unit,
-                    CONF_DEVICE_ENCODING: "",
-                    "group_uid": group_uid,
                 }
                 created += 1
 
@@ -2798,18 +2775,8 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
 
         return self.async_show_form(
             step_id=step_id,
-            data_schema=vol.Schema(
-                {
-                    vol.Required("house", default=int(LX_TEST_HOUSE)): vol.All(
-                        int, vol.Range(min=0, max=65535),
-                    ),
-                    vol.Required("unit", default=int(LX_TEST_UNIT)): vol.All(
-                        int, vol.Range(min=1, max=16),
-                    ),
-                }
-            ),
+            data_schema=vol.Schema({}),
             description_placeholders={"count": str(len(variants))},
-            errors=errors,
         )
 
     async def async_step_lx_test(

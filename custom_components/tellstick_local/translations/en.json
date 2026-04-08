@@ -250,7 +250,7 @@
             "ef_test_device": "⚡ Add EF test device (all 20 variants)",
             "ef_test_raw": "⚡ Add EF test — RAW (S-only pulse variants)",
             "ef_test_native": "⚡ Add EF test — NATIVE (firmware dict variants)",
-            "lx_test": "🔌 Add Luxorparts test device (24 variants)"
+            "lx_test": "🔌 Add Luxorparts Live-mimic (H14268 U4)"
           }
         },
         "by_brand": {
@@ -334,12 +334,8 @@
           }
         },
         "lx_test": {
-          "title": "Add Luxorparts test device",
-          "description": "Creates **{count} switch entities** + **1 sequence button** for Luxorparts 50969/50970/50972 TX testing.\n\nUses **hardcoded ground-truth codes** captured from a real remote. The house/unit must match one of the known combos: (14466,1), (14468,2), or (14268,4).\n\nVariations include: S-only vs S+protocol, repeat counts (5/10/15/20/48), and timing tolerances (±10%, ±20%).",
-          "data": {
-            "house": "House code",
-            "unit": "Unit"
-          }
+          "title": "Add Luxorparts Live-mimic",
+          "description": "Creates **{count} switch entity** that exactly mimics the Telldus Live signal for **H14268 U4**.\n\nUses **hardcoded ground-truth codes** verified by RTL-433 capture of Telldus Live (2026-04-08).\n\nON = 0x5BD4B88, OFF = 0x51B1088, 10 repeats, OOK-PWM."
         }
       },
       "error": {

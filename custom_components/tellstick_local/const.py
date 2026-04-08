@@ -28,7 +28,7 @@ DOMAIN = "tellstick_local"
 
 
 
-INTEGRATION_VERSION = "3.1.8.13"
+INTEGRATION_VERSION = "3.1.8.14"
 
 
 # Backend type stored in config entry data
@@ -903,15 +903,24 @@ LX_PULSE = LX_PULSE_SHORT
 # See docs/LUXORPARTS_TIMELINE.md for the full regression history.
 LX_PAUSE_MS = 2
 
-# Ground-truth ON/OFF codes captured from real Luxorparts 50969 remote.
+# Duo R-prefix path: the firmware P-prefix pause is ADDITIVE to the
+# data-level gap_inter.  Total inter-packet silence =
+#   gap_inter × 10 µs  +  LX_PAUSE_MS × 1000 µs
+# To match Telldus Live's 2248 µs:  25 × 10 + 2 × 1000 = 2250 µs.
+LX_GAP_INTER_DUO = 25
+
+# Ground-truth ON/OFF codes captured from Telldus Live (RTL-433 verified).
 # Format: { (house, unit): {"on": hex_code, "off": hex_code} }
 # Each hex_code is a 28-bit integer (MSB first).  The actual 25-bit code
 # occupies the top 25 bits; the bottom 3 bits are zero padding.
 # The encoder right-shifts by 3 to extract the correct 25 bits.
+#
+# Verified 2026-04-08 via RTL-433 capture of Telldus Live off→on→learn
+# sequence for H14268/U4.  Learn = ON code × 50 repeats.
 LX_GROUND_TRUTH_CODES: dict[tuple[int, int], dict[str, int]] = {
     (14466, 1): {"on": 0x5E14538, "off": 0x5A59738},
     (14468, 2): {"on": 0x559DBA8, "off": 0x5CCC0A8},
-    (14268, 4): {"on": 0x51B1088, "off": 0x5BD4B88},
+    (14268, 4): {"on": 0x5BD4B88, "off": 0x51B1088},
 }
 
 
@@ -993,38 +1002,10 @@ def luxorparts_build_packet(
 # The encoder derives t_pulse_long from: t_pulse + t_gap_long - t_gap_short
 # (constant-period property).
 _LX_VARIANT_PARAMS: dict[str, tuple[int, int, int, int, int]] = {
-    # Live reference: exact Telldus Live timing (verified by RTL-433)
+    # Live reference: exact Telldus Live timing (verified by RTL-433).
+    # gap_inter=LX_GAP_INTER for Net path; Duo path overrides with
+    # LX_GAP_INTER_DUO to compensate for additive P-prefix pause.
     "lx_live": (10, LX_PULSE_SHORT, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
-    # Group T: Standard timing, 3 house/unit combos
-    "lx_t01": (10, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
-    "lx_t02": (10, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
-    "lx_t03": (10, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
-    # Group TS: Same as T (S+proto distinction only matters for ZNet)
-    "lx_t04": (10, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
-    "lx_t05": (10, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
-    "lx_t06": (10, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
-    # Group TR: Varying repeat counts
-    "lx_t07": (5, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
-    "lx_t08": (15, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
-    "lx_t09": (20, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
-    "lx_t10": (48, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
-    # Group TRS: Varying repeats (same as TR for Duo)
-    "lx_t11": (5, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
-    "lx_t12": (15, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
-    "lx_t13": (20, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
-    "lx_t14": (48, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
-    # Group TT: Timing variations (scale all timings proportionally)
-    "lx_t15": (10, 35, 32, 100, 203),    # ~-10% all
-    "lx_t16": (10, 43, 39, 122, 248),    # ~+10% all
-    "lx_t17": (10, 31, 28, 89, 180),     # ~-20% all
-    "lx_t18": (10, 47, 42, 133, 255),    # ~+20% all (gap_inter capped at 255)
-    "lx_t19": (10, 50, 35, 111, 225),    # wider pulse, standard gaps
-    "lx_t20": (10, 39, 35, 111, 150),    # shorter inter-packet gap
-    # Group TTS: Timing variations (same as TT for Duo)
-    "lx_t21": (10, 35, 32, 100, 203),
-    "lx_t22": (10, 43, 39, 122, 248),
-    "lx_t23": (10, 31, 28, 89, 180),
-    "lx_t24": (10, 47, 42, 133, 255),
 }
 
 # Default parameters when variant is not found
@@ -1061,10 +1042,12 @@ def luxorparts_build_raw_command(
 
     Returns bytes ready for ``TellStickController.send_raw_command()``.
     """
-    repeats, t_p, t_gs, t_gl, gap_i = luxorparts_variant_params(variant)
+    repeats, t_p, t_gs, t_gl, _gap_i = luxorparts_variant_params(variant)
+    # Duo path: compensate for additive P-prefix pause.
+    # Total inter-packet = LX_GAP_INTER_DUO*10µs + LX_PAUSE_MS*1000µs ≈ 2250µs
     single = luxorparts_bits_to_pulse_bytes(
         code,
-        t_pulse=t_p, t_gap_short=t_gs, t_gap_long=t_gl, gap_inter=gap_i,
+        t_pulse=t_p, t_gap_short=t_gs, t_gap_long=t_gl, gap_inter=LX_GAP_INTER_DUO,
     )
     # P\x02 = 2 ms pause between repeats (no null bytes!)
     # R<n>  = firmware repeat count (raw byte value)
@@ -1088,9 +1071,10 @@ def luxorparts_learn_commands(
 
     Returns a list of bytes, each ready for ``send_raw_command()``.
     """
-    _, t_p, t_gs, t_gl, gap_i = luxorparts_variant_params(variant)
+    _, t_p, t_gs, t_gl, _gap_i = luxorparts_variant_params(variant)
+    # Duo path: compensate for additive P-prefix pause.
     single = luxorparts_bits_to_pulse_bytes(
-        code, t_pulse=t_p, t_gap_short=t_gs, t_gap_long=t_gl, gap_inter=gap_i,
+        code, t_pulse=t_p, t_gap_short=t_gs, t_gap_long=t_gl, gap_inter=LX_GAP_INTER_DUO,
     )
     commands: list[bytes] = []
     remaining = total_repeats
@@ -1103,46 +1087,14 @@ def luxorparts_learn_commands(
 
 
 # ---------------------------------------------------------------------------
-# Luxorparts test device — variant labels for UI
+# Luxorparts test device — single Live-mimic entity
 #
-# Three remote buttons (house/unit combos) × 24 encoding variants = 72 total.
-# Variants test different repeat counts, timing tolerances, and S vs S+protocol
-# packet structures to determine what the Luxorparts 50969 receiver accepts.
+# One entity that exactly reproduces the Telldus Live signal for H14268 U4.
+# Codes verified 2026-04-08 via RTL-433 capture of Telldus Live.
 # ---------------------------------------------------------------------------
 
 _LX_TEST_VARIANTS: list[tuple[str, str, str, int]] = [
-    # --- Live Reference: exact Telldus Live encoding (verified by RTL-433) ---
-    ("LX Live — Telldus Live reference", "luxorparts", "selflearning-switch:lx_live", 11),
-    # --- Group T: Standard timing, 3 house/unit combos (S-only) ---
-    ("LX t01 — H14466 U1 R=10 S-only", "luxorparts", "selflearning-switch:lx_t01", 11),
-    ("LX t02 — H14468 U2 R=10 S-only", "luxorparts", "selflearning-switch:lx_t02", 11),
-    ("LX t03 — H14268 U4 R=10 S-only", "luxorparts", "selflearning-switch:lx_t03", 11),
-    # --- Group TS: Standard timing, 3 combos (S + dummy protocol) ---
-    ("LX t04 — H14466 U1 R=10 S+proto", "luxorparts", "selflearning-switch:lx_t04", 11),
-    ("LX t05 — H14468 U2 R=10 S+proto", "luxorparts", "selflearning-switch:lx_t05", 11),
-    ("LX t06 — H14268 U4 R=10 S+proto", "luxorparts", "selflearning-switch:lx_t06", 11),
-    # --- Group TR: Varying repeats on H14466 U1 (S-only) ---
-    ("LX t07 — H14466 U1 R=5 S-only", "luxorparts", "selflearning-switch:lx_t07", 11),
-    ("LX t08 — H14466 U1 R=15 S-only", "luxorparts", "selflearning-switch:lx_t08", 11),
-    ("LX t09 — H14466 U1 R=20 S-only", "luxorparts", "selflearning-switch:lx_t09", 11),
-    ("LX t10 — H14466 U1 R=48 S-only", "luxorparts", "selflearning-switch:lx_t10", 11),
-    # --- Group TRS: Varying repeats on H14466 U1 (S + dummy protocol) ---
-    ("LX t11 — H14466 U1 R=5 S+proto", "luxorparts", "selflearning-switch:lx_t11", 11),
-    ("LX t12 — H14466 U1 R=15 S+proto", "luxorparts", "selflearning-switch:lx_t12", 11),
-    ("LX t13 — H14466 U1 R=20 S+proto", "luxorparts", "selflearning-switch:lx_t13", 11),
-    ("LX t14 — H14466 U1 R=48 S+proto", "luxorparts", "selflearning-switch:lx_t14", 11),
-    # --- Group TT: Timing variations on H14466 U1 (S-only) ---
-    ("LX t15 — H14466 U1 timing -10%", "luxorparts", "selflearning-switch:lx_t15", 11),
-    ("LX t16 — H14466 U1 timing +10%", "luxorparts", "selflearning-switch:lx_t16", 11),
-    ("LX t17 — H14466 U1 timing -20%", "luxorparts", "selflearning-switch:lx_t17", 11),
-    ("LX t18 — H14466 U1 timing +20%", "luxorparts", "selflearning-switch:lx_t18", 11),
-    ("LX t19 — H14466 U1 symmetric pulse", "luxorparts", "selflearning-switch:lx_t19", 11),
-    ("LX t20 — H14466 U1 short inter-pkt", "luxorparts", "selflearning-switch:lx_t20", 11),
-    # --- Group TTS: Timing variations + dummy protocol ---
-    ("LX t21 — H14466 U1 timing -10% S+proto", "luxorparts", "selflearning-switch:lx_t21", 11),
-    ("LX t22 — H14466 U1 timing +10% S+proto", "luxorparts", "selflearning-switch:lx_t22", 11),
-    ("LX t23 — H14466 U1 timing -20% S+proto", "luxorparts", "selflearning-switch:lx_t23", 11),
-    ("LX t24 — H14466 U1 timing +20% S+proto", "luxorparts", "selflearning-switch:lx_t24", 11),
+    ("LX Live — H14268 U4", "luxorparts", "selflearning-switch:lx_live", 11),
 ]
 
 # Add LX test variants to the raw protocol catalog for visibility
@@ -1153,9 +1105,9 @@ LX_TEST_VARIANTS: list[tuple[str, str]] = [
     for entry in _LX_TEST_VARIANTS
 ]
 LX_TEST_GROUP_UID = "lx_test"
-# Default house/unit for the first test device (most codes are for H14466 U1)
-LX_TEST_HOUSE = "14466"
-LX_TEST_UNIT = "1"
+# Hardcoded to H14268/U4 — the house/unit verified by RTL-433 against Live
+LX_TEST_HOUSE = "14268"
+LX_TEST_UNIT = "4"
 
 PROTOCOL_NATIVE_CATALOG: list[tuple[str, str, str, int]] = list(
     PROTOCOL_MODEL_CATALOG

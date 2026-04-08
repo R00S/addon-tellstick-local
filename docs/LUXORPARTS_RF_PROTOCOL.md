@@ -12,7 +12,7 @@
 - The Luxorparts 50969/50970/50972 does **NOT** use the standard Nexa self-learning
   PPM protocol (`ProtocolNexa::getStringSelflearning`). That produces a 64-bit
   OOK_PPM signal which the 50969 ignores.
-- Telldus Live sends a separate **OOK_PPM 25-bit** protocol when the Luxorparts
+- Telldus Live sends a separate **OOK_PWM 25-bit** protocol when the Luxorparts
   device type is selected.
 - This protocol is not ProtocolNexa, ProtocolSilvanChip, or any other identified
   Telldus Core open-source protocol.
@@ -79,8 +79,8 @@ All codes confirmed via RTL-SDR capture with matching Telldus Live house/unit se
 | 14466  | 1    | OFF     | 5a59738   | `0101 1010 0101 1001 0111 0011 1`   |
 | 14468  | 2    | ON      | 559dba8   | `0101 0101 1001 1101 1011 1010 1`   |
 | 14468  | 2    | OFF     | 5ccc0a8   | `0101 1100 1100 1100 0000 1010 1`   |
-| 14268  | 4    | ON      | 51b1088   | `0101 0001 1011 0001 0000 1000 1`   |
-| 14268  | 4    | OFF     | 5bd4b88   | `0101 1011 1101 0100 1011 1000 1`   |
+| 14268  | 4    | ON      | 5bd4b88   | `0101 1011 1101 0100 1011 1000 1`   |
+| 14268  | 4    | OFF     | 51b1088   | `0101 0001 1011 0001 0000 1000 1`   |
 
 ## 7. Bit-level Analysis
 
@@ -105,7 +105,7 @@ bits — confirming ON/OFF is not a single bit flip:
 ```
 14466/1:  1110 0001 0100 0101 0011
 14468/2:  0101 1001 1101 1011 1010
-14268/4:  0001 1011 0001 0000 1000
+14268/4:  1011 1101 0100 1011 1000
 ```
 
 ### 7.4 Encoding algorithm status

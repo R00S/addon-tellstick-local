@@ -2512,6 +2512,7 @@ def _encode_generic_command(
 # Import them for use in _encode_luxorparts_variant().
 from .const import (  # noqa: E402 — grouped with the block that uses them
     LX_GROUND_TRUTH_CODES,
+    _LX_VARIANT_PARAMS,
     luxorparts_build_packet,
 )
 
@@ -2523,11 +2524,16 @@ from .const import (  # noqa: E402 — grouped with the block that uses them
 def _encode_luxorparts_variant(
     house: Any, unit: Any, method_name: str, model_full: str,
 ) -> dict[str, Any] | None:
-    """Build send_kwargs for a Luxorparts test variant.
+    """Build send_kwargs for the Luxorparts Live-mimic entity (ZNet/Net path).
+
+    This function is for the **ZNet/Net UDP path only**.  The TellStick Duo
+    uses a completely different path: ``switch.py`` →
+    ``luxorparts_build_raw_command()`` which builds the ``P\\x02 R<n> S<data>+``
+    wire format (the only format proven to make the Duo flash — see
+    ``docs/LUXORPARTS_TIMELINE.md``).
 
     Looks up the hardcoded ground-truth code for (house, unit) and ON/OFF,
-    then builds the appropriate raw S packet based on the variant suffix
-    extracted from model_full.
+    then builds raw pulse bytes for the ZNet UDP dict.
 
     Returns ``None`` if no matching code exists or method is unsupported.
     """
@@ -2555,98 +2561,17 @@ def _encode_luxorparts_variant(
 
     code = codes[code_key]
 
-    # Extract variant suffix (e.g. "selflearning-switch:lx_t01" → "lx_t01")
+    # Extract variant suffix (e.g. "selflearning-switch:lx_live" → "lx_live")
     variant = ""
     if ":" in model_full:
         variant = model_full.split(":", 1)[1]
 
-    # Variant dispatch — each variant tests different encoding strategies
-    # to find what the Luxorparts receiver actually accepts.
-
-    # --- Group T: Standard timing, different repeat counts ---
-    _t_repeats: dict[str, int] = {
-        "lx_t01": 10,  # House 14466 Unit 1 — standard 10 reps
-        "lx_t02": 10,  # House 14468 Unit 2 — standard 10 reps
-        "lx_t03": 10,  # House 14268 Unit 4 — standard 10 reps
-    }
-    if variant in _t_repeats:
-        raw = luxorparts_build_packet(code, repeats=_t_repeats[variant])
-        # S-only packet — simplest path, but ZNet may drop it (no protocol key)
+    # Single variant: Telldus Live mimic (raw pulse bytes for ZNet UDP dict)
+    params = _LX_VARIANT_PARAMS.get(variant)
+    if params is not None:
+        repeats = params[0]
+        raw = luxorparts_build_packet(code, repeats=repeats)
         return dict(S=raw)
-
-    # --- Group TS: S + dummy protocol (satisfies ZNet handleSend) ---
-    _ts_repeats: dict[str, int] = {
-        "lx_t04": 10,  # H14466 U1, S + protocol
-        "lx_t05": 10,  # H14468 U2, S + protocol
-        "lx_t06": 10,  # H14268 U4, S + protocol
-    }
-    if variant in _ts_repeats:
-        raw = luxorparts_build_packet(code, repeats=_ts_repeats[variant])
-        # Include dummy protocol/model to satisfy ZNet firmware's handleSend()
-        d: dict[str, Any] = OrderedDict(
-            protocol="arctech", model="selflearning",
-        )
-        d["S"] = raw
-        return d
-
-    # --- Group TR: Varying repeat counts (S-only, house 14466 unit 1) ---
-    _tr_repeats: dict[str, int] = {
-        "lx_t07": 5,
-        "lx_t08": 15,
-        "lx_t09": 20,
-        "lx_t10": 48,  # learn-mode repeat count
-    }
-    if variant in _tr_repeats:
-        raw = luxorparts_build_packet(code, repeats=_tr_repeats[variant])
-        return dict(S=raw)
-
-    # --- Group TRS: Varying repeat counts + dummy protocol ---
-    _trs_repeats: dict[str, int] = {
-        "lx_t11": 5,
-        "lx_t12": 15,
-        "lx_t13": 20,
-        "lx_t14": 48,
-    }
-    if variant in _trs_repeats:
-        raw = luxorparts_build_packet(code, repeats=_trs_repeats[variant])
-        d = OrderedDict(protocol="arctech", model="selflearning")
-        d["S"] = raw
-        return d
-
-    # --- Group TT: Timing variations (±10%, ±20%) on house 14466 unit 1 ---
-    # Timings are tuples: (t_pulse, t_gap_short, t_gap_long, gap_inter)
-    _tt_timings: dict[str, tuple[int, int, int, int]] = {
-        "lx_t15": (35, 32, 100, 203),    # ~-10% all
-        "lx_t16": (43, 39, 122, 248),    # ~+10% all
-        "lx_t17": (31, 28, 89, 180),     # ~-20% all
-        "lx_t18": (47, 42, 133, 255),    # ~+20% all (gap_inter capped at 255)
-        "lx_t19": (50, 35, 111, 225),    # wider pulse, standard gaps
-        "lx_t20": (39, 35, 111, 150),    # shorter inter-packet gap
-    }
-    if variant in _tt_timings:
-        tp, tgs, tgl, gi = _tt_timings[variant]
-        raw = luxorparts_build_packet(
-            code, repeats=10, t_pulse=tp, t_gap_short=tgs,
-            t_gap_long=tgl, gap_inter=gi,
-        )
-        return dict(S=raw)
-
-    # --- Group TTS: Timing variations + dummy protocol ---
-    _tts_timings: dict[str, tuple[int, int, int, int]] = {
-        "lx_t21": (35, 32, 100, 203),    # ~-10% + protocol
-        "lx_t22": (43, 39, 122, 248),    # ~+10% + protocol
-        "lx_t23": (31, 28, 89, 180),     # ~-20% + protocol
-        "lx_t24": (47, 42, 133, 255),    # ~+20% + protocol (gap_inter capped at 255)
-    }
-    if variant in _tts_timings:
-        tp, tgs, tgl, gi = _tts_timings[variant]
-        raw = luxorparts_build_packet(
-            code, repeats=10, t_pulse=tp, t_gap_short=tgs,
-            t_gap_long=tgl, gap_inter=gi,
-        )
-        d = OrderedDict(protocol="arctech", model="selflearning")
-        d["S"] = raw
-        return d
 
     _LOGGER.warning("Luxorparts: unknown variant %r", variant)
     return None
