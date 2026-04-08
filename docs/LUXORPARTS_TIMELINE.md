@@ -24,7 +24,7 @@ the `agent conversation` file at the repository root.
 | 3.1.8.9 (bb51539) | Inline S, OOK-PWM | OOK-PWM, with >>3 | ❌ NO (assumed) | User: "and how do you expect going back to multiple inline s-commands will help. Everytime we try the tellstick duo stops flashing at all." |
 | 3.1.8.10 (d80f385) | `P\x00 R<n>S<50 bytes>+` (P0+R-prefix) | OOK-PWM, with >>3 | ❌ NO | "Going backwards again: Now we are back to neither learn, nor on/off making the duo flash" |
 | 3.1.8.11 (345f697) | Inline S again | OOK-PWM, with >>3 | ❌ NO (assumed) | User: "so, if you had made that timeline properly, you would know that using inline s-commands have never even made the duo flash" |
-| 3.1.8.12 | `P\x02 R<10>S<50 bytes>+` (P2+R-prefix, 56 bytes) | OOK-PWM, with >>3 | ❓ TESTING | R-prefix (proven to flash) + P\x02 (2ms pause, no null bytes) + correct OOK-PWM encoding. First test of R-prefix + correct encoding + non-null P-prefix. |
+| 3.1.8.12 (0156f79) | `P\x02 R<10>S<50 bytes>+` (P2+R-prefix, 56 bytes) | OOK-PWM, with >>3 | ✅ YES (on/off) ❌ NO (learn) | RTL-433 confirms correct OOK-PWM. Codes match ground truth exactly: `{25}5e14538` (on), `{25}5a59738` (off). SNR 37 dB. Learn (R=50) does not flash. |
 
 ---
 
@@ -290,14 +290,50 @@ The current version (3.1.8.12) implements:
 
 Command format: `P\x02 R<10> S<50 bytes> +` = 56 bytes total.
 
-This is the **first test** of R-prefix + correct OOK-PWM encoding + non-null P-prefix.
-Previous R-prefix versions (3.1.8.4, 3.1.8.8) used wrong encoding (OOK-PPM).
+**Test results (2026-04-08):**
 
-**If the Duo flashes AND the receiver responds:** Problem solved.
-**If the Duo flashes but receiver doesn't respond:** Encoding issue — compare
-RTL-433 output to Telldus Live capture.
-**If the Duo doesn't flash:** P\x02 breaks something — fall back to R-prefix only
-(no P-prefix) and accept the 11ms default gap.
+| Test | Result | Notes |
+|------|--------|-------|
+| On/off | ✅ Duo flashes | RTL-433 confirms correct OOK-PWM encoding |
+| Learn (R=50) | ❌ Duo does NOT flash | Same 56-byte command format, only R byte differs (10 vs 50) |
+
+**RTL-433 capture analysis (on/off, mimic-live entity):**
+
+Pulse distribution:
+- Short pulse: 392 µs [392;400] (expected ~390 µs) ✅
+- Long pulse: 1156 µs [1152;1176] (expected ~1150 µs) ✅
+- Short gap: 344 µs [340;348] (expected ~350 µs) ✅
+- Long gap: 1104 µs [1100;1108] (expected ~1110 µs) ✅
+- Period: 1500 µs [1496;1520] (constant, correct for PWM) ✅
+
+Signal quality:
+- SNR: 37.2 dB / 36.0 dB — excellent
+- RSSI: -0.1 dB — near-maximum signal
+- Level estimates: high=15915, low=3 — very clean on/off keying
+
+Code verification:
+- ON code: `{25}5e14538` — matches `LX_GROUND_TRUTH_CODES[(14466,1)]["on"]` = `0x5E14538` ✅
+- OFF code: `{25}5a59738` — matches `LX_GROUND_TRUTH_CODES[(14466,1)]["off"]` = `0x5A59738` ✅
+- 10 repeats per burst ✅
+
+Inter-packet gap:
+- Measured: 4292 µs [4280;4392]
+- Expected: gap_inter (2250 µs) + P\x02 pause (2000 µs) = 4250 µs ✅
+- Telldus Live reference: ~2248 µs (no firmware P-prefix pause)
+- Our gap is ~2× Telldus Live's gap. Whether this affects receiver acceptance is unknown.
+
+**Why learn doesn't flash — hypotheses:**
+
+The learn command is `P\x02 R\x32 S<50 bytes>+` (56 bytes, R=50). Identical
+format to on/off (`P\x02 R\x0a S<50 bytes>+`, R=10). Only the R byte differs.
+- `R\x0a` (10 repeats) = Duo flashes ✅
+- `R\x32` (50 repeats) = Duo does NOT flash ❌
+
+Possible causes:
+1. R=50 may trigger a different code path or edge case in telldusd / firmware
+2. The learn button code path may not reach `send_raw_command()` at all (device
+   lookup failure, protocol check mismatch) — **check HA logs for LX learn messages**
+3. Something in the `button.py` learn handler returns early before sending
 
 ---
 

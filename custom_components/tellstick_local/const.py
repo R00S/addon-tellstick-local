@@ -28,7 +28,7 @@ DOMAIN = "tellstick_local"
 
 
 
-INTEGRATION_VERSION = "3.1.8.12"
+INTEGRATION_VERSION = "3.1.8.13"
 
 
 # Backend type stored in config entry data
