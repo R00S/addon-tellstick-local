@@ -220,13 +220,10 @@ class TellStickLearnButton(ButtonEntity):
     ) -> None:
         """Send a Luxorparts learn signal (ON code with 48 repeats).
 
-        Uses multiple sequential inline S commands.  Each burst contains
-        up to ``LX_MAX_INLINE_REPEATS`` (10) repeats of the 50-byte packet
-        inside a single ``S…+`` command (502 bytes, under the firmware's
-        512-byte buffer).
+        Uses R-prefix with P-prefix (``P\\x02 R<48> S<single_packet> +``).
+        The entire learn burst fits in a single 55-byte command.
 
-        DO NOT use firmware R-prefix — it causes the Duo to not transmit
-        at all (see ``docs/LUXORPARTS_TIMELINE.md``).
+        See ``docs/LUXORPARTS_TIMELINE.md`` for the full regression history.
 
         Total: 5 bursts × 10 repeats = 50 repeats.
         Each burst TX time: ~375 ms.  Total: ~1.9 seconds.

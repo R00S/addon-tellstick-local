@@ -24,6 +24,7 @@ the `agent conversation` file at the repository root.
 | 3.1.8.9 (bb51539) | Inline S, OOK-PWM | OOK-PWM, with >>3 | ❌ NO (assumed) | User: "and how do you expect going back to multiple inline s-commands will help. Everytime we try the tellstick duo stops flashing at all." |
 | 3.1.8.10 (d80f385) | `P\x00 R<n>S<50 bytes>+` (P0+R-prefix) | OOK-PWM, with >>3 | ❌ NO | "Going backwards again: Now we are back to neither learn, nor on/off making the duo flash" |
 | 3.1.8.11 (345f697) | Inline S again | OOK-PWM, with >>3 | ❌ NO (assumed) | User: "so, if you had made that timeline properly, you would know that using inline s-commands have never even made the duo flash" |
+| 3.1.8.12 | `P\x02 R<10>S<50 bytes>+` (P2+R-prefix, 55 bytes) | OOK-PWM, with >>3 | ❓ TESTING | R-prefix (proven to flash) + P\x02 (2ms pause, no null bytes) + correct OOK-PWM encoding. First test of R-prefix + correct encoding + non-null P-prefix. |
 
 ---
 
@@ -279,26 +280,24 @@ The P-prefix byte is `0x00` (null byte). Possible failure causes:
 
 ## What to do next
 
-1. **Start from the last known working state:** R-prefix only, no P-prefix, no inline S.
-   The command format `R<n>S<single_packet>+` is the only format confirmed to make
-   the Duo flash.
+### Version 3.1.8.12 — current approach
 
-2. **Fix the encoding to OOK-PWM** within the R-prefix format. The last R-prefix
-   version that flashed (3.1.8.8) used OOK-PPM encoding. Change to OOK-PWM while
-   keeping R-prefix.
+The current version (3.1.8.12) implements:
+- **R-prefix** (proven to make Duo flash at v3.1.8.4 and v3.1.8.8)
+- **P\x02** prefix (2ms pause — no null bytes, close to natural ~2.25ms gap)
+- **OOK-PWM encoding** (matching Telldus Live RTL-433 capture)
+- **>>3 right-shift** (correct 25-bit extraction from 28-bit hex codes)
 
-3. **Do NOT use inline S repeats** until we understand why they fail under 512 bytes.
+Command format: `P\x02 R<10> S<50 bytes> +` = 56 bytes total.
 
-4. **Do NOT use P\x00 prefix** until we understand why null bytes break transmission.
+This is the **first test** of R-prefix + correct OOK-PWM encoding + non-null P-prefix.
+Previous R-prefix versions (3.1.8.4, 3.1.8.8) used wrong encoding (OOK-PPM).
 
-5. **Accept the 11ms inter-packet gap for now.** The firmware R-prefix default is
-   11ms between repeats. Telldus Live uses ~2.25ms. This may or may not matter
-   for the receiver — test with R-prefix first, fix the gap only if the receiver
-   doesn't respond.
-
-6. **Test one change at a time.** The pattern of making multiple changes per deploy
-   (encoding + format + timing) makes it impossible to isolate which change broke
-   things.
+**If the Duo flashes AND the receiver responds:** Problem solved.
+**If the Duo flashes but receiver doesn't respond:** Encoding issue — compare
+RTL-433 output to Telldus Live capture.
+**If the Duo doesn't flash:** P\x02 breaks something — fall back to R-prefix only
+(no P-prefix) and accept the 11ms default gap.
 
 ---
 

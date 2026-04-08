@@ -28,7 +28,7 @@ DOMAIN = "tellstick_local"
 
 
 
-INTEGRATION_VERSION = "3.1.8.11"
+INTEGRATION_VERSION = "3.1.8.12"
 
 
 # Backend type stored in config entry data
@@ -897,11 +897,11 @@ LX_GAP_INTER = 225   # inter-packet: 225 × 10 µs = 2250 µs (≈2248)
 # Backward compatibility alias
 LX_PULSE = LX_PULSE_SHORT
 
-# Maximum inline repeats per S command to stay within the firmware's 512-byte
-# USART receive buffer.  50 bytes/packet × 10 repeats + 2 (S, +) = 502 bytes.
-# DO NOT use firmware R-prefix — it causes the Duo to not transmit at all.
+# Firmware pause between R-prefix repeats (in ms, raw byte value).
+# 2 ms is close to the natural inter-packet gap (~2.25 ms) and avoids
+# null bytes (0x00) which truncate the IPC chain.
 # See docs/LUXORPARTS_TIMELINE.md for the full regression history.
-LX_MAX_INLINE_REPEATS = 10
+LX_PAUSE_MS = 2
 
 # Ground-truth ON/OFF codes captured from real Luxorparts 50969 remote.
 # Format: { (house, unit): {"on": hex_code, "off": hex_code} }
@@ -1044,29 +1044,32 @@ def luxorparts_build_raw_command(
 ) -> bytes:
     """Build a complete TellStick raw command for a Luxorparts code.
 
-    Uses **inline repeats** — the pulse data for all repetitions is
-    concatenated inside a single ``S…+`` command.  The firmware's
-    ``R<n>`` prefix is intentionally NOT used because it causes the
-    TellStick Duo to not transmit at all (see ``docs/LUXORPARTS_TIMELINE.md``).
+    Uses **R-prefix** with **P-prefix** (2 ms pause, no null bytes):
+      ``P\\x02 R<n> S<single_packet> +``
+
+    The R-prefix is the ONLY command format confirmed to make the TellStick
+    Duo flash and transmit (versions 3.1.8.4 and 3.1.8.8).  Inline S repeats
+    have never worked.  ``P\\x00`` (null byte) also broke transmission.
+    ``P\\x02`` (2 ms) avoids null bytes and is close to the natural
+    inter-packet gap (~2.25 ms from Telldus Live captures).
 
     OOK-PWM encoding: 25 bits × 2 bytes = 50 bytes per packet.
-    With 10 inline repeats: ``S`` + 500 bytes + ``+`` = 502 bytes.
+    Total command: ``P`` + 1 + ``R`` + 1 + ``S`` + 50 + ``+`` = 55 bytes.
     Well within the firmware's 512-byte USART receive buffer.
 
-    Repeats are capped at ``LX_MAX_INLINE_REPEATS`` (10) to stay under 512.
-    For higher repeat counts (e.g. learn = 48), use
-    ``luxorparts_learn_commands()`` which returns multiple sequential commands.
+    See ``docs/LUXORPARTS_TIMELINE.md`` for the full regression history.
 
     Returns bytes ready for ``TellStickController.send_raw_command()``.
     """
     repeats, t_p, t_gs, t_gl, gap_i = luxorparts_variant_params(variant)
-    # Cap repeats to avoid firmware buffer overflow (50 × 10 + 2 = 502 < 512)
-    repeats = min(repeats, LX_MAX_INLINE_REPEATS)
     single = luxorparts_bits_to_pulse_bytes(
         code,
         t_pulse=t_p, t_gap_short=t_gs, t_gap_long=t_gl, gap_inter=gap_i,
     )
-    return b"S" + single * repeats + b"+"
+    # P\x02 = 2 ms pause between repeats (no null bytes!)
+    # R<n>  = firmware repeat count (raw byte value)
+    # S<data>+ = single packet pulse data
+    return bytes([ord("P"), LX_PAUSE_MS, ord("R"), repeats]) + b"S" + single + b"+"
 
 
 def luxorparts_learn_commands(
@@ -1076,9 +1079,12 @@ def luxorparts_learn_commands(
 ) -> list[bytes]:
     """Build a list of raw commands for Luxorparts learn/pairing.
 
-    Learn requires many repeats (typically 48).  Each command is capped at
-    ``LX_MAX_INLINE_REPEATS`` to fit the 512-byte firmware buffer.
-    Callers should send each command sequentially with a short delay.
+    Learn requires many repeats (typically 48).  With R-prefix the entire
+    burst fits in a single 55-byte command (well under 512-byte buffer).
+
+    The firmware repeat count byte supports values 1–255 (0 = no repeats).
+    For ``total_repeats`` ≤ 255, returns a single command.
+    For higher counts (unlikely), splits into multiple commands.
 
     Returns a list of bytes, each ready for ``send_raw_command()``.
     """
@@ -1089,8 +1095,9 @@ def luxorparts_learn_commands(
     commands: list[bytes] = []
     remaining = total_repeats
     while remaining > 0:
-        burst = min(remaining, LX_MAX_INLINE_REPEATS)
-        commands.append(b"S" + single * burst + b"+")
+        burst = min(remaining, 255)  # firmware byte: max 255
+        cmd = bytes([ord("P"), LX_PAUSE_MS, ord("R"), burst]) + b"S" + single + b"+"
+        commands.append(cmd)
         remaining -= burst
     return commands
 
