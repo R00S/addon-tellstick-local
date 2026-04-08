@@ -845,6 +845,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # Skip sensor entries — they don't register with telldusd
             if device_uid.startswith("sensor_"):
                 continue
+            # Luxorparts bypasses telldusd entirely — store a param dict
+            # (same as Net backend) so button.py / switch.py can detect it
+            # and send raw commands directly.
+            if device_cfg.get(CONF_DEVICE_PROTOCOL) == "luxorparts":
+                device_id_map[device_uid] = {
+                    CONF_DEVICE_PROTOCOL: "luxorparts",
+                    CONF_DEVICE_MODEL: device_cfg.get(CONF_DEVICE_MODEL, ""),
+                    CONF_DEVICE_HOUSE: device_cfg.get(CONF_DEVICE_HOUSE, ""),
+                    CONF_DEVICE_UNIT: device_cfg.get(CONF_DEVICE_UNIT, ""),
+                    CONF_DEVICE_ENCODING: "",
+                }
+                continue
             try:
                 # Prefer the "params" dict (new format) over house/unit (old format)
                 params = device_cfg.get("params")

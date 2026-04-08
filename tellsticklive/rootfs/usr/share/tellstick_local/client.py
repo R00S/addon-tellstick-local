@@ -257,6 +257,70 @@ class TellStickController:
             "tdDim", [_encode_int(device_id), _encode_int(level)]
         )
 
+    async def up(self, device_id: int) -> int:
+        """Send tdUp command (blinds open/up). Returns 0 on success.
+
+        Mirrors the turn_on/turn_off pattern — one TCP connection per command.
+        Used by cover entities (hasta, brateck protocols).
+        """
+        return await self._call_int(
+            "tdUp", [_encode_int(device_id)]
+        )
+
+    async def down(self, device_id: int) -> int:
+        """Send tdDown command (blinds close/down). Returns 0 on success."""
+        return await self._call_int(
+            "tdDown", [_encode_int(device_id)]
+        )
+
+    async def stop(self, device_id: int) -> int:
+        """Send tdStop command (blinds stop). Returns 0 on success."""
+        return await self._call_int(
+            "tdStop", [_encode_int(device_id)]
+        )
+
+    async def send_raw_command(self, command: bytes, reserved: int = 0) -> int:
+        """Send tdSendRawCommand — transmit raw pulse bytes via the hardware.
+
+        *command* is the raw firmware pulse-train data including the ``S``
+        prefix and ``+`` suffix (e.g. ``b"S" + pulse_bytes + b"+"``).
+
+        This bypasses protocol registration entirely — the raw pulse data is
+        sent directly to the TellStick hardware via ``controller->send()``.
+        Used for protocols that telldusd doesn't know natively (e.g. Luxorparts).
+
+        **Binary-safe:** builds the TCP message manually so that raw pulse
+        bytes > 127 are NOT corrupted by UTF-8 multi-byte encoding.
+        telldusd's ``Message::takeString()`` reads *N* raw bytes (no charset
+        conversion), so we must send each byte value as a single byte.
+        """
+        # Build the telldusd text-protocol message manually.
+        # Format: <func_string><arg1_string><arg2_int>
+        #   func:  "19:tdSendRawCommand"  (ASCII length-prefixed)
+        #   arg1:  "<len>:<raw_bytes>"    (binary, NOT UTF-8)
+        #   arg2:  "i0s"                  (ASCII int encoding)
+        func_name = "tdSendRawCommand"
+        func_part = f"{len(func_name)}:{func_name}".encode("ascii")
+        cmd_part = f"{len(command)}:".encode("ascii") + command
+        reserved_part = f"i{reserved}s".encode("ascii")
+        raw_msg = func_part + cmd_part + reserved_part
+
+        reader, writer = await asyncio.open_connection(
+            self.host, self.command_port
+        )
+        try:
+            writer.write(raw_msg)
+            await writer.drain()
+            raw_resp = await asyncio.wait_for(reader.readline(), timeout=10.0)
+            resp = raw_resp.decode("utf-8", errors="replace").rstrip("\n")
+            return _parse_int_response(resp)
+        finally:
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except Exception:  # noqa: BLE001
+                pass
+
     async def ping(self) -> bool:
         """Try to get the device count to confirm the connection is alive."""
         try:
@@ -359,6 +423,20 @@ class TellStickController:
             except Exception:  # noqa: BLE001
                 continue
         return devices
+
+    async def get_device_name_model(self, device_id: int) -> tuple[str, str]:
+        """Return (name, model) for a telldusd device ID.
+
+        Used only by the app-config import path — not called during normal
+        operation so it does not affect the existing startup or command flows.
+        Returns empty strings on any error.
+        """
+        try:
+            name = await self._call_str("tdGetName", [_encode_int(device_id)]) or ""
+            model = await self._call_str("tdGetModel", [_encode_int(device_id)]) or ""
+        except Exception:  # noqa: BLE001
+            return "", ""
+        return name, model
 
     async def find_or_add_device(
         self,

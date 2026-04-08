@@ -38,6 +38,7 @@ jobs:
       architectures: ${{ steps.information.outputs.architectures }}
       build: ${{ steps.information.outputs.build }}
       description: ${{ steps.information.outputs.description }}
+      is_stable: ${{ steps.stable.outputs.is_stable }}
       name: ${{ steps.information.outputs.name }}
       owner: ${{ steps.owner.outputs.owner }}
       slug: ${{ steps.information.outputs.slug }}
@@ -68,6 +69,23 @@ jobs:
             VERSION="${GITHUB_REF#refs/tags/v}"
           fi
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+      - name: 🔒 Determine if this is a stable release
+        id: stable
+        env:
+          IS_STABLE_INPUT: ${{ inputs.is_stable }}
+          EVENT_NAME: ${{ github.event_name }}
+          IS_PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          # Stable if: (1) is_stable input is true (from create-stable-release),
+          # OR (2) triggered by a non-prerelease GitHub release event.
+          # Test/beta/rc releases must NEVER tag :latest or update config.yaml.
+          if [[ "${IS_STABLE_INPUT}" == "true" ]]; then
+            echo "is_stable=true" >> "$GITHUB_OUTPUT"
+          elif [[ "${EVENT_NAME}" == "release" && "${IS_PRERELEASE}" != "true" ]]; then
+            echo "is_stable=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_stable=false" >> "$GITHUB_OUTPUT"
+          fi
 
   build:
     name: Build ${{ matrix.architecture }}
@@ -131,6 +149,27 @@ jobs:
             echo "::error ::Could not determine platform for architecture ${ARCHITECTURE}"
             exit 1
           fi
+      - name: 🏷 Compute Docker tags
+        id: docker_tags
+        env:
+          OWNER: ${{ needs.information.outputs.owner }}
+          SLUG: ${{ needs.information.outputs.slug }}
+          ARCH: ${{ matrix.architecture }}
+          VERSION: ${{ needs.information.outputs.version }}
+          IS_STABLE: ${{ needs.information.outputs.is_stable }}
+        run: |
+          BASE="ghcr.io/${OWNER}/${SLUG}/${ARCH}"
+          # Always tag with the version
+          TAGS="${BASE}:${VERSION}"
+          # Only tag :latest for stable releases — test/beta/rc builds must
+          # NEVER overwrite :latest or users on the stable channel will get
+          # unreleased code.
+          if [[ "${IS_STABLE}" == "true" ]]; then
+            printf -v TAGS '%s\n%s' "${TAGS}" "${BASE}:latest"
+          fi
+          echo "tags<<EOF" >> "$GITHUB_OUTPUT"
+          echo "${TAGS}" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
       - name: 🚀 Build and push
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
         with:
@@ -139,9 +178,7 @@ jobs:
           context: ${{ needs.information.outputs.target }}
           file: ${{ needs.information.outputs.target }}/Dockerfile
           platforms: ${{ steps.flags.outputs.platform }}
-          tags: |
-            ghcr.io/${{ needs.information.outputs.owner }}/${{ needs.information.outputs.slug }}/${{ matrix.architecture }}:latest
-            ghcr.io/${{ needs.information.outputs.owner }}/${{ needs.information.outputs.slug }}/${{ matrix.architecture }}:${{ needs.information.outputs.version }}
+          tags: ${{ steps.docker_tags.outputs.tags }}
           build-args: |
             BUILD_ARCH=${{ matrix.architecture }}
             BUILD_DATE=${{ steps.flags.outputs.date }}
@@ -154,11 +191,11 @@ jobs:
 
   post-build:
     name: Publish release version to repository
-    # Run for direct GitHub releases OR when called from create-stable-release.yaml
-    # (is_stable: true).  Must NOT run for test/beta/rc workflow_call builds from
-    # create-release.yaml — those carry pre-release version numbers that would
-    # corrupt main's config.yaml.
-    if: github.event_name == 'release' || inputs.is_stable == true
+    # Only run for STABLE releases.  Uses the is_stable output which checks
+    # both the workflow_call input AND the release event prerelease flag.
+    # Test/beta/rc releases must NEVER update config.yaml on main — doing so
+    # would push unreleased versions to all stable-channel users.
+    if: needs.information.outputs.is_stable == 'true'
     needs:
       - information
       - build

@@ -28,7 +28,7 @@ DOMAIN = "tellstick_local"
 
 
 
-INTEGRATION_VERSION = "3.1.7.0"
+INTEGRATION_VERSION = "3.1.9.1"
 
 
 # Backend type stored in config entry data
@@ -259,6 +259,11 @@ WIDGET_PARAMS: dict[int, list[dict]] = {
         {"name": "house", "type": "int", "default": 1, "min": 1, "max": 65535, "random": True},
         {"name": "unit", "type": "int", "default": 1, "min": 1, "max": 126},
     ],
+    # 20: Luxorparts LPD picker — house = LPD number (1-24), unit always 1
+    20: [
+        {"name": "house", "type": "int", "default": 1, "min": 1, "max": 24},
+        {"name": "unit", "type": "int", "default": 1, "min": 1, "max": 1},
+    ],
 }
 
 # ---------------------------------------------------------------------------
@@ -316,7 +321,10 @@ DEVICE_CATALOG: list[tuple[str, str, str, int]] = [
     ("KlikAanKlikUit — Self-learning on/off", "arctech", "selflearning-switch:klikaanklikuit", 8),
     # Lidl/Silvercrest 433 MHz sockets use arctech selflearning protocol
     ("Lidl (Silvercrest) — Self-learning on/off", "arctech", "selflearning-switch:silvercrest", 8),
-    # NOTE: Luxorparts/Cleverio 50969, 50970, 50972 removed — NOT WORKING (see README Known limitations)
+    # NOTE: Luxorparts/Cleverio 50969, 50970, 50972 — BETA (Duo only)
+    # Uses raw RF pulse encoding via LPD codes.  Pick LPD 1-24 to select
+    # a verified Telldus Live code pair.  Not available on Net/ZNet yet.
+    ("Luxorparts — On/off (beta, Duo only)", "luxorparts", "selflearning-switch:lx_live", 20),
     ("Nexa — Bell", "arctech", "bell:nexa", 4),
     ("Nexa — Code switch", "arctech", "codeswitch:nexa", 1),
     ("Nexa — Self-learning dimmer", "arctech", "selflearning-dimmer:nexa", 8),
@@ -852,6 +860,393 @@ EF_TEST_GROUP_UID = "ef_test"
 # Default test house/unit (can be overridden in the flow).
 EF_TEST_HOUSE = "100"
 EF_TEST_UNIT = "1"
+
+# ---------------------------------------------------------------------------
+# Luxorparts / Cleverio raw pulse encoder
+#
+# Luxorparts 50969/50970/50972 433 MHz receivers use a proprietary
+# OOK-PWM protocol (NOT arctech selflearning).  The protocol was decoded
+# from a Homey se.luxorparts-1 driver and verified against real RTL-433
+# captures of Telldus Live transmissions.
+#
+# Physical layer (OOK-PWM — Pulse Width Modulation):
+#   - Carrier: 433.92 MHz
+#   - Bit encoding (verified by RTL-433 capture of Telldus Live):
+#       bit 1: SHORT pulse ≈ 392 µs + LONG gap ≈ 1108 µs  (total ≈ 1500 µs)
+#       bit 0: LONG pulse  ≈ 1148 µs + SHORT gap ≈ 352 µs (total ≈ 1500 µs)
+#     Constant period (~1500 µs).  Bit value is encoded in PULSE WIDTH.
+#   - Inter-packet gap: ≈ 2248 µs (replaces last data gap)
+#   - Frame: 25 data bits (25 pulse-gap pairs = 50 bytes)
+#   - Repetitions: 10 for normal TX, 48 for learn/pairing
+#
+# Data format (25 bits, MSB first):
+#   Fixed preamble (bits 0–3): always 0101
+#   Variable payload (bits 4–23): 20 bits encoding house + unit + command
+#   Fixed suffix (bit 24): always 1
+#
+# Ground-truth codes are stored as 28-bit hex integers.  The real 25-bit
+# code occupies the TOP 25 bits; the bottom 3 bits are zero padding.
+# The encoder right-shifts by 3 to extract the correct 25 bits.
+#
+# TellStick firmware pulse byte resolution:
+# Each byte value × ~10 µs = real microseconds.
+#
+# The long pulse width is derived from the constant-period property:
+#   pulse_long = pulse_short + gap_long - gap_short
+# This ensures pulse_long + gap_short = pulse_short + gap_long = period.
+# ---------------------------------------------------------------------------
+
+LX_PULSE_SHORT = 39  # short pulse:  39 × 10 µs = 390 µs  (≈392)
+LX_PULSE_LONG = 115  # long pulse:  115 × 10 µs = 1150 µs (≈1148)
+LX_GAP_SHORT = 35    # short gap:    35 × 10 µs = 350 µs  (≈352)
+LX_GAP_LONG = 111    # long gap:    111 × 10 µs = 1110 µs (≈1108)
+LX_GAP_INTER = 225   # inter-packet: 225 × 10 µs = 2250 µs (≈2248)
+
+# Backward compatibility alias
+LX_PULSE = LX_PULSE_SHORT
+
+# Firmware pause between R-prefix repeats (in ms, raw byte value).
+# 2 ms is close to the natural inter-packet gap (~2.25 ms) and avoids
+# null bytes (0x00) which truncate the IPC chain.
+# See docs/LUXORPARTS_TIMELINE.md for the full regression history.
+LX_PAUSE_MS = 2
+
+# Duo R-prefix path only (not used by Net/ZNet — they use LX_GAP_INTER).
+# The firmware P-prefix pause is ADDITIVE to the data-level gap_inter.
+# Total inter-packet silence =
+#   gap_inter × 10 µs  +  LX_PAUSE_MS × 1000 µs
+# To match Telldus Live's 2248 µs:  25 × 10 + 2 × 1000 = 2250 µs.
+LX_GAP_INTER_DUO = 25
+
+# ---------------------------------------------------------------------------
+# LPD (Luxorparts Device) codes — all known ON/OFF pairs, numbered 1-24.
+#
+# All pairs are verified via RTL-433 captures of Telldus Live signals.
+# Remote-sniffed pairs (from physical remotes) have been removed because
+# they do not work reliably with TellStick hardware.
+#
+# LPD numbers are the ONLY identifier users see.  No house/unit in GUI.
+# Internally, lpd_number is stored as the house code (unit=1) so that
+# luxorparts_generate_codes(lpd, 1) returns the exact verified codes.
+#
+# Columns: (lpd_num, on_code, off_code, source_label, original_id)
+# ---------------------------------------------------------------------------
+
+LX_LPD_LIST: list[tuple[int, int, int, str, str]] = [
+    # --- Telldus Live — Labeled pairs (verified via RTL-433) ---
+    (1,  0x5E14538, 0x5A59738, "Live", "H14466/U1"),
+    (2,  0x559DBA8, 0x5CCC0A8, "Live", "H14468/U2"),
+    (3,  0x5BD4B88, 0x51B1088, "Live", "H14268/U4"),
+    (4,  0x340EBF8, 0x39785F8, "Live", "H21900/U1"),
+    (5,  0x6BD1C38, 0x6DB7638, "Live", "H166/U3"),
+    (6,  0x32128B8, 0x3E2CDB8, "Live", "H2190/U2"),
+    (7,  0x2450C38, 0x2633638, "Live", "H16634/U3"),
+    (8,  0x3757C38, 0x3B81638, "Live", "H21900/U3"),
+    (9,  0x39785D8, 0x340EBD8, "Live", "H21900/U4"),
+    (10, 0x3B81618, 0x3757C18, "Live", "H21900/U5"),
+    (11, 0x35A0BF8, 0x339A5F8, "Live", "H21901/U1"),
+    (12, 0x3034BF8, 0x3C4D5F8, "Live", "H29102/U1"),
+    (13, 0x53F5EB8, 0x5C548B8, "Live", "H12639/U5"),
+    (14, 0x57231E8, 0x5AC13E8, "Live", "H12639/U6"),
+    (15, 0x5E8E608, 0x5BBFF08, "Live", "H12639/U7"),
+    (16, 0x51DA248, 0x5467C48, "Live", "H12639/U8"),
+    (17, 0x5BBFF28, 0x5E8E628, "Live", "H12639/U9"),
+    (18, 0x5C54898, 0x53F5E98, "Live", "H12639/U10"),
+    (19, 0x5AC13C8, 0x57231C8, "Live", "H12639/U11"),
+    # --- Telldus Live — Unlabeled pairs (verified via RTL-433) ---
+    (20, 0x23CEC38, 0x292B638, "Live", "unknown"),
+    (21, 0x21A7C38, 0x25F1638, "Live", "unknown"),
+    (22, 0x206CC38, 0x289D638, "Live", "unknown"),
+    (23, 0x2709C38, 0x224A638, "Live", "unknown"),
+    (24, 0x2A86C38, 0x2FE8638, "Live", "maybe H12639/U4"),
+]
+
+# Ground-truth ON/OFF codes — keyed by (lpd_number, 1).
+# Format: { (house, unit): {"on": hex_code, "off": hex_code} }
+# Each hex_code is a 28-bit integer (MSB first).  The actual 25-bit code
+# occupies the top 25 bits; the bottom 3 bits are zero padding.
+# The encoder right-shifts by 3 to extract the correct 25 bits.
+#
+# Keyed by (lpd_number, 1) — the LPD number IS the house code.
+# Users never see house/unit; they only see "LPD 1", "LPD 2", etc.
+# luxorparts_generate_codes(lpd, 1) returns the exact verified codes.
+LX_GROUND_TRUTH_CODES: dict[tuple[int, int], dict[str, int]] = {
+    (lpd, 1): {"on": on_code, "off": off_code}
+    for lpd, on_code, off_code, _, _ in LX_LPD_LIST
+}
+
+
+# ---------------------------------------------------------------------------
+# Luxorparts encryption — ported from Homey ``se.luxorparts-1`` app
+#
+# Source: TheHomeyAppBackupRepositories/se.luxorparts-1  lib/PayloadEncryption.js
+# License: proprietary Homey app (encryption tables reverse-engineered from
+# the published backup).  Tables are mathematical constants (not copyrightable).
+#
+# ⚠️ IMPORTANT: This algorithm does NOT match Telldus Live's encryption.
+# Exhaustive testing against 13 verified RTL-433 pairs (all count values 0–3,
+# unit offsets -2 to +2, state swap, address transforms) yielded 0 matches.
+# The Homey app uses its OWN proprietary encryption that differs from Telldus
+# Live's cipher.  For known (house, unit) pairs, the ground-truth table above
+# is used instead.  For unknown pairs, this algorithm generates valid but
+# non-Live-compatible codes.  Since receivers learn ANY code during learn mode,
+# these codes still work — the receiver just can't distinguish them from codes
+# generated by Telldus Live.
+#
+# Payload structure (plaintext, 3 bytes = 24 bits):
+#   byte 0: address >> 8   (high byte of 16-bit address)
+#   byte 1: address & 0xFF (low byte of 16-bit address)
+#   byte 2: (count << 6) | (state << 5) | (unit & 0x1F)
+#     count: 2-bit counter (0–3), typically 1
+#     state: 1 = ON, 0 = OFF
+#     unit:  5-bit unit number (0–31)
+#
+# The encrypted 24-bit payload becomes the 25-bit RF code as:
+#   [0 (start bit)] [24-bit encrypted payload]
+# Which we store as 28-bit hex: encrypted_24 << 3
+# ---------------------------------------------------------------------------
+_LX_ENC_TABLE = (
+    (10, 0, 4, 12, 2, 14, 7, 5, 1, 15, 11, 13, 9, 6, 3, 8),
+    (2, 12, 5, 14, 7, 4, 1, 15, 11, 13, 6, 3, 8, 9, 10, 0),
+)
+
+
+def _lx_encrypt_payload(payload: tuple[int, int, int]) -> int:
+    """Encrypt a 3-byte Luxorparts plaintext → 24-bit ciphertext integer.
+
+    Implements the nibble substitution + XOR chain cipher from the Homey
+    Luxorparts app (``lib/PayloadEncryption.js``).
+    """
+    table = _LX_ENC_TABLE[(payload[0] >> 5) & 1]
+    nibbles = []
+    for byte_val in payload:
+        nibbles.append((byte_val >> 4) & 0xF)
+        nibbles.append(byte_val & 0xF)
+
+    # Encrypt: start from nibble 5 (LSB), chain XOR backwards
+    enc = [0] * 6
+    enc[0] = table[nibbles[5]]
+    xor_count = 0
+    for i in range(4, 0, -1):
+        enc[4 - i + 1] = table[(nibbles[i] ^ enc[xor_count]) & 0xF]
+        xor_count += 1
+    enc[5] = nibbles[0] ^ 9
+    # Reverse — last added nibble is actually the MSB
+    enc.reverse()
+
+    return (enc[0] << 20) | (enc[1] << 16) | (enc[2] << 12) | (enc[3] << 8) | (enc[4] << 4) | enc[5]
+
+
+def luxorparts_generate_codes(house: int, unit: int) -> dict[str, int]:
+    """Generate ON/OFF codes for a Luxorparts (house, unit) pair.
+
+    Uses the Luxorparts nibble-substitution cipher (ported from the Homey
+    ``se.luxorparts-1`` app).  The receiver firmware contains the matching
+    decryption tables, so it can extract the state bit and distinguish
+    ON from OFF.
+
+    The ``house`` value (1–65535) is used directly as the 16-bit address.
+    The ``unit`` value (1–8 in the UI) is mapped to 0–7 internally.
+    The ``count`` field is set to 1 (matches Telldus Live captures).
+
+    If the (house, unit) pair exists in ``LX_GROUND_TRUTH_CODES`` (captured
+    from Telldus Live via RTL-433), those verified codes are returned instead.
+
+    Returns 28-bit hex integers (24-bit cipher << 3 with start bit 0).
+
+    >>> codes = luxorparts_generate_codes(100, 1)
+    >>> codes['on'] != codes['off']
+    True
+    """
+    # Return ground-truth codes when available (verified on hardware)
+    gt = LX_GROUND_TRUTH_CODES.get((house, unit))
+    if gt is not None:
+        return dict(gt)
+
+    # Map UI unit (1-based) to protocol unit (0-based, 5-bit, 0–31)
+    proto_unit = max(0, unit - 1) & 0x1F
+    address = house & 0xFFFF
+    count = 1  # matches typical Telldus Live captures
+
+    on_plain = (address >> 8, address & 0xFF, (count << 6) | (1 << 5) | proto_unit)
+    off_plain = (address >> 8, address & 0xFF, (count << 6) | (0 << 5) | proto_unit)
+
+    on_cipher = _lx_encrypt_payload(on_plain)
+    off_cipher = _lx_encrypt_payload(off_plain)
+
+    # 28-bit format: cipher_24 << 3  (start bit 0 is implicit — top bit is 0)
+    return {"on": on_cipher << 3, "off": off_cipher << 3}
+
+
+def luxorparts_bits_to_pulse_bytes(
+    code: int,
+    *,
+    n_bits: int = 25,
+    t_pulse: int = LX_PULSE_SHORT,
+    t_gap_short: int = LX_GAP_SHORT,
+    t_gap_long: int = LX_GAP_LONG,
+    gap_inter: int = LX_GAP_INTER,
+) -> bytes:
+    """Convert a Luxorparts code integer to raw pulse-train bytes.
+
+    OOK-PWM encoding (Pulse Width Modulation, constant period):
+      bit 1 → [t_pulse, t_gap_long]        (short pulse, long gap)
+      bit 0 → [t_pulse_long, t_gap_short]  (long pulse, short gap)
+
+    ``t_pulse_long`` is derived from the constant-period property:
+      t_pulse_long = t_pulse + t_gap_long - t_gap_short
+
+    The inter-packet gap replaces the last data gap (no trailing pulse).
+    Result: 25 pulse-gap pairs = 50 bytes per packet.
+
+    Ground-truth codes are stored as 28-bit hex integers.  The real 25-bit
+    code occupies the top 25 bits; the bottom 3 bits are zero padding.
+    This function right-shifts by 3 to extract the correct 25 bits.
+
+    >>> len(luxorparts_bits_to_pulse_bytes(0x5e14538))
+    50
+    >>> luxorparts_bits_to_pulse_bytes(0x5e14538)[0]  # bit24=0 → long pulse
+    115
+    """
+    # Right-shift to extract top 25 bits from 28-bit padded hex codes
+    code = code >> 3
+    # Derive long pulse from constant-period property
+    t_pulse_long = t_pulse + t_gap_long - t_gap_short
+    out = bytearray()
+    for i in range(n_bits - 1, -1, -1):
+        bit = (code >> i) & 1
+        if bit:
+            out.append(t_pulse)        # bit 1: short pulse
+            out.append(t_gap_long)     # bit 1: long gap
+        else:
+            out.append(t_pulse_long)   # bit 0: long pulse
+            out.append(t_gap_short)    # bit 0: short gap
+    # Replace the last data gap with inter-packet gap
+    out[-1] = gap_inter
+    return bytes(out)
+
+
+def luxorparts_build_packet(
+    code: int,
+    *,
+    repeats: int = 10,
+    t_pulse: int = LX_PULSE_SHORT,
+    t_gap_short: int = LX_GAP_SHORT,
+    t_gap_long: int = LX_GAP_LONG,
+    gap_inter: int = LX_GAP_INTER,
+) -> bytes:
+    """Build a complete multi-repeat Luxorparts raw S packet.
+
+    Returns concatenated pulse bytes for *repeats* copies of the code.
+
+    >>> len(luxorparts_build_packet(0x5e14538, repeats=1))
+    50
+    >>> len(luxorparts_build_packet(0x5e14538, repeats=10))
+    500
+    """
+    single = luxorparts_bits_to_pulse_bytes(
+        code, t_pulse=t_pulse, t_gap_short=t_gap_short,
+        t_gap_long=t_gap_long, gap_inter=gap_inter,
+    )
+    return single * repeats
+
+
+# Variant → (repeats, t_pulse, t_gap_short, t_gap_long, gap_inter) mapping.
+# Used by both Duo (switch.py) and Net (net_client.py) paths.
+# The encoder derives t_pulse_long from: t_pulse + t_gap_long - t_gap_short
+# (constant-period property).
+_LX_VARIANT_PARAMS: dict[str, tuple[int, int, int, int, int]] = {
+    # Live reference: exact Telldus Live timing (verified by RTL-433).
+    # gap_inter=LX_GAP_INTER for Net path; Duo path overrides with
+    # LX_GAP_INTER_DUO to compensate for additive P-prefix pause.
+    "lx_live": (10, LX_PULSE_SHORT, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
+}
+
+# Default parameters when variant is not found
+_LX_DEFAULT_PARAMS = (10, LX_PULSE, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER)
+
+
+def luxorparts_variant_params(
+    variant: str,
+) -> tuple[int, int, int, int, int]:
+    """Return (repeats, t_pulse, t_gap_short, t_gap_long, gap_inter) for a variant."""
+    return _LX_VARIANT_PARAMS.get(variant, _LX_DEFAULT_PARAMS)
+
+
+def luxorparts_build_raw_command(
+    code: int,
+    variant: str = "",
+) -> bytes:
+    """Build a complete TellStick raw command for a Luxorparts code.
+
+    Uses **R-prefix** with **P-prefix** (2 ms pause, no null bytes):
+      ``P\\x02 R<n> S<single_packet> +``
+
+    The R-prefix is the ONLY command format confirmed to make the TellStick
+    Duo flash and transmit (versions 3.1.8.4 and 3.1.8.8).  Inline S repeats
+    have never worked.  ``P\\x00`` (null byte) also broke transmission.
+    ``P\\x02`` (2 ms) avoids null bytes and is close to the natural
+    inter-packet gap (~2.25 ms from Telldus Live captures).
+
+    OOK-PWM encoding: 25 bits × 2 bytes = 50 bytes per packet.
+    Total command: ``P`` + 1 + ``R`` + 1 + ``S`` + 50 + ``+`` = 56 bytes.
+    Well within the firmware's 512-byte USART receive buffer.
+
+    See ``docs/LUXORPARTS_TIMELINE.md`` for the full regression history.
+
+    Returns bytes ready for ``TellStickController.send_raw_command()``.
+    """
+    repeats, t_p, t_gs, t_gl, _gap_i = luxorparts_variant_params(variant)
+    # Duo path: compensate for additive P-prefix pause.
+    # Total inter-packet = LX_GAP_INTER_DUO*10µs + LX_PAUSE_MS*1000µs ≈ 2250µs
+    single = luxorparts_bits_to_pulse_bytes(
+        code,
+        t_pulse=t_p, t_gap_short=t_gs, t_gap_long=t_gl, gap_inter=LX_GAP_INTER_DUO,
+    )
+    # P\x02 = 2 ms pause between repeats (no null bytes!)
+    # R<n>  = firmware repeat count (raw byte value)
+    # S<data>+ = single packet pulse data
+    return bytes([ord("P"), LX_PAUSE_MS, ord("R"), repeats]) + b"S" + single + b"+"
+
+
+def luxorparts_learn_commands(
+    code: int,
+    total_repeats: int = 48,
+    variant: str = "",
+) -> list[bytes]:
+    """Build a list of raw commands for Luxorparts learn/pairing.
+
+    Learn requires many repeats (typically 48).  With R-prefix the entire
+    burst fits in a single 56-byte command (well under 512-byte buffer).
+
+    The firmware repeat count byte supports values 1–255 (0 = no repeats).
+    For ``total_repeats`` ≤ 255, returns a single command.
+    For higher counts (unlikely), splits into multiple commands.
+
+    Returns a list of bytes, each ready for ``send_raw_command()``.
+    """
+    _, t_p, t_gs, t_gl, _gap_i = luxorparts_variant_params(variant)
+    # Duo path: compensate for additive P-prefix pause.
+    single = luxorparts_bits_to_pulse_bytes(
+        code, t_pulse=t_p, t_gap_short=t_gs, t_gap_long=t_gl, gap_inter=LX_GAP_INTER_DUO,
+    )
+    commands: list[bytes] = []
+    remaining = total_repeats
+    while remaining > 0:
+        burst = min(remaining, 255)  # firmware byte: max 255
+        cmd = bytes([ord("P"), LX_PAUSE_MS, ord("R"), burst]) + b"S" + single + b"+"
+        commands.append(cmd)
+        remaining -= burst
+    return commands
+
+
+# ---------------------------------------------------------------------------
+# Luxorparts LPD test device — one entity per LPD code
+#
+# Each LPD pair gets its own test entity.  The LPD number is stored as
+# the house code internally; users never see it — only "LPD 1", "LPD 2",
+# etc. in the entity name.  All entities use lx_live timing parameters.
+# ---------------------------------------------------------------------------
 
 PROTOCOL_NATIVE_CATALOG: list[tuple[str, str, str, int]] = list(
     PROTOCOL_MODEL_CATALOG

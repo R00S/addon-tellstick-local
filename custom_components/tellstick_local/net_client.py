@@ -2508,6 +2508,75 @@ def _encode_generic_command(
     )
 
 
+# Luxorparts pulse encoder constants and functions are in const.py.
+# Import them for use in _encode_luxorparts_variant().
+from .const import (  # noqa: E402 — grouped with the block that uses them
+    LX_GROUND_TRUTH_CODES,
+    _LX_VARIANT_PARAMS,
+    luxorparts_build_packet,
+)
+
+# TellStick firmware pulse byte resolution:
+# Each byte value × ~10 µs = real microseconds.
+# PPM: t_pulse ≈ 390 µs → 39 ticks, t_gap_short ≈ 350 µs → 35 ticks,
+# t_gap_long ≈ 1110 µs → 111 ticks, inter-packet gap ≈ 2250 µs → 225 ticks.
+
+def _encode_luxorparts_variant(
+    house: Any, unit: Any, method_name: str, model_full: str,
+) -> dict[str, Any] | None:
+    """Build send_kwargs for the Luxorparts Live-mimic entity (ZNet/Net path).
+
+    This function is for the **ZNet/Net UDP path only**.  The TellStick Duo
+    uses a completely different path: ``switch.py`` →
+    ``luxorparts_build_raw_command()`` which builds the ``P\\x02 R<n> S<data>+``
+    wire format (the only format proven to make the Duo flash — see
+    ``docs/LUXORPARTS_TIMELINE.md``).
+
+    Looks up the hardcoded ground-truth code for (house, unit) and ON/OFF,
+    then builds raw pulse bytes for the ZNet UDP dict.
+
+    Returns ``None`` if no matching code exists or method is unsupported.
+    """
+    # Map method names
+    if method_name in ("turnon", "learn"):
+        code_key = "on"
+    elif method_name == "turnoff":
+        code_key = "off"
+    else:
+        return None
+
+    # Look up ground-truth code
+    try:
+        house_int = int(house)
+        unit_int = int(unit)
+    except (TypeError, ValueError):
+        return None
+
+    codes = LX_GROUND_TRUTH_CODES.get((house_int, unit_int))
+    if codes is None:
+        _LOGGER.warning(
+            "Luxorparts: no ground-truth code for house=%s unit=%s", house, unit
+        )
+        return None
+
+    code = codes[code_key]
+
+    # Extract variant suffix (e.g. "selflearning-switch:lx_live" → "lx_live")
+    variant = ""
+    if ":" in model_full:
+        variant = model_full.split(":", 1)[1]
+
+    # Single variant: Telldus Live mimic (raw pulse bytes for ZNet UDP dict)
+    params = _LX_VARIANT_PARAMS.get(variant)
+    if params is not None:
+        repeats = params[0]
+        raw = luxorparts_build_packet(code, repeats=repeats)
+        return dict(S=raw)
+
+    _LOGGER.warning("Luxorparts: unknown variant %r", variant)
+    return None
+
+
 # ---------------------------------------------------------------------------
 # UDP discovery  (port of molobrakos/tellsticknet/discovery.py)
 # ---------------------------------------------------------------------------
@@ -2837,6 +2906,19 @@ class TellStickNetController:
                 )
                 return -1
             send_kwargs = ef_result
+        elif protocol == "luxorparts":
+            # Luxorparts test device dispatch.  Uses hardcoded ground-truth
+            # codes and the model suffix selects encoding variant.
+            lx_result = _encode_luxorparts_variant(
+                house, unit, method_name, model_full,
+            )
+            if lx_result is None:
+                _LOGGER.warning(
+                    "Net luxorparts: unsupported method=%s or no code for h=%s u=%s",
+                    method_name, house, unit,
+                )
+                return -1
+            send_kwargs = lx_result
         else:
             # No protocol-specific encoder: fall through to native firmware
             # path.  Compensates for ZNet unit+1 bug but only passes
