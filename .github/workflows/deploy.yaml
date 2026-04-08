@@ -165,8 +165,7 @@ jobs:
           # NEVER overwrite :latest or users on the stable channel will get
           # unreleased code.
           if [[ "${IS_STABLE}" == "true" ]]; then
-            TAGS="${TAGS}
-          ${BASE}:latest"
+            printf -v TAGS '%s\n%s' "${TAGS}" "${BASE}:latest"
           fi
           echo "tags<<EOF" >> "$GITHUB_OUTPUT"
           echo "${TAGS}" >> "$GITHUB_OUTPUT"
