@@ -1,0 +1,382 @@
+Order is always off then on.
+
+2190/2
+Starting rtl_433 with rtl_433.conf...
+[rtl_433] rtl_433 version 25.02 branch  at 202502191252 inputs file rtl_tcp RTL-SDR SoapySDR with TLS
+[rtl_433] Found Rafael Micro R828D tuner
+[rtl_433] Exact sample rate is: 250000.000414 Hz
+[rtl_433] [SDR] Using device 0: Realtek, RTL2838UHIDIR, SN: 00000001, "Generic RTL2832U OEM"
+[rtl_433] [R82XX] PLL not locked!
+[rtl_433] Detected OOK package	2026-04-08T15:58:35.858963+0200
+[rtl_433] Analyzing pulses...
+[rtl_433] Total count:  250,  width: 386.18 ms		(96545 S)
+[rtl_433] Pulse width distribution:
+[rtl_433] [pulse_slicer_pwm] Analyzer Device
+[rtl_433]  [ 0] count:  150,  width:  392 us [384;412]	(  98 S)
+[rtl_433]  [ 1] count:  100,  width: 1148 us [1144;1152]	( 287 S)
+[rtl_433] codes     : {1}8, {25}3e2cdb8, {25}3e2cdb8, {25}3e2cdb8, {25}3e2cdb8, {25}3e2cdb8, {25}3e2cdb8, {25}3e2cdb8, {25}3e2cdb8, {25}3e2cdb8, {24}3e2cdb
+[rtl_433] Gap width distribution:
+[rtl_433]  [ 0] count:   10,  width: 2248 us [2248;2256]	( 562 S)
+[rtl_433]  [ 1] count:  100,  width:  352 us [348;360]	(  88 S)
+[rtl_433]  [ 2] count:  139,  width: 1108 us [1104;1128]	( 277 S)
+[rtl_433] Pulse period distribution:
+[rtl_433]  [ 0] count:   10,  width: 2652 us [2644;2668]	( 663 S)
+[rtl_433]  [ 1] count:  239,  width: 1500 us [1496;1524]	( 375 S)
+[rtl_433] Pulse timing distribution:
+[rtl_433]  [ 0] count:  250,  width:  376 us [348;412]	(  94 S)
+[rtl_433]  [ 1] count:  239,  width: 1124 us [1104;1152]	( 281 S)
+[rtl_433]  [ 2] count:   10,  width: 2248 us [2248;2256]	( 562 S)
+[rtl_433]  [ 3] count:    1,  width: 11524 us [11524;11524]	(2881 S)
+[rtl_433] Level estimates [high, low]:  15909,      4
+[rtl_433] RSSI: -0.1 dB SNR: 36.0 dB Noise: -36.1 dB
+[rtl_433] Frequency offsets [F1, F2]:   16060,      0	(+61.3 kHz, +0.0 kHz)
+[rtl_433] Guessing modulation: Pulse Width Modulation with multiple packets
+[rtl_433] view at https://triq.org/pdv/#AAB00B04010178046408C82D048255+AAB02304090178046408C82D049090818181818190909081908181909081819081819081818255+AAB02204010178046408C82D0490908181818181909090819081819090818190818190818355
+[rtl_433] Attempting demodulation... short_width: 392, long_width: 1148, reset_limit: 2260, sync_width: 0
+[rtl_433] Use a flex decoder with -X 'n=name,m=OOK_PWM,s=392,l=1148,r=2260,g=1132,t=302,y=0'
+[rtl_433] 
+[rtl_433] Detected OOK package	2026-04-08T15:58:37.810011+0200
+[rtl_433] Analyzing pulses...
+[rtl_433] Total count:  250,  width: 386.18 ms		(96544 S)
+[rtl_433] Pulse width distribution:
+[rtl_433]  [ 0] count:  100,  width:  392 us [384;412]	(  98 S)
+[rtl_433] [pulse_slicer_pwm] Analyzer Device
+[rtl_433] codes     : {1}8, {25}32128b8, {25}32128b8, {25}32128b8, {25}32128b8, {25}32128b8, {25}32128b8, {25}32128b8, {25}32128b8, {25}32128b8, {24}32128b
+[rtl_433]  [ 1] count:  150,  width: 1148 us [1144;1156]	( 287 S)
+[rtl_433] Gap width distribution:
+[rtl_433]  [ 0] count:   10,  width: 2248 us [2244;2256]	( 562 S)
+[rtl_433]  [ 1] count:  150,  width:  352 us [348;360]	(  88 S)
+[rtl_433]  [ 2] count:   89,  width: 1108 us [1104;1132]	( 277 S)
+[rtl_433] Pulse period distribution:
+[rtl_433]  [ 0] count:   10,  width: 2648 us [2644;2668]	( 662 S)
+[rtl_433]  [ 1] count:  239,  width: 1500 us [1496;1524]	( 375 S)
+[rtl_433] Pulse timing distribution:
+[rtl_433]  [ 0] count:  250,  width:  368 us [348;412]	(  92 S)
+[rtl_433]  [ 1] count:  239,  width: 1132 us [1104;1156]	( 283 S)
+[rtl_433]  [ 2] count:   10,  width: 2248 us [2244;2256]	( 562 S)
+[rtl_433]  [ 3] count:    1,  width: 11564 us [11564;11564]	(2891 S)
+[rtl_433] Level estimates [high, low]:  15873,      3
+[rtl_433] RSSI: -0.1 dB SNR: 37.2 dB Noise: -37.4 dB
+[rtl_433] Frequency offsets [F1, F2]:   16095,      0	(+61.4 kHz, +0.0 kHz)
+[rtl_433] Guessing modulation: Pulse Width Modulation with multiple packets
+[rtl_433] view at https://triq.org/pdv/#AAB00B04010170046C08C82D2C8255+AAB02304090170046C08C82D2C9090818190908190909090819090819081909090819081818255+AAB02204010170046C08C82D2C90908181909081909090908190908190819090908190818355
+[rtl_433] Attempting demodulation... short_width: 392, long_width: 1148, reset_limit: 2260, sync_width: 0
+[rtl_433] Use a flex decoder with -X 'n=name,m=OOK_PWM,s=392,l=1148,r=2260,g=1136,t=302,y=0'
+
+21900/3
+Starting rtl_433 with rtl_433.conf...
+[rtl_433] rtl_433 version 25.02 branch  at 202502191252 inputs file rtl_tcp RTL-SDR SoapySDR with TLS
+[rtl_433] Found Rafael Micro R828D tuner
+[rtl_433] Exact sample rate is: 250000.000414 Hz
+[rtl_433] [SDR] Using device 0: Realtek, RTL2838UHIDIR, SN: 00000001, "Generic RTL2832U OEM"
+[rtl_433] [R82XX] PLL not locked!
+[rtl_433] Detected OOK package	2026-04-08T16:02:52.643900+0200
+[rtl_433] Analyzing pulses...
+[rtl_433] Total count:  250,  width: 386.20 ms		(96551 S)
+[rtl_433] Pulse width distribution:
+[rtl_433]  [ 0] count:  120,  width:  392 us [384;420]	(  98 S)
+[rtl_433]  [ 1] count:  130,  width: 1148 us [1140;1156]	( 287 S)
+[rtl_433] Gap width distribution:
+[rtl_433]  [ 0] count:   10,  width: 2248 us [2244;2256]	( 562 S)
+[rtl_433]  [ 1] count:  130,  width:  352 us [344;360]	(  88 S)
+[rtl_433]  [ 2] count:  109,  width: 1112 us [1104;1128]	( 278 S)
+[rtl_433] Pulse period distribution:
+[rtl_433]  [ 0] count:   10,  width: 2652 us [2644;2668]	( 663 S)
+[rtl_433]  [ 1] count:  239,  width: 1500 us [1492;1520]	( 375 S)
+[rtl_433] Pulse timing distribution:
+[rtl_433]  [ 0] count:  250,  width:  372 us [344;420]	(  93 S)
+[rtl_433] [pulse_slicer_pwm] Analyzer Device
+[rtl_433]  [ 1] count:  239,  width: 1132 us [1104;1156]	( 283 S)
+[rtl_433] codes     : {1}8, {25}3b81638, {25}3b81638, {25}3b81638, {25}3b81638, {25}3b81638, {25}3b81638, {25}3b81638, {25}3b81638, {25}3b81638, {24}3b8163
+[rtl_433]  [ 2] count:   10,  width: 2248 us [2244;2256]	( 562 S)
+[rtl_433]  [ 3] count:    1,  width: 11564 us [11564;11564]	(2891 S)
+[rtl_433] Level estimates [high, low]:  15967,      1
+[rtl_433] RSSI: -0.1 dB SNR: 42.0 dB Noise: -42.1 dB
+[rtl_433] Frequency offsets [F1, F2]:   16565,      0	(+63.2 kHz, +0.0 kHz)
+[rtl_433] Guessing modulation: Pulse Width Modulation with multiple packets
+[rtl_433] view at https://triq.org/pdv/#AAB00B04010174046C08C82D2C8255+AAB02304090174046C08C82D2C9090818181908181819090909090908190818190909081818255+AAB02204010174046C08C82D2C90908181819081818190909090909081908181909090818355
+[rtl_433] Attempting demodulation... short_width: 392, long_width: 1148, reset_limit: 2260, sync_width: 0
+[rtl_433] Use a flex decoder with -X 'n=name,m=OOK_PWM,s=392,l=1148,r=2260,g=1132,t=302,y=0'
+[rtl_433] 
+[rtl_433] Detected OOK package	2026-04-08T16:02:54.176752+0200
+[rtl_433] [pulse_slicer_pwm] Analyzer Device
+[rtl_433] codes     : {1}8, {25}3757c38, {25}3757c38, {25}3757c38, {25}3757c38, {25}3757c38, {25}3757c38, {25}3757c38, {25}3757c38, {25}3757c38, {24}3757c3
+[rtl_433] Analyzing pulses...
+[rtl_433] Total count:  250,  width: 386.19 ms		(96547 S)
+[rtl_433] Pulse width distribution:
+[rtl_433]  [ 0] count:  150,  width:  392 us [384;412]	(  98 S)
+[rtl_433]  [ 1] count:  100,  width: 1148 us [1140;1156]	( 287 S)
+[rtl_433] Gap width distribution:
+[rtl_433]  [ 0] count:   10,  width: 2248 us [2248;2252]	( 562 S)
+[rtl_433]  [ 1] count:  100,  width:  352 us [348;360]	(  88 S)
+[rtl_433]  [ 2] count:  139,  width: 1108 us [1104;1128]	( 277 S)
+[rtl_433] Pulse period distribution:
+[rtl_433]  [ 0] count:   10,  width: 2652 us [2648;2664]	( 663 S)
+[rtl_433]  [ 1] count:  239,  width: 1500 us [1492;1520]	( 375 S)
+[rtl_433] Pulse timing distribution:
+[rtl_433]  [ 0] count:  250,  width:  376 us [348;412]	(  94 S)
+[rtl_433]  [ 1] count:  239,  width: 1124 us [1104;1156]	( 281 S)
+[rtl_433]  [ 2] count:   10,  width: 2248 us [2248;2252]	( 562 S)
+[rtl_433]  [ 3] count:    1,  width: 11564 us [11564;11564]	(2891 S)
+[rtl_433] Level estimates [high, low]:  15948,      4
+[rtl_433] RSSI: -0.1 dB SNR: 36.0 dB Noise: -36.1 dB
+[rtl_433] Frequency offsets [F1, F2]:   16415,      0	(+62.6 kHz, +0.0 kHz)
+[rtl_433] Guessing modulation: Pulse Width Modulation with multiple packets
+[rtl_433] view at https://triq.org/pdv/#AAB00B04010178046408C82D2C8255+AAB02304090178046408C82D2C9090818190818181908190819081818181819090909081818255+AAB02204010178046408C82D2C90908181908181819081908190818181818190909090818355
+[rtl_433] Attempting demodulation... short_width: 392, long_width: 1148, reset_limit: 2256, sync_width: 0
+[rtl_433] Use a flex decoder with -X 'n=name,m=OOK_PWM,s=392,l=1148,r=2256,g=1132,t=302,y=0'
+[rtl_433] 
+
+21900/4
+Starting rtl_433 with rtl_433.conf...
+[rtl_433] rtl_433 version 25.02 branch  at 202502191252 inputs file rtl_tcp RTL-SDR SoapySDR with TLS
+[rtl_433] Found Rafael Micro R828D tuner
+[rtl_433] Exact sample rate is: 250000.000414 Hz
+[rtl_433] [SDR] Using device 0: Realtek, RTL2838UHIDIR, SN: 00000001, "Generic RTL2832U OEM"
+[rtl_433] [R82XX] PLL not locked!
+[rtl_433] Detected OOK package	2026-04-08T16:04:32.739876+0200
+[rtl_433] Analyzing pulses...
+[rtl_433] Total count:  250,  width: 386.14 ms		(96534 S)
+[rtl_433] Pulse width distribution:
+[rtl_433]  [ 0] count:  130,  width:  392 us [384;412]	(  98 S)
+[rtl_433]  [ 1] count:  120,  width: 1148 us [1140;1152]	( 287 S)
+[rtl_433] [pulse_slicer_pwm] Analyzer Device
+[rtl_433] codes     : {1}8, {25}340ebd8, {25}340ebd8, {25}340ebd8, {25}340ebd8, {25}340ebd8, {25}340ebd8, {25}340ebd8, {25}340ebd8, {25}340ebd8, {24}340ebd
+[rtl_433] Gap width distribution:
+[rtl_433]  [ 0] count:   10,  width: 2248 us [2248;2252]	( 562 S)
+[rtl_433]  [ 1] count:  120,  width:  352 us [348;360]	(  88 S)
+[rtl_433]  [ 2] count:  119,  width: 1108 us [1104;1128]	( 277 S)
+[rtl_433] Pulse period distribution:
+[rtl_433]  [ 0] count:   10,  width: 2652 us [2648;2664]	( 663 S)
+[rtl_433]  [ 1] count:  239,  width: 1500 us [1496;1524]	( 375 S)
+[rtl_433] Pulse timing distribution:
+[rtl_433]  [ 0] count:  250,  width:  372 us [348;412]	(  93 S)
+[rtl_433]  [ 1] count:  239,  width: 1128 us [1104;1152]	( 282 S)
+[rtl_433]  [ 2] count:   10,  width: 2248 us [2248;2252]	( 562 S)
+[rtl_433]  [ 3] count:    1,  width: 11524 us [11524;11524]	(2881 S)
+[rtl_433] Level estimates [high, low]:  15908,      3
+[rtl_433] RSSI: -0.1 dB SNR: 37.2 dB Noise: -37.4 dB
+[rtl_433] Frequency offsets [F1, F2]:   16499,      0	(+62.9 kHz, +0.0 kHz)
+[rtl_433] Guessing modulation: Pulse Width Modulation with multiple packets
+[rtl_433] view at https://triq.org/pdv/#AAB00B04010174046808C82D048255+AAB02304090174046808C82D049090818190819090909090908181819081908181818190818255+AAB02204010174046808C82D0490908181908190909090909081818190819081818181908355
+[rtl_433] Attempting demodulation... short_width: 392, long_width: 1148, reset_limit: 2256, sync_width: 0
+[rtl_433] Use a flex decoder with -X 'n=name,m=OOK_PWM,s=392,l=1148,r=2256,g=1132,t=302,y=0'
+[rtl_433] 
+[rtl_433] Detected OOK package	2026-04-08T16:04:34.273049+0200
+[rtl_433] Analyzing pulses...
+[rtl_433] Total count:  250,  width: 386.12 ms		(96531 S)
+[rtl_433] Pulse width distribution:
+[rtl_433]  [ 0] count:  140,  width:  392 us [384;416]	(  98 S)
+[rtl_433]  [ 1] count:  110,  width: 1148 us [1144;1152]	( 287 S)
+[rtl_433] Gap width distribution:
+[rtl_433]  [ 0] count:   10,  width: 2248 us [2244;2256]	( 562 S)
+[rtl_433]  [ 1] count:  110,  width:  352 us [348;360]	(  88 S)
+[rtl_433]  [ 2] count:  129,  width: 1108 us [1104;1128]	( 277 S)
+[rtl_433] Pulse period distribution:
+[rtl_433]  [ 0] count:   10,  width: 2652 us [2648;2664]	( 663 S)
+[rtl_433]  [ 1] count:  239,  width: 1500 us [1496;1520]	( 375 S)
+[rtl_433] Pulse timing distribution:
+[rtl_433]  [ 0] count:  250,  width:  372 us [348;416]	(  93 S)
+[rtl_433]  [ 1] count:  239,  width: 1128 us [1104;1152]	( 282 S)
+[rtl_433] [pulse_slicer_pwm] Analyzer Device
+[rtl_433] codes     : {1}8, {25}39785d8, {25}39785d8, {25}39785d8, {25}39785d8, {25}39785d8, {25}39785d8, {25}39785d8, {25}39785d8, {25}39785d8, {24}39785d
+[rtl_433]  [ 2] count:   10,  width: 2248 us [2244;2256]	( 562 S)
+[rtl_433]  [ 3] count:    1,  width: 11524 us [11524;11524]	(2881 S)
+[rtl_433] Level estimates [high, low]:  15967,      1
+[rtl_433] RSSI: -0.1 dB SNR: 42.0 dB Noise: -42.1 dB
+[rtl_433] Frequency offsets [F1, F2]:   16278,      0	(+62.1 kHz, +0.0 kHz)
+[rtl_433] Guessing modulation: Pulse Width Modulation with multiple packets
+[rtl_433] view at https://triq.org/pdv/#AAB00B04010174046808C82D048255+AAB02304090174046808C82D049090818181909081908181818190909090819081818190818255+AAB02204010174046808C82D0490908181819090819081818181909090908190818181908355
+[rtl_433] Attempting demodulation... short_width: 392, long_width: 1148, reset_limit: 2260, sync_width: 0
+[rtl_433] Use a flex decoder with -X 'n=name,m=OOK_PWM,s=392,l=1148,r=2260,g=1132,t=302,y=0'
+[rtl_433] 
+
+21900/5
+Starting rtl_433 with rtl_433.conf...
+[rtl_433] rtl_433 version 25.02 branch  at 202502191252 inputs file rtl_tcp RTL-SDR SoapySDR with TLS
+[rtl_433] Found Rafael Micro R828D tuner
+[rtl_433] Exact sample rate is: 250000.000414 Hz
+[rtl_433] [SDR] Using device 0: Realtek, RTL2838UHIDIR, SN: 00000001, "Generic RTL2832U OEM"
+[rtl_433] [R82XX] PLL not locked!
+[rtl_433] Detected OOK package	2026-04-08T16:05:37.059961+0200
+[rtl_433] Analyzing pulses...
+[rtl_433] Total count:  250,  width: 386.15 ms		(96538 S)
+[rtl_433] Pulse width distribution:
+[rtl_433]  [ 0] count:  140,  width:  392 us [384;416]	(  98 S)
+[rtl_433]  [ 1] count:  110,  width: 1148 us [1140;1156]	( 287 S)
+[rtl_433] Gap width distribution:
+[rtl_433]  [ 0] count:   10,  width: 2248 us [2248;2256]	( 562 S)
+[rtl_433]  [ 1] count:  110,  width:  352 us [348;360]	(  88 S)
+[rtl_433]  [ 2] count:  129,  width: 1108 us [1104;1128]	( 277 S)
+[rtl_433] Pulse period distribution:
+[rtl_433]  [ 0] count:   10,  width: 2652 us [2648;2664]	( 663 S)
+[rtl_433]  [ 1] count:  239,  width: 1500 us [1492;1520]	( 375 S)
+[rtl_433] Pulse timing distribution:
+[rtl_433]  [ 0] count:  250,  width:  372 us [348;416]	(  93 S)
+[rtl_433]  [ 1] count:  239,  width: 1128 us [1104;1156]	( 282 S)
+[rtl_433]  [ 2] count:   10,  width: 2248 us [2248;2256]	( 562 S)
+[rtl_433] [pulse_slicer_pwm] Analyzer Device
+[rtl_433]  [ 3] count:    1,  width: 11564 us [11564;11564]	(2891 S)
+[rtl_433] codes     : {1}8, {25}3757c18, {25}3757c18, {25}3757c18, {25}3757c18, {25}3757c18, {25}3757c18, {25}3757c18, {25}3757c18, {25}3757c18, {24}3757c1
+[rtl_433] Level estimates [high, low]:  15880,      4
+[rtl_433] RSSI: -0.1 dB SNR: 36.0 dB Noise: -36.1 dB
+[rtl_433] Frequency offsets [F1, F2]:   16426,      0	(+62.7 kHz, +0.0 kHz)
+[rtl_433] Guessing modulation: Pulse Width Modulation with multiple packets
+[rtl_433] view at https://triq.org/pdv/#AAB00B04010174046808C82D2C8255+AAB02304090174046808C82D2C9090818190818181908190819081818181819090909090818255+AAB02204010174046808C82D2C90908181908181819081908190818181818190909090908355
+[rtl_433] Attempting demodulation... short_width: 392, long_width: 1148, reset_limit: 2260, sync_width: 0
+[rtl_433] Use a flex decoder with -X 'n=name,m=OOK_PWM,s=392,l=1148,r=2260,g=1132,t=302,y=0'
+[rtl_433] 
+[rtl_433] Detected OOK package	2026-04-08T16:05:38.351823+0200
+[rtl_433] Analyzing pulses...
+[rtl_433] Total count:  250,  width: 386.16 ms		(96540 S)
+[rtl_433] Pulse width distribution:
+[rtl_433]  [ 0] count:  110,  width:  392 us [384;420]	(  98 S)
+[rtl_433]  [ 1] count:  140,  width: 1148 us [1140;1160]	( 287 S)
+[rtl_433] Gap width distribution:
+[rtl_433]  [ 0] count:   10,  width: 2248 us [2248;2252]	( 562 S)
+[rtl_433] [pulse_slicer_pwm] Analyzer Device
+[rtl_433]  [ 1] count:  140,  width:  352 us [348;360]	(  88 S)
+[rtl_433]  [ 2] count:   99,  width: 1108 us [1104;1128]	( 277 S)
+[rtl_433] Pulse period distribution:
+[rtl_433] codes     : {1}8, {25}3b81618, {25}3b81618, {25}3b81618, {25}3b81618, {25}3b81618, {25}3b81618, {25}3b81618, {25}3b81618, {25}3b81618, {24}3b8161
+[rtl_433]  [ 0] count:   10,  width: 2652 us [2652;2668]	( 663 S)
+[rtl_433]  [ 1] count:  239,  width: 1500 us [1492;1516]	( 375 S)
+[rtl_433] Pulse timing distribution:
+[rtl_433]  [ 0] count:  250,  width:  368 us [348;420]	(  92 S)
+[rtl_433]  [ 1] count:  239,  width: 1132 us [1104;1160]	( 283 S)
+[rtl_433]  [ 2] count:   10,  width: 2248 us [2248;2252]	( 562 S)
+[rtl_433]  [ 3] count:    1,  width: 11604 us [11604;11604]	(2901 S)
+[rtl_433] Level estimates [high, low]:  15934,      1
+[rtl_433] RSSI: -0.1 dB SNR: 42.0 dB Noise: -42.1 dB
+[rtl_433] Frequency offsets [F1, F2]:   17297,      0	(+66.0 kHz, +0.0 kHz)
+[rtl_433] Guessing modulation: Pulse Width Modulation with multiple packets
+[rtl_433] view at https://triq.org/pdv/#AAB00B04010170046C08C82D548255+AAB02304090170046C08C82D549090818181908181819090909090908190818190909090818255+AAB02204010170046C08C82D5490908181819081818190909090909081908181909090908355
+[rtl_433] Attempting demodulation... short_width: 392, long_width: 1148, reset_limit: 2256, sync_width: 0
+[rtl_433] Use a flex decoder with -X 'n=name,m=OOK_PWM,s=392,l=1148,r=2256,g=1132,t=302,y=0'
+[rtl_433] 
+
+21901/1
+Starting rtl_433 with rtl_433.conf...
+[rtl_433] rtl_433 version 25.02 branch  at 202502191252 inputs file rtl_tcp RTL-SDR SoapySDR with TLS
+[rtl_433] Found Rafael Micro R828D tuner
+[rtl_433] Exact sample rate is: 250000.000414 Hz
+[rtl_433] [SDR] Using device 0: Realtek, RTL2838UHIDIR, SN: 00000001, "Generic RTL2832U OEM"
+[rtl_433] [R82XX] PLL not locked!
+[rtl_433] Detected OOK package	2026-04-08T16:07:07.067734+0200
+[rtl_433] Analyzing pulses...
+[rtl_433] Total count:  250,  width: 386.17 ms		(96542 S)
+[rtl_433] Pulse width distribution:
+[rtl_433]  [ 0] count:  150,  width:  392 us [384;416]	(  98 S)
+[rtl_433]  [ 1] count:  100,  width: 1148 us [1140;1156]	( 287 S)
+[rtl_433] Gap width distribution:
+[rtl_433]  [ 0] count:   10,  width: 2248 us [2248;2256]	( 562 S)
+[rtl_433]  [ 1] count:  100,  width:  352 us [348;360]	(  88 S)
+[rtl_433]  [ 2] count:  139,  width: 1108 us [1104;1128]	( 277 S)
+[rtl_433] Pulse period distribution:
+[rtl_433]  [ 0] count:   10,  width: 2652 us [2648;2664]	( 663 S)
+[rtl_433]  [ 1] count:  239,  width: 1500 us [1496;1520]	( 375 S)
+[rtl_433] Pulse timing distribution:
+[rtl_433]  [ 0] count:  250,  width:  376 us [348;416]	(  94 S)
+[rtl_433] [pulse_slicer_pwm] Analyzer Device
+[rtl_433]  [ 1] count:  239,  width: 1124 us [1104;1156]	( 281 S)
+[rtl_433] codes     : {1}8, {25}339a5f8, {25}339a5f8, {25}339a5f8, {25}339a5f8, {25}339a5f8, {25}339a5f8, {25}339a5f8, {25}339a5f8, {25}339a5f8, {24}339a5f
+[rtl_433]  [ 2] count:   10,  width: 2248 us [2248;2256]	( 562 S)
+[rtl_433]  [ 3] count:    1,  width: 11564 us [11564;11564]	(2891 S)
+[rtl_433] Level estimates [high, low]:  15978,      5
+[rtl_433] RSSI: -0.1 dB SNR: 35.0 dB Noise: -35.2 dB
+[rtl_433] Frequency offsets [F1, F2]:   17892,      0	(+68.3 kHz, +0.0 kHz)
+[rtl_433] Guessing modulation: Pulse Width Modulation with multiple packets
+[rtl_433] view at https://triq.org/pdv/#AAB00B04010178046408C82D2C8255+AAB02304090178046408C82D2C9090818190908181819090818190819090819081818181818255+AAB02204010178046408C82D2C90908181909081818190908181908190908190818181818355
+[rtl_433] Attempting demodulation... short_width: 392, long_width: 1148, reset_limit: 2260, sync_width: 0
+[rtl_433] Use a flex decoder with -X 'n=name,m=OOK_PWM,s=392,l=1148,r=2260,g=1132,t=302,y=0'
+[rtl_433] 
+[rtl_433] Detected OOK package	2026-04-08T16:07:08.437764+0200
+[rtl_433] Analyzing pulses...
+[rtl_433] Total count:  250,  width: 386.20 ms		(96551 S)
+[rtl_433] Pulse width distribution:
+[rtl_433]  [ 0] count:  140,  width:  392 us [384;412]	(  98 S)
+[rtl_433]  [ 1] count:  110,  width: 1148 us [1140;1156]	( 287 S)
+[rtl_433] [pulse_slicer_pwm] Analyzer Device
+[rtl_433] Gap width distribution:
+[rtl_433]  [ 0] count:   10,  width: 2248 us [2248;2256]	( 562 S)
+[rtl_433]  [ 1] count:  110,  width:  352 us [348;360]	(  88 S)
+[rtl_433]  [ 2] count:  129,  width: 1108 us [1104;1128]	( 277 S)
+[rtl_433] Pulse period distribution:
+[rtl_433]  [ 0] count:   10,  width: 2652 us [2652;2664]	( 663 S)
+[rtl_433]  [ 1] count:  239,  width: 1500 us [1492;1524]	( 375 S)
+[rtl_433] Pulse timing distribution:
+[rtl_433]  [ 0] count:  250,  width:  372 us [348;412]	(  93 S)
+[rtl_433]  [ 1] count:  239,  width: 1128 us [1104;1156]	( 282 S)
+[rtl_433]  [ 2] count:   10,  width: 2248 us [2248;2256]	( 562 S)
+[rtl_433]  [ 3] count:    1,  width: 11564 us [11564;11564]	(2891 S)
+[rtl_433] Level estimates [high, low]:  15986,      2
+[rtl_433] RSSI: -0.1 dB SNR: 39.0 dB Noise: -39.1 dB
+[rtl_433] Frequency offsets [F1, F2]:   16706,      0	(+63.7 kHz, +0.0 kHz)
+[rtl_433] codes     : {1}8, {25}35a0bf8, {25}35a0bf8, {25}35a0bf8, {25}35a0bf8, {25}35a0bf8, {25}35a0bf8, {25}35a0bf8, {25}35a0bf8, {25}35a0bf8, {24}35a0bf
+[rtl_433] Guessing modulation: Pulse Width Modulation with multiple packets
+[rtl_433] view at https://triq.org/pdv/#AAB00B04010174046808C82D2C8255+AAB02304090174046808C82D2C9090818190819081819081909090909081908181818181818255+AAB02204010174046808C82D2C90908181908190818190819090909090819081818181818355
+[rtl_433] Attempting demodulation... short_width: 392, long_width: 1148, reset_limit: 2260, sync_width: 0
+[rtl_433] Use a flex decoder with -X 'n=name,m=OOK_PWM,s=392,l=1148,r=2260,g=1132,t=302,y=0'
+29102/1
+Starting rtl_433 with rtl_433.conf...
+[rtl_433] rtl_433 version 25.02 branch  at 202502191252 inputs file rtl_tcp RTL-SDR SoapySDR with TLS
+[rtl_433] Found Rafael Micro R828D tuner
+[rtl_433] Exact sample rate is: 250000.000414 Hz
+[rtl_433] [SDR] Using device 0: Realtek, RTL2838UHIDIR, SN: 00000001, "Generic RTL2832U OEM"
+[rtl_433] [R82XX] PLL not locked!
+[rtl_433] Detected OOK package	2026-04-08T16:08:44.702314+0200
+[rtl_433] Analyzing pulses...
+[rtl_433] Total count:  250,  width: 386.21 ms		(96552 S)
+[rtl_433] Pulse width distribution:
+[rtl_433]  [ 0] count:  150,  width:  392 us [384;416]	(  98 S)
+[rtl_433]  [ 1] count:  100,  width: 1148 us [1140;1156]	( 287 S)
+[rtl_433] Gap width distribution:
+[rtl_433]  [ 0] count:   10,  width: 2248 us [2248;2256]	( 562 S)
+[rtl_433]  [ 1] count:  100,  width:  352 us [348;360]	(  88 S)
+[rtl_433]  [ 2] count:  139,  width: 1108 us [1104;1128]	( 277 S)
+[rtl_433] Pulse period distribution:
+[rtl_433]  [ 0] count:   10,  width: 2652 us [2648;2668]	( 663 S)
+[rtl_433]  [ 1] count:  239,  width: 1500 us [1496;1520]	( 375 S)
+[rtl_433] Pulse timing distribution:
+[rtl_433] [pulse_slicer_pwm] Analyzer Device
+[rtl_433] codes     : {1}8, {25}3c4d5f8, {25}3c4d5f8, {25}3c4d5f8, {25}3c4d5f8, {25}3c4d5f8, {25}3c4d5f8, {25}3c4d5f8, {25}3c4d5f8, {25}3c4d5f8, {24}3c4d5f
+[rtl_433]  [ 0] count:  250,  width:  376 us [348;416]	(  94 S)
+[rtl_433]  [ 1] count:  239,  width: 1124 us [1104;1156]	( 281 S)
+[rtl_433]  [ 2] count:   10,  width: 2248 us [2248;2256]	( 562 S)
+[rtl_433]  [ 3] count:    1,  width: 11564 us [11564;11564]	(2891 S)
+[rtl_433] Level estimates [high, low]:  15966,      7
+[rtl_433] RSSI: -0.1 dB SNR: 33.6 dB Noise: -33.7 dB
+[rtl_433] Frequency offsets [F1, F2]:   17181,      0	(+65.5 kHz, +0.0 kHz)
+[rtl_433] Guessing modulation: Pulse Width Modulation with multiple packets
+[rtl_433] view at https://triq.org/pdv/#AAB00B04010178046408C82D2C8255+AAB02304090178046408C82D2C9090818181819090908190908181908190819081818181818255+AAB02204010178046408C82D2C90908181818190909081909081819081908190818181818355
+[rtl_433] Attempting demodulation... short_width: 392, long_width: 1148, reset_limit: 2260, sync_width: 0
+[rtl_433] Use a flex decoder with -X 'n=name,m=OOK_PWM,s=392,l=1148,r=2260,g=1132,t=302,y=0'
+[rtl_433] 
+[rtl_433] Detected OOK package	2026-04-08T16:08:46.084856+0200
+[rtl_433] [pulse_slicer_pwm] Analyzer Device
+[rtl_433] Analyzing pulses...
+[rtl_433] codes     : {1}8, {25}3034bf8, {25}3034bf8, {25}3034bf8, {25}3034bf8, {25}3034bf8, {25}3034bf8, {25}3034bf8, {25}3034bf8, {25}3034bf8, {24}3034bf
+[rtl_433] Total count:  250,  width: 386.26 ms		(96564 S)
+[rtl_433] Pulse width distribution:
+[rtl_433]  [ 0] count:  130,  width:  392 us [384;412]	(  98 S)
+[rtl_433]  [ 1] count:  120,  width: 1148 us [1140;1156]	( 287 S)
+[rtl_433] Gap width distribution:
+[rtl_433]  [ 0] count:   10,  width: 2248 us [2244;2256]	( 562 S)
+[rtl_433]  [ 1] count:  120,  width:  352 us [348;364]	(  88 S)
+[rtl_433]  [ 2] count:  119,  width: 1112 us [1104;1128]	( 278 S)
+[rtl_433] Pulse period distribution:
+[rtl_433]  [ 0] count:   10,  width: 2652 us [2648;2664]	( 663 S)
+[rtl_433]  [ 1] count:  239,  width: 1500 us [1496;1524]	( 375 S)
+[rtl_433] Pulse timing distribution:
+[rtl_433]  [ 0] count:  250,  width:  372 us [348;412]	(  93 S)
+[rtl_433]  [ 1] count:  239,  width: 1128 us [1104;1156]	( 282 S)
+[rtl_433]  [ 2] count:   10,  width: 2248 us [2244;2256]	( 562 S)
+[rtl_433]  [ 3] count:    1,  width: 11564 us [11564;11564]	(2891 S)
+[rtl_433] Level estimates [high, low]:  15913,      3
+[rtl_433] RSSI: -0.1 dB SNR: 37.2 dB Noise: -37.4 dB
+[rtl_433] Frequency offsets [F1, F2]:   17205,      0	(+65.6 kHz, +0.0 kHz)
+[rtl_433] Guessing modulation: Pulse Width Modulation with multiple packets
+[rtl_433] view at https://triq.org/pdv/#AAB00B04010174046808C82D2C8255+AAB02304090174046808C82D2C9090818190909090909081819081909081908181818181818255+AAB02204010174046808C82D2C90908181909090909090818190819090819081818181818355
+[rtl_433] Attempting demodulation... short_width: 392, long_width: 1148, reset_limit: 2260, sync_width: 0
+[rtl_433] Use a flex decoder with -X 'n=name,m=OOK_PWM,s=392,l=1148,r=2260,g=1132,t=302,y=0'
+[rtl_433] 
