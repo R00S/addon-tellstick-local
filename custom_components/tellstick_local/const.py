@@ -1054,7 +1054,7 @@ def luxorparts_build_raw_command(
     inter-packet gap (~2.25 ms from Telldus Live captures).
 
     OOK-PWM encoding: 25 bits × 2 bytes = 50 bytes per packet.
-    Total command: ``P`` + 1 + ``R`` + 1 + ``S`` + 50 + ``+`` = 55 bytes.
+    Total command: ``P`` + 1 + ``R`` + 1 + ``S`` + 50 + ``+`` = 56 bytes.
     Well within the firmware's 512-byte USART receive buffer.
 
     See ``docs/LUXORPARTS_TIMELINE.md`` for the full regression history.
@@ -1080,7 +1080,7 @@ def luxorparts_learn_commands(
     """Build a list of raw commands for Luxorparts learn/pairing.
 
     Learn requires many repeats (typically 48).  With R-prefix the entire
-    burst fits in a single 55-byte command (well under 512-byte buffer).
+    burst fits in a single 56-byte command (well under 512-byte buffer).
 
     The firmware repeat count byte supports values 1–255 (0 = no repeats).
     For ``total_repeats`` ≤ 255, returns a single command.

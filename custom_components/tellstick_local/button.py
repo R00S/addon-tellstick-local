@@ -221,7 +221,7 @@ class TellStickLearnButton(ButtonEntity):
         """Send a Luxorparts learn signal (ON code with 48 repeats).
 
         Uses R-prefix with P-prefix (``P\\x02 R<48> S<single_packet> +``).
-        The entire learn burst fits in a single 55-byte command.
+        The entire learn burst fits in a single 56-byte command.
 
         See ``docs/LUXORPARTS_TIMELINE.md`` for the full regression history.
 

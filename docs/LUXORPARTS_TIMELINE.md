@@ -24,7 +24,7 @@ the `agent conversation` file at the repository root.
 | 3.1.8.9 (bb51539) | Inline S, OOK-PWM | OOK-PWM, with >>3 | ❌ NO (assumed) | User: "and how do you expect going back to multiple inline s-commands will help. Everytime we try the tellstick duo stops flashing at all." |
 | 3.1.8.10 (d80f385) | `P\x00 R<n>S<50 bytes>+` (P0+R-prefix) | OOK-PWM, with >>3 | ❌ NO | "Going backwards again: Now we are back to neither learn, nor on/off making the duo flash" |
 | 3.1.8.11 (345f697) | Inline S again | OOK-PWM, with >>3 | ❌ NO (assumed) | User: "so, if you had made that timeline properly, you would know that using inline s-commands have never even made the duo flash" |
-| 3.1.8.12 | `P\x02 R<10>S<50 bytes>+` (P2+R-prefix, 55 bytes) | OOK-PWM, with >>3 | ❓ TESTING | R-prefix (proven to flash) + P\x02 (2ms pause, no null bytes) + correct OOK-PWM encoding. First test of R-prefix + correct encoding + non-null P-prefix. |
+| 3.1.8.12 | `P\x02 R<10>S<50 bytes>+` (P2+R-prefix, 56 bytes) | OOK-PWM, with >>3 | ❓ TESTING | R-prefix (proven to flash) + P\x02 (2ms pause, no null bytes) + correct OOK-PWM encoding. First test of R-prefix + correct encoding + non-null P-prefix. |
 
 ---
 

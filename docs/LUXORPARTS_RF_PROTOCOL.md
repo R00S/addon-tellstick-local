@@ -155,7 +155,7 @@ variations across firmware versions.
 The integration stores ground-truth codes in `LX_GROUND_TRUTH_CODES` in `const.py`
 and sends them as raw pulse data via `tdSendRawCommand` (Duo) or UDP raw bytes
 (Net/ZNet). The command format uses R-prefix with P-prefix:
-`P\x02 R<n> S<single_packet> +` (55 bytes total). The `P\x02` sets a 2 ms
+`P\x02 R<n> S<single_packet> +` (56 bytes total). The `P\x02` sets a 2 ms
 pause between repeats (close to the natural ~2.25 ms inter-packet gap) and avoids
 null bytes which truncate the IPC chain. See `docs/LUXORPARTS_TIMELINE.md` for
 the full regression history.
