@@ -28,7 +28,7 @@ DOMAIN = "tellstick_local"
 
 
 
-INTEGRATION_VERSION = "3.1.8.18"
+INTEGRATION_VERSION = "3.1.8.19"
 
 
 # Backend type stored in config entry data
@@ -926,7 +926,8 @@ LX_GAP_INTER_DUO = 25
 #   - ZNet MQTT plugin captures: (14466,1), (14468,2), (14268,4), (21900,1)
 #   - RTL-433 sniffed from Homey app (2026-04-08, labeled H/U, OFF-then-ON):
 #     (166,3), (2190,2), (16634,3), (21900,3-5), (21901,1), (29102,1)
-#   - (14242,2): ON/OFF swapped from original — corrected here
+#   - RTL-433 sniffed from Telldus Live (2026-04-08, labeled from end):
+#     (12639, 5-11)
 LX_GROUND_TRUTH_CODES: dict[tuple[int, int], dict[str, int]] = {
     # ZNet MQTT plugin captures (house/unit from device config)
     (14466, 1): {"on": 0x5E14538, "off": 0x5A59738},
@@ -936,42 +937,36 @@ LX_GROUND_TRUTH_CODES: dict[tuple[int, int], dict[str, int]] = {
     # RTL-433 sniffed from Homey app (2026-04-08, all OFF-then-ON)
     (166, 3): {"on": 0x6BD1C38, "off": 0x6DB7638},
     (2190, 2): {"on": 0x32128B8, "off": 0x3E2CDB8},
-    (14242, 2): {"on": 0x58CEBA8, "off": 0x52160A8},  # corrected: was swapped
     (16634, 3): {"on": 0x2450C38, "off": 0x2633638},
     (21900, 3): {"on": 0x3757C38, "off": 0x3B81638},
     (21900, 4): {"on": 0x39785D8, "off": 0x340EBD8},
     (21900, 5): {"on": 0x3B81618, "off": 0x3757C18},
     (21901, 1): {"on": 0x35A0BF8, "off": 0x339A5F8},
     (29102, 1): {"on": 0x3034BF8, "off": 0x3C4D5F8},
+    # RTL-433 sniffed from Telldus Live (2026-04-08, labeled from end)
+    (12639, 5): {"on": 0x53F5EB8, "off": 0x5C548B8},
+    (12639, 6): {"on": 0x57231E8, "off": 0x5AC13E8},
+    (12639, 7): {"on": 0x5E8E608, "off": 0x5BBFF08},
+    (12639, 8): {"on": 0x51DA248, "off": 0x5467C48},
+    (12639, 9): {"on": 0x5BBFF28, "off": 0x5E8E628},
+    (12639, 10): {"on": 0x5C54898, "off": 0x53F5E98},
+    (12639, 11): {"on": 0x5AC13C8, "off": 0x57231C8},
 }
 
 # ---------------------------------------------------------------------------
 # Additional unlabeled Telldus Live pairs — RTL-433 sniffed 2026-04-08
-# House/unit unknown (no Homey labels), but valid sequential OFF→ON pairs
-# confirmed by timestamp analysis (~2s between OFF/ON, ~9s between devices).
+# House/unit unknown, valid sequential OFF→ON pairs confirmed by suffix
+# pattern analysis (suffix match = correct pairing).
 #
-# These can be used for cipher analysis but cannot be added to the keyed
-# ground truth table without knowing the (house, unit) mapping.
+# Telldus Live 0x2... series (4 unknown + 1 maybe H12639/U4):
+#   OFF=0x292B638  ON=0x23CEC38   unknown-1
+#   OFF=0x25F1638  ON=0x21A7C38   unknown-2
+#   OFF=0x289D638  ON=0x206CC38   unknown-3
+#   OFF=0x224A638  ON=0x2709C38   unknown-4
+#   OFF=0x2FE8638  ON=0x2A86C38   maybe H12639/U4 (uncertain label)
 #
-# Telldus Live 0x2... series (all end in 0x38 = same unit-suffix pattern):
-#   OFF=0x292B638  ON=0x23CEC38   (17:35:13 → 17:35:16)
-#   OFF=0x25F1638  ON=0x21A7C38   (17:35:25 → 17:35:27)
-#   OFF=0x289D638  ON=0x206CC38   (17:35:40 → 17:35:41)
-#   OFF=0x224A638  ON=0x2709C38   (17:35:50 → 17:35:52)
-#   OFF=0x2FE8638  ON=0x2A86C38   (17:36:04 → 17:36:06)
-#
-# Telldus Live 0x5... series (7 pairs, each with consistent suffix):
-#   OFF=0x5C548B8  ON=0x53F5EB8   suf=B8  (17:36:26 → 17:36:28)
-#   OFF=0x5AC13E8  ON=0x57231E8   suf=E8  (17:36:37 → 17:36:38)
-#   OFF=0x5BBFF08  ON=0x5E8E608   suf=08  (17:36:47 → 17:36:49)
-#   OFF=0x5467C48  ON=0x51DA248   suf=48  (17:36:56 → 17:36:58)
-#   OFF=0x5E8E628  ON=0x5BBFF28   suf=28  (17:37:06 → 17:37:07)
-#   OFF=0x53F5E98  ON=0x5C54898   suf=98  (17:37:16 → 17:37:18)
-#   OFF=0x57231C8  ON=0x5AC13C8   suf=C8  (17:37:28 → 17:37:30)
-#
-# Structural observation: 0x5... base addresses repeat across pairs with
-# different suffixes (e.g. 5C548 appears with B8 and 98 suffix), confirming
-# the cipher swaps ON/OFF base addresses between units of the same house.
+# The 0x5... series (7 pairs) has been identified as H12639/U5-U11 and
+# added to LX_GROUND_TRUTH_CODES above.
 #
 # Physical remote pairs — Luxorparts 50969 remotes (2026-04-08)
 # Two remotes sniffed, each with A/B/C/D off+on buttons.
