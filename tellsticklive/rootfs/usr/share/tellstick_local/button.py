@@ -35,10 +35,9 @@ from .const import (
     ENTRY_DEVICE_ID_MAP,
     ENTRY_MIRRORS,
     ENTRY_TELLSTICK_CONTROLLER,
-    LX_TEST_VARIANTS,
     SIGNAL_NEW_DEVICE,
+    luxorparts_build_raw_command,
     luxorparts_generate_codes,
-    luxorparts_learn_commands,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -66,13 +65,12 @@ async def async_setup_entry(
 
         model = device_cfg.get(CONF_DEVICE_MODEL, "")
 
-        # EF/LX test "sequence ALL" markers → create the appropriate sequence button
+        # EF test "sequence ALL" markers → create the appropriate sequence button
         # Maps model → (variants_list, translation_key, protocol, uid_prefix)
         _SEQ_MODELS: dict[str, tuple[list[tuple[str, str]], str, str, str]] = {
             "ef_test_sequence": (EF_TEST_VARIANTS, "ef_test_sequence", "everflourish", "ef_test"),
             "ef_test_raw_sequence": (EF_TEST_RAW_VARIANTS, "ef_test_raw_sequence", "everflourish", "ef_test"),
             "ef_test_native_sequence": (EF_TEST_NATIVE_VARIANTS, "ef_test_native_sequence", "everflourish", "ef_test"),
-            "lx_test_sequence": (LX_TEST_VARIANTS, "lx_test_sequence", "luxorparts", "lx_test"),
         }
 
         # Sequence "ALL" marker → create the sequence button
@@ -218,11 +216,11 @@ class TellStickLearnButton(ButtonEntity):
     async def _send_luxorparts_learn(
         self, controller: Any, device_dict: dict[str, Any],
     ) -> None:
-        """Send a Luxorparts learn signal (ON code with many repeats).
+        """Send a Luxorparts 'learn' signal (actually sends ON command).
 
-        Uses R-prefix with P-prefix (``P\\x02 R<n> S<single_packet> +``).
-
-        See ``docs/LUXORPARTS_TIMELINE.md`` for the full regression history.
+        The actual LEARN signal (R=50 repeats) does not flash the Duo
+        hardware.  The ON command (R=10) works and the receiver learns
+        any valid code during learn mode.  So we send ON as "learn".
         """
         try:
             house_int = int(device_dict.get(CONF_DEVICE_HOUSE, 0))
@@ -236,34 +234,27 @@ class TellStickLearnButton(ButtonEntity):
             return
 
         codes = luxorparts_generate_codes(house_int, unit_int)
-
         code = codes["on"]
 
         # Extract variant suffix for timing parameters
         model = device_dict.get(CONF_DEVICE_MODEL, "")
         variant = model.split(":", 1)[1] if ":" in model else ""
 
-        # Build multi-burst learn commands (5 × 10 = 50 repeats)
-        commands = luxorparts_learn_commands(code, total_repeats=50, variant=variant)
+        raw_cmd = luxorparts_build_raw_command(code, variant)
 
         _LOGGER.info(
-            "LX learn: uid=%s variant=%s code=0x%x repeats=50 bursts=%d",
-            self._device_uid, variant, code, len(commands),
+            "LX learn (via ON): uid=%s variant=%s code=0x%x",
+            self._device_uid, variant, code,
         )
-        for i, raw_cmd in enumerate(commands):
-            result = await controller.send_raw_command(raw_cmd)
-            if result == -5:
-                _LOGGER.info(
-                    "LX learn burst %d/%d: ACK timeout (expected), hardware should transmit",
-                    i + 1, len(commands),
-                )
-            elif result != 0:
-                _LOGGER.warning("LX learn burst %d/%d failed: result=%d", i + 1, len(commands), result)
-            else:
-                _LOGGER.info("LX learn burst %d/%d success", i + 1, len(commands))
-            # Short delay between bursts to let telldusd process
-            if i < len(commands) - 1:
-                await asyncio.sleep(0.5)
+        result = await controller.send_raw_command(raw_cmd)
+        if result == -5:
+            _LOGGER.info(
+                "LX learn: ACK timeout (expected), hardware should transmit",
+            )
+        elif result != 0:
+            _LOGGER.warning("LX learn failed: result=%d", result)
+        else:
+            _LOGGER.info("LX learn success")
 
 
 # ---------------------------------------------------------------------------

@@ -336,18 +336,15 @@ for TX-only devices or headless setups.
 Once paired, you can control the device with normal on/off commands through the
 **TellStick Local** integration.
 
-### ⛔ Luxorparts / Cleverio 50969, 50970, 50972 — NOT WORKING
+### 🟡 Luxorparts / Cleverio 50969, 50970, 50972 — Beta (Duo only)
 
-These specific Luxorparts / Cleverio 1000W sockets **are not supported** and have
-been removed from the "Add by brand" picker.
+On/off works on **TellStick Duo** using raw RF pulse encoding with
+pre-captured Telldus Live codes (LPD 1–24). Add by brand →
+"Luxorparts — On/off (beta, Duo only)" → pick an LPD number →
+put receiver in learn mode → press Learn.
 
-Learn and on/off signals sent via TellStick Duo or TellStick Net/ZNet are not
-acknowledged by these receivers. Telldus Live controls them successfully via ZNet,
-but the exact signal path it uses is not accessible through our interface.
-
-Further investigation would require an **RTL-SDR USB dongle** to capture and
-analyse the raw RF signal from the original remote. If you have an RTL-SDR
-and find a working approach, please
+**Not yet available on TellStick Net/ZNet.** If you need Net/ZNet support
+or have additional working codes, please
 [open an issue](https://github.com/R00S/addon-tellstick-local/issues).
 
 ---

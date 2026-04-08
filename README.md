@@ -14,9 +14,9 @@
 > edge cases may remain. Feedback and bug reports are very welcome.
 
 > [!CAUTION]
-> **⛔ Luxorparts / Cleverio 50969, 50970, 50972 — NOT WORKING** – These 1000W sockets
-> do not respond to commands from either TellStick Duo or TellStick Net/ZNet via this
-> integration. No workaround is currently known. See [details below](#known-limitations).
+> **🟡 Luxorparts / Cleverio 50969, 50970, 50972 — Beta (Duo only)** – On/off works
+> on TellStick Duo using raw RF pulse encoding with pre-captured Telldus Live codes
+> (LPD 1–24). Not yet available on TellStick Net/ZNet. See [details below](#known-limitations).
 
 ![Project Stage][project-stage-shield]
 
@@ -370,10 +370,11 @@ each protocol supports.
 > them. The TellStick Duo includes a firmware-level repeat patch for reliable pairing
 > with picky receivers.
 
-> **⛔ Luxorparts / Cleverio 50969, 50970, 50972:** These specific 1000W sockets are
-> **not supported** — they do not respond to learn or on/off commands via this
-> integration, for either TellStick Duo or TellStick Net/ZNet. They have been removed
-> from the "Add by brand" picker. See [Known limitations](#known-limitations) for details.
+> **🟡 Luxorparts / Cleverio 50969, 50970, 50972 (beta, Duo only):** On/off works
+> on TellStick Duo via raw RF pulse encoding. Add by brand → "Luxorparts — On/off
+> (beta, Duo only)" → pick an LPD number (1–24). Put the receiver in learn mode, then
+> press Learn in HA. Not yet available on TellStick Net/ZNet. See
+> [Known limitations](#known-limitations) for details.
 
 ### TX only (can be controlled but not auto-discovered)
 
@@ -543,32 +544,32 @@ them permanently.
 
 ## Known limitations
 
-### Luxorparts / Cleverio 50969, 50970, 50972 — NOT WORKING
+### Luxorparts / Cleverio 50969, 50970, 50972 — Beta (Duo only)
 
-These specific Luxorparts / Cleverio 1000W remote-controlled sockets **do not work**
-with this integration via either TellStick Duo or TellStick Net/ZNet.
+These Luxorparts / Cleverio 1000W remote-controlled sockets work on
+**TellStick Duo** using raw RF pulse encoding with pre-captured Telldus Live
+codes (LPD 1–24). **Not yet available on TellStick Net/ZNet.**
 
-**What was tried:**
+**How to add a Luxorparts device (Duo):**
 
-- The remote sends RF signals that telldusd decodes as three different protocols
-  simultaneously (arctech/selflearning, everflourish, waveman). None of these
-  correctly controls the 50969/50970/50972 receivers.
-- Sending arctech selflearning learn/on/off signals: ZNet LED flashes but the
-  socket does not respond.
-- Sending everflourish signals: same result.
-- Telldus Live controls these sockets successfully via ZNet — the exact internal
-  signal path used by Telldus Live is not accessible from our UDP interface.
+1. Go to **Configure → Add device → Add by brand**
+2. Select **"Luxorparts — On/off (beta, Duo only)"**
+3. Pick an **LPD number** (1–24) — each number is a unique code pair
+4. Put the receiver in learn mode (hold button until LED flashes)
+5. Press **Learn** in HA — the Duo sends the ON code to teach the receiver
+6. The receiver should now respond to on/off commands
 
-**Root cause:** The 50969/50970/50972 likely use a proprietary or non-standard
-encoding that telldusd does not implement correctly for TX, even though it can
-decode the RF signals when received. The Telldus Live app may use a different
-internal command path on the ZNet hardware that is not exposed via the UDP
-productiontest interface.
+**Current limitations:**
 
-**These models have been removed from the "Add by brand" picker** to avoid
-confusion. Further investigation would require an **RTL-SDR USB dongle** to
-capture and analyse the raw RF signal from the original remote. If you have
-an RTL-SDR and find a working approach, please [open an issue][issue].
+- Only 24 pre-captured LPD codes are available. If none of them work with
+  your receiver, you need a different LPD number or a fresh receiver.
+- The learn button sends the ON command (not a high-repeat learn signal)
+  because the actual learn signal does not flash the Duo hardware.
+- **TellStick Net/ZNet:** Not yet implemented. The raw pulse encoding
+  needs to be ported to the Net/ZNet UDP interface.
+
+If you have an RTL-SDR and can capture additional working codes, please
+[open an issue][issue].
 
 ---
 
