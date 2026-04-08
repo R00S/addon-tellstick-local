@@ -970,13 +970,10 @@ LX_LPD_LIST: list[tuple[int, int, int, str, str]] = [
 # Keyed by (lpd_number, 1) — the LPD number IS the house code.
 # Users never see house/unit; they only see "LPD 1", "LPD 2", etc.
 # luxorparts_generate_codes(lpd, 1) returns the exact verified codes.
-LX_GROUND_TRUTH_CODES: dict[tuple[int, int], dict[str, int]] = {}
-for _lpd_num, _on_code, _off_code, _src, _orig_id in LX_LPD_LIST:
-    LX_GROUND_TRUTH_CODES[(_lpd_num, 1)] = {
-        "on": _on_code, "off": _off_code,
-    }
-# Clean up module-level loop variables
-del _lpd_num, _on_code, _off_code, _src, _orig_id
+LX_GROUND_TRUTH_CODES: dict[tuple[int, int], dict[str, int]] = {
+    (lpd, 1): {"on": on_code, "off": off_code}
+    for lpd, on_code, off_code, _, _ in LX_LPD_LIST
+}
 
 
 # ---------------------------------------------------------------------------
