@@ -322,7 +322,7 @@ Inter-packet gap:
 - Telldus Live reference: ~2248 µs (no firmware P-prefix pause)
 - Our gap is ~2× Telldus Live's gap. Whether this affects receiver acceptance is unknown.
 
-**Why learn doesn't flash — hypotheses:**
+**Why learn doesn't flash — hypotheses (secondary problem, lower priority):**
 
 The learn command is `P\x02 R\x32 S<50 bytes>+` (56 bytes, R=50). Identical
 format to on/off (`P\x02 R\x0a S<50 bytes>+`, R=10). Only the R byte differs.
@@ -334,6 +334,66 @@ Possible causes:
 2. The learn button code path may not reach `send_raw_command()` at all (device
    lookup failure, protocol check mismatch) — **check HA logs for LX learn messages**
 3. Something in the `button.py` learn handler returns early before sending
+
+### 🚨 PRIMARY PROBLEM: Duo sends different codes than Live (2026-04-08)
+
+**This is the real blocker.** Even if the Duo's RF transmission is technically
+correct, the switch won't respond because it was taught Live's codes, not ours.
+
+**RTL-433 comparison — Duo vs Telldus Live (same test):**
+
+| Signal | ON code | OFF code |
+|--------|---------|----------|
+| Our Duo (H14466/U1) | `{25}5E14538` | `{25}5A59738` |
+| Telldus Live | `{25}340EBF8` ⚠️ | `{25}5BD4B88` |
+
+- Live packet 2 (`5BD4B88`) matches ground truth **H14268/U4/OFF** ✅
+- Live packet 1 (`340EBF8`) matches **NO known ground truth code** ⚠️
+- Our Duo sends H14466/U1 codes — **completely different from what Live sends**
+
+**The Luxorparts switch was taught using Live signals.** It responds to Live's
+codes. Our Duo sends different codes → switch ignores them. Even if we fix learn,
+the switch must be re-learned with our Duo's codes. But the switch DOES respond
+to Live — confirming the protocol (OOK-PWM, timings, etc.) is correct.
+
+**Inter-packet gap is also wrong (secondary):**
+
+| | Our Duo | Telldus Live |
+|---|---------|--------------|
+| Inter-packet gap | 4292 µs | 2248 µs |
+| Breakdown | gap_inter (2250µs) + P\x02 (2000µs) | gap_inter only (2248µs) |
+
+The P-prefix pause is **additive** to the data-level gap_inter. To fix:
+reduce `LX_GAP_INTER` from 225 to 25 when using P\x02, so total =
+250µs + 2000µs = 2250µs ≈ 2248µs.
+
+**Live structural differences:**
+
+Live shows `{1}8, {25}code, {25}code, ...{24}code` — a stray 1-bit
+preamble and truncated last packet (24 instead of 25 bits). Our Duo sends
+clean `{25}code × 10`. This may or may not matter to the receiver.
+
+**Frequency offset:**
+
+| | Our Duo | Telldus Live |
+|---|---------|--------------|
+| Freq offset | +104 to +106 kHz | +62 to +64 kHz |
+
+~40 kHz difference between transmitters. Unlikely to affect OOK receivers
+(wide bandwidth), but worth noting.
+
+**Open question:** What Live entity produced `340EBF8`? This code is NOT in
+the ground truth table. Either the Live entity uses an uncaptured house/unit
+combo, or it was reconfigured after ground truth was recorded. Need to identify
+the Live entity's house/unit to add the correct codes to `LX_GROUND_TRUTH_CODES`.
+
+### Next steps (priority order)
+
+1. **Fix inter-packet gap** — reduce `LX_GAP_INTER` to 25 (compensate for P\x02)
+2. **Confirm which codes the switch is paired to** — capture the exact Live codes
+   the switch was taught with, add to ground truth
+3. **Re-learn the switch with Duo's codes** — once learn is fixed
+4. **Fix learn** — investigate why R=50 doesn't make Duo flash (secondary)
 
 ---
 
