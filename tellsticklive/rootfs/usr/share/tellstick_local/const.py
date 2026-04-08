@@ -28,7 +28,7 @@ DOMAIN = "tellstick_local"
 
 
 
-INTEGRATION_VERSION = "3.1.8.17"
+INTEGRATION_VERSION = "3.1.8.18"
 
 
 # Backend type stored in config entry data
@@ -917,20 +917,26 @@ LX_GAP_INTER_DUO = 25
 # The encoder right-shifts by 3 to extract the correct 25 bits.
 #
 # Verified 2026-04-08 via RTL-433 capture of Telldus Live transmissions.
-# All 13 pairs confirmed with consistent structural patterns:
+# All pairs confirmed with consistent structural patterns:
 #   - Last cipher nibble (n5) identical for ON/OFF of same (house, unit)
 #   - Same house → shared encrypted address bytes, only unit nibble differs
 #   - State bits propagate through the cipher chain predictably
+#
+# Sources:
+#   - ZNet MQTT plugin captures: (14466,1), (14468,2), (14268,4), (21900,1)
+#   - RTL-433 sniffed from Homey app (2026-04-08, labeled H/U, OFF-then-ON):
+#     (166,3), (2190,2), (16634,3), (21900,3-5), (21901,1), (29102,1)
+#   - (14242,2): ON/OFF swapped from original — corrected here
 LX_GROUND_TRUTH_CODES: dict[tuple[int, int], dict[str, int]] = {
-    # Existing Telldus Live captures
+    # ZNet MQTT plugin captures (house/unit from device config)
     (14466, 1): {"on": 0x5E14538, "off": 0x5A59738},
     (14468, 2): {"on": 0x559DBA8, "off": 0x5CCC0A8},
     (14268, 4): {"on": 0x5BD4B88, "off": 0x51B1088},
     (21900, 1): {"on": 0x340EBF8, "off": 0x39785F8},
-    # RTL-433 sniffed from Telldus Live (2026-04-08, all OFF-then-ON)
+    # RTL-433 sniffed from Homey app (2026-04-08, all OFF-then-ON)
     (166, 3): {"on": 0x6BD1C38, "off": 0x6DB7638},
     (2190, 2): {"on": 0x32128B8, "off": 0x3E2CDB8},
-    (14242, 2): {"on": 0x52160A8, "off": 0x58CEBA8},
+    (14242, 2): {"on": 0x58CEBA8, "off": 0x52160A8},  # corrected: was swapped
     (16634, 3): {"on": 0x2450C38, "off": 0x2633638},
     (21900, 3): {"on": 0x3757C38, "off": 0x3B81638},
     (21900, 4): {"on": 0x39785D8, "off": 0x340EBD8},
@@ -938,6 +944,52 @@ LX_GROUND_TRUTH_CODES: dict[tuple[int, int], dict[str, int]] = {
     (21901, 1): {"on": 0x35A0BF8, "off": 0x339A5F8},
     (29102, 1): {"on": 0x3034BF8, "off": 0x3C4D5F8},
 }
+
+# ---------------------------------------------------------------------------
+# Additional unlabeled Telldus Live pairs — RTL-433 sniffed 2026-04-08
+# House/unit unknown (no Homey labels), but valid sequential OFF→ON pairs
+# confirmed by timestamp analysis (~2s between OFF/ON, ~9s between devices).
+#
+# These can be used for cipher analysis but cannot be added to the keyed
+# ground truth table without knowing the (house, unit) mapping.
+#
+# Telldus Live 0x2... series (all end in 0x38 = same unit-suffix pattern):
+#   OFF=0x292B638  ON=0x23CEC38   (17:35:13 → 17:35:16)
+#   OFF=0x25F1638  ON=0x21A7C38   (17:35:25 → 17:35:27)
+#   OFF=0x289D638  ON=0x206CC38   (17:35:40 → 17:35:41)
+#   OFF=0x224A638  ON=0x2709C38   (17:35:50 → 17:35:52)
+#   OFF=0x2FE8638  ON=0x2A86C38   (17:36:04 → 17:36:06)
+#
+# Telldus Live 0x5... series (7 pairs, each with consistent suffix):
+#   OFF=0x5C548B8  ON=0x53F5EB8   suf=B8  (17:36:26 → 17:36:28)
+#   OFF=0x5AC13E8  ON=0x57231E8   suf=E8  (17:36:37 → 17:36:38)
+#   OFF=0x5BBFF08  ON=0x5E8E608   suf=08  (17:36:47 → 17:36:49)
+#   OFF=0x5467C48  ON=0x51DA248   suf=48  (17:36:56 → 17:36:58)
+#   OFF=0x5E8E628  ON=0x5BBFF28   suf=28  (17:37:06 → 17:37:07)
+#   OFF=0x53F5E98  ON=0x5C54898   suf=98  (17:37:16 → 17:37:18)
+#   OFF=0x57231C8  ON=0x5AC13C8   suf=C8  (17:37:28 → 17:37:30)
+#
+# Structural observation: 0x5... base addresses repeat across pairs with
+# different suffixes (e.g. 5C548 appears with B8 and 98 suffix), confirming
+# the cipher swaps ON/OFF base addresses between units of the same house.
+#
+# Physical remote pairs — Luxorparts 50969 remotes (2026-04-08)
+# Two remotes sniffed, each with A/B/C/D off+on buttons.
+# These are the {25} Luxorparts codes extracted from mixed captures that
+# also contained Homey proprietary junk ({1},{2},{3},{4} preamble codes).
+#
+# Remote 1 (0xAE... prefix):
+#   A: OFF=0xAEBEEB8  ON=0xAEBEEA8
+#   B: OFF=0xAEBBEA8  ON=0xAEBAEB8
+#   C: OFF=0xAEBAEA8  ON=0xAEAFEB8
+#   D: OFF=0xAEAFEA8  ON=(not captured)
+#
+# Remote 2 (0xAF... prefix):
+#   A: OFF=0xAFBEEB8  ON=0xAFBEEA8
+#   B: OFF=0xAFBBEB8  ON=0xAFBBEA8
+#   C: OFF=0xAFBAEB8  ON=0xAFBAEA8
+#   D: OFF=0xAFAFEB8  ON=0xAFAFEA8
+# ---------------------------------------------------------------------------
 
 
 # ---------------------------------------------------------------------------
