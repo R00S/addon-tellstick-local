@@ -357,7 +357,10 @@ class EFTestSequenceButton(ButtonEntity):
                 # Build the device dict for this variant
                 model = f"selflearning-switch:{variant_suffix}"
                 # Use same custom UID format as config_flow test device step
-                device_uid = f"{self._uid_prefix}_{variant_suffix}_{self._house}_{self._unit}"
+                device_uid = f"{self._uid_prefix}_{variant_suffix}"
+                if device_uid not in device_id_map:
+                    # Fall back to old format with house/unit for EF tests
+                    device_uid = f"{self._uid_prefix}_{variant_suffix}_{self._house}_{self._unit}"
                 device_dict = device_id_map.get(device_uid)
 
                 if device_dict is None:

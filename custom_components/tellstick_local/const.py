@@ -28,7 +28,7 @@ DOMAIN = "tellstick_local"
 
 
 
-INTEGRATION_VERSION = "3.1.8.20"
+INTEGRATION_VERSION = "3.1.8.21"
 
 
 # Backend type stored in config entry data
@@ -1263,6 +1263,12 @@ LX_LPD_ENTITIES: list[tuple[str, str, str, str]] = [
     (f"lx_lpd{lpd}", f"LPD {lpd} — {src} {orig}",
      str(lpd), "1")
     for lpd, _on, _off, src, orig in LX_LPD_LIST
+]
+
+# (variant_suffix, label) pairs for the sequence-ALL button in button.py.
+# Derived from LX_LPD_ENTITIES — same order, same labels.
+LX_TEST_VARIANTS: list[tuple[str, str]] = [
+    (suffix, label) for suffix, label, _h, _u in LX_LPD_ENTITIES
 ]
 
 LX_TEST_GROUP_UID = "lx_test"
