@@ -259,6 +259,11 @@ WIDGET_PARAMS: dict[int, list[dict]] = {
         {"name": "house", "type": "int", "default": 1, "min": 1, "max": 65535, "random": True},
         {"name": "unit", "type": "int", "default": 1, "min": 1, "max": 126},
     ],
+    # 20: Luxorparts LPD picker — house = LPD number (1-24), unit always 1
+    20: [
+        {"name": "house", "type": "int", "default": 1, "min": 1, "max": 24},
+        {"name": "unit", "type": "int", "default": 1, "min": 1, "max": 1},
+    ],
 }
 
 # ---------------------------------------------------------------------------
@@ -316,7 +321,10 @@ DEVICE_CATALOG: list[tuple[str, str, str, int]] = [
     ("KlikAanKlikUit — Self-learning on/off", "arctech", "selflearning-switch:klikaanklikuit", 8),
     # Lidl/Silvercrest 433 MHz sockets use arctech selflearning protocol
     ("Lidl (Silvercrest) — Self-learning on/off", "arctech", "selflearning-switch:silvercrest", 8),
-    # NOTE: Luxorparts/Cleverio 50969, 50970, 50972 removed — NOT WORKING (see README Known limitations)
+    # NOTE: Luxorparts/Cleverio 50969, 50970, 50972 — BETA (Duo only)
+    # Uses raw RF pulse encoding via LPD codes.  Pick LPD 1-24 to select
+    # a verified Telldus Live code pair.  Not available on Net/ZNet yet.
+    ("Luxorparts — On/off (beta, Duo only)", "luxorparts", "selflearning-switch:lx_live", 20),
     ("Nexa — Bell", "arctech", "bell:nexa", 4),
     ("Nexa — Code switch", "arctech", "codeswitch:nexa", 1),
     ("Nexa — Self-learning dimmer", "arctech", "selflearning-dimmer:nexa", 8),
@@ -911,21 +919,21 @@ LX_PAUSE_MS = 2
 LX_GAP_INTER_DUO = 25
 
 # ---------------------------------------------------------------------------
-# LPD (Luxorparts Device) codes — all known ON/OFF pairs, numbered 1-31.
+# LPD (Luxorparts Device) codes — all known ON/OFF pairs, numbered 1-24.
 #
-# Each pair has both ON and OFF codes.  Pairs missing either code are
-# excluded (Remote 1 ch D had no ON capture → removed).
+# All pairs are verified via RTL-433 captures of Telldus Live signals.
+# Remote-sniffed pairs (from physical remotes) have been removed because
+# they do not work reliably with TellStick hardware.
 #
 # LPD numbers are the ONLY identifier users see.  No house/unit in GUI.
 # Internally, lpd_number is stored as the house code (unit=1) so that
 # luxorparts_generate_codes(lpd, 1) returns the exact verified codes.
 #
 # Columns: (lpd_num, on_code, off_code, source_label, original_id)
-# source_label: "Live" = Telldus Live/ZNet, "Remote" = physical remote
 # ---------------------------------------------------------------------------
 
 LX_LPD_LIST: list[tuple[int, int, int, str, str]] = [
-    # --- Telldus Live — Labeled pairs ---
+    # --- Telldus Live — Labeled pairs (verified via RTL-433) ---
     (1,  0x5E14538, 0x5A59738, "Live", "H14466/U1"),
     (2,  0x559DBA8, 0x5CCC0A8, "Live", "H14468/U2"),
     (3,  0x5BD4B88, 0x51B1088, "Live", "H14268/U4"),
@@ -945,20 +953,12 @@ LX_LPD_LIST: list[tuple[int, int, int, str, str]] = [
     (17, 0x5BBFF28, 0x5E8E628, "Live", "H12639/U9"),
     (18, 0x5C54898, 0x53F5E98, "Live", "H12639/U10"),
     (19, 0x5AC13C8, 0x57231C8, "Live", "H12639/U11"),
-    # --- Telldus Live — Unlabeled pairs ---
+    # --- Telldus Live — Unlabeled pairs (verified via RTL-433) ---
     (20, 0x23CEC38, 0x292B638, "Live", "unknown"),
     (21, 0x21A7C38, 0x25F1638, "Live", "unknown"),
     (22, 0x206CC38, 0x289D638, "Live", "unknown"),
     (23, 0x2709C38, 0x224A638, "Live", "unknown"),
     (24, 0x2A86C38, 0x2FE8638, "Live", "maybe H12639/U4"),
-    # --- Physical Remotes (Remote 1 ch D excluded — no ON code) ---
-    (25, 0xAEBEEA8, 0xAEBEEB8, "Remote", "R1-A"),
-    (26, 0xAEBAEB8, 0xAEBBEA8, "Remote", "R1-B"),
-    (27, 0xAEAFEB8, 0xAEBAEA8, "Remote", "R1-C"),
-    (28, 0xAFBEEA8, 0xAFBEEB8, "Remote", "R2-A"),
-    (29, 0xAFBBEA8, 0xAFBBEB8, "Remote", "R2-B"),
-    (30, 0xAFBAEA8, 0xAFBAEB8, "Remote", "R2-C"),
-    (31, 0xAFAFEA8, 0xAFAFEB8, "Remote", "R2-D"),
 ]
 
 # Ground-truth ON/OFF codes — keyed by (lpd_number, 1).
@@ -1247,31 +1247,6 @@ def luxorparts_learn_commands(
 # the house code internally; users never see it — only "LPD 1", "LPD 2",
 # etc. in the entity name.  All entities use lx_live timing parameters.
 # ---------------------------------------------------------------------------
-
-_LX_TEST_VARIANTS: list[tuple[str, str, str, int]] = [
-    (f"LPD {lpd} — {src} {orig}",
-     "luxorparts", "selflearning-switch:lx_live", 11)
-    for lpd, _on, _off, src, orig in LX_LPD_LIST
-]
-
-# Add LX test variants to the raw protocol catalog for visibility
-PROTOCOL_RAW_CATALOG.extend(_LX_TEST_VARIANTS)
-
-# Each LPD entity: (variant_suffix, label, house, unit) for config_flow.
-# house = LPD number (string), unit = "1".
-LX_LPD_ENTITIES: list[tuple[str, str, str, str]] = [
-    (f"lx_lpd{lpd}", f"LPD {lpd} — {src} {orig}",
-     str(lpd), "1")
-    for lpd, _on, _off, src, orig in LX_LPD_LIST
-]
-
-# (variant_suffix, label) pairs for the sequence-ALL button in button.py.
-# Derived from LX_LPD_ENTITIES — same order, same labels.
-LX_TEST_VARIANTS: list[tuple[str, str]] = [
-    (suffix, label) for suffix, label, _h, _u in LX_LPD_ENTITIES
-]
-
-LX_TEST_GROUP_UID = "lx_test"
 
 PROTOCOL_NATIVE_CATALOG: list[tuple[str, str, str, int]] = list(
     PROTOCOL_MODEL_CATALOG
