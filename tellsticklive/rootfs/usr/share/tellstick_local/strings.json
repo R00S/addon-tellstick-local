@@ -246,8 +246,7 @@
             "by_protocol_native_nofix": "Add by protocol (TellStick native — no unit fix)",
             "ef_test_device": "⚡ Add EF test device (all 20 variants)",
             "ef_test_raw": "⚡ Add EF test — RAW (S-only pulse variants)",
-            "ef_test_native": "⚡ Add EF test — NATIVE (firmware dict variants)",
-            "lx_test": "🔌 Add Luxorparts switch (50969/50970/50972)"
+            "ef_test_native": "⚡ Add EF test — NATIVE (firmware dict variants)"
           }
         },
         "by_brand": {
@@ -328,14 +327,6 @@
           "data": {
             "house": "House code (0–16383)",
             "unit": "Unit (1–4)"
-          }
-        },
-        "lx_test": {
-          "title": "Add Luxorparts switch",
-          "description": "Creates a switch entity for a **Luxorparts 50969/50970/50972** receiver.\n\nPick a **house code** (1–65535) and **unit** (1–8). Each combination generates unique ON/OFF signals.\n\n**To teach the receiver:** put it in learn mode (hold button until LED flashes), then press **ON** in HA.",
-          "data": {
-            "house": "House code (1–65535)",
-            "unit": "Unit (1–8)"
           }
         }
       },
