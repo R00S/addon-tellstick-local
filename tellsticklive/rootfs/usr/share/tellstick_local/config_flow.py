@@ -2701,7 +2701,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         )
 
     # ------------------------------------------------------------------
-    # Luxorparts test device flow
+    # Luxorparts device flow — supports arbitrary house/unit codes
     # ------------------------------------------------------------------
 
     async def _async_lx_test_create(
@@ -2712,14 +2712,18 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         seq_model: str,
         step_id: str,
     ) -> SubentryFlowResult:
-        """Create the single Luxorparts Live-mimic entity.
+        """Create a Luxorparts switch entity with user-chosen house/unit.
 
-        Hardcoded to H14268/U4 — the house/unit verified by RTL-433
-        against Telldus Live.  No house/unit form.
+        The user picks a house code (1–65535) and unit (1–8).  The
+        integration generates unique ON/OFF codes deterministically from
+        these values.  Different house/unit pairs control different
+        switches.
+
+        Learning workflow: put receiver in learn mode, press ON in HA.
         """
         if user_input is not None:
-            house = LX_TEST_HOUSE
-            unit = LX_TEST_UNIT
+            house = str(user_input.get("house", LX_TEST_HOUSE))
+            unit = str(user_input.get("unit", LX_TEST_UNIT))
 
             entry = self._get_entry()
             entry_data = self.hass.data[DOMAIN].get(entry.entry_id, {})
@@ -2737,6 +2741,9 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 if device_uid in existing_devices:
                     continue
 
+                # Include house/unit in the label for easy identification
+                entity_label = f"{label} H{house} U{unit}"
+
                 device_dict: dict[str, Any] = {
                     CONF_DEVICE_PROTOCOL: "luxorparts",
                     CONF_DEVICE_MODEL: model,
@@ -2747,7 +2754,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 device_id_map[device_uid] = device_dict
 
                 existing_devices[device_uid] = {
-                    CONF_DEVICE_NAME: label,
+                    CONF_DEVICE_NAME: entity_label,
                     CONF_DEVICE_PROTOCOL: "luxorparts",
                     CONF_DEVICE_MODEL: model,
                     CONF_DEVICE_HOUSE: house,
@@ -2775,7 +2782,14 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
 
         return self.async_show_form(
             step_id=step_id,
-            data_schema=vol.Schema({}),
+            data_schema=vol.Schema({
+                vol.Required("house", default=int(LX_TEST_HOUSE)): vol.All(
+                    int, vol.Range(min=1, max=65535),
+                ),
+                vol.Required("unit", default=int(LX_TEST_UNIT)): vol.All(
+                    int, vol.Range(min=1, max=8),
+                ),
+            }),
             description_placeholders={"count": str(len(variants))},
         )
 

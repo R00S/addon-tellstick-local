@@ -25,6 +25,7 @@ the `agent conversation` file at the repository root.
 | 3.1.8.10 (d80f385) | `P\x00 R<n>S<50 bytes>+` (P0+R-prefix) | OOK-PWM, with >>3 | ❌ NO | "Going backwards again: Now we are back to neither learn, nor on/off making the duo flash" |
 | 3.1.8.11 (345f697) | Inline S again | OOK-PWM, with >>3 | ❌ NO (assumed) | User: "so, if you had made that timeline properly, you would know that using inline s-commands have never even made the duo flash" |
 | 3.1.8.12 (0156f79) | `P\x02 R<10>S<50 bytes>+` (P2+R-prefix, 56 bytes) | OOK-PWM, with >>3 | ✅ YES (on/off) ❌ NO (learn) | RTL-433 confirms correct OOK-PWM. Codes match ground truth exactly: `{25}5e14538` (on), `{25}5a59738` (off). SNR 37 dB. Learn (R=50) does not flash. |
+| 3.1.8.14 (1516c23) | `P\x02 R<10>S<50 bytes>+` (P2+R-prefix, 56 bytes) | OOK-PWM, with >>3 | ✅ YES (on/off) ❌ NO (learn) | **ON/OFF accepted by Luxorparts switch!** Fixed codes (H14268/U4 ON/OFF swapped) + inter-packet gap (LX_GAP_INTER_DUO=25). Learn still does not flash — workaround: use ON for learning. |
 
 ---
 
@@ -411,11 +412,37 @@ Learn = ON code × 50 repeats (same code, many repeats).
 - Removed all 24 test variants. Single entity "LX Live — H14268 U4" mimics Live exactly
 - Hardcoded house=14268, unit=4 (no form, no other house/unit codes)
 
+### v3.1.8.14 hardware test result (2026-04-08)
+
+**ON/OFF: ✅ ACCEPTED by Luxorparts switch!**
+
+The Luxorparts 50969 receiver responded to the Duo's on/off signals. This is the
+first time the switch has accepted commands from our integration.
+
+Changes from v3.1.8.12 that made this work:
+1. **Ground truth correction** — ON/OFF codes for H14268/U4 were swapped.
+   Fixed: ON = `0x5BD4B88`, OFF = `0x51B1088`.
+2. **Inter-packet gap fix** — `LX_GAP_INTER_DUO = 25` (was 225). With `P\x02`
+   additive pause: 25×10µs + 2×1000µs = 2250µs ≈ Live's 2248µs.
+   (Previously 225×10 + 2×1000 = 4250µs — almost double Live's gap.)
+
+**Learn: ❌ Duo does not flash for learn (R=50).**
+
+The TellStick Duo refuses to transmit when the R-prefix repeat count is 50.
+R=10 works (on/off), R=50 does not (learn). The firmware likely has a threshold.
+
+**Workaround:** Users can use the **ON command** to teach Luxorparts receivers.
+Put the receiver in learn mode, then press ON in HA. The ON signal (10 repeats)
+is sufficient for the receiver to learn the code. This has been verified to work.
+
+Learn via dedicated learn command will be investigated in a future version.
+
 ### Next steps (priority order)
 
-1. **Deploy v3.1.8.14 and test** — does the switch respond to on/off?
-2. **Test learn** — does learn with 50 repeats teach the receiver?
-3. **If both work:** declare Luxorparts protocol complete for H14268/U4
+1. **Implement house/unit code generation** — allow users to control multiple
+   Luxorparts switches with different codes
+2. **Investigate learn R=50 not flashing** — possible firmware repeat limit
+3. **Add Luxorparts to the regular device catalog** (not just test device)
 
 ---
 

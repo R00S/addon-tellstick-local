@@ -24,11 +24,11 @@ from .const import (
     DOMAIN,
     ENTRY_DEVICE_ID_MAP,
     ENTRY_TELLSTICK_CONTROLLER,
-    LX_GROUND_TRUTH_CODES,
     SIGNAL_EVENT,
     SIGNAL_NEW_DEVICE,
     TELLSTICK_TURNON,
     luxorparts_build_raw_command,
+    luxorparts_generate_codes,
 )
 from .entity import TellStickEntity
 
@@ -309,13 +309,7 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
             )
             return
 
-        codes = LX_GROUND_TRUTH_CODES.get((house_int, unit_int))
-        if codes is None:
-            _LOGGER.warning(
-                "LX raw TX: no ground-truth code for h=%s u=%s",
-                self._house, self._unit,
-            )
-            return
+        codes = luxorparts_generate_codes(house_int, unit_int)
 
         code = codes.get(action)
         if code is None:

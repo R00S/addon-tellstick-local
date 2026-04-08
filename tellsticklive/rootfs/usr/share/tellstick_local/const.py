@@ -28,7 +28,7 @@ DOMAIN = "tellstick_local"
 
 
 
-INTEGRATION_VERSION = "3.1.8.14"
+INTEGRATION_VERSION = "3.1.8.15"
 
 
 # Backend type stored in config entry data
@@ -923,6 +923,51 @@ LX_GROUND_TRUTH_CODES: dict[tuple[int, int], dict[str, int]] = {
     (14468, 2): {"on": 0x559DBA8, "off": 0x5CCC0A8},
     (14268, 4): {"on": 0x5BD4B88, "off": 0x51B1088},
 }
+
+
+def luxorparts_generate_codes(house: int, unit: int) -> dict[str, int]:
+    """Generate unique ON/OFF codes for a Luxorparts (house, unit) pair.
+
+    The Luxorparts 50969/50970/50972 receivers learn whatever 25-bit code
+    they hear during learn mode.  We don't need to match Telldus Live's
+    proprietary encoding — we just need each (house, unit) to produce a
+    unique, stable pair of codes.
+
+    If the (house, unit) pair exists in ``LX_GROUND_TRUTH_CODES`` (captured
+    from Telldus Live via RTL-433), those verified codes are returned instead.
+
+    Structure per code: ``[0101][20 variable bits][1]`` = 25 bits.
+    Returned as 28-bit hex integers (25 bits << 3) for compatibility with
+    ``luxorparts_bits_to_pulse_bytes()`` which right-shifts by 3.
+
+    >>> codes = luxorparts_generate_codes(1, 1)
+    >>> (codes['on'] >> 3) >> 21 == 0b0101  # preamble check
+    True
+    >>> codes['on'] != codes['off']
+    True
+    """
+    # Return ground-truth codes when available (verified on hardware)
+    gt = LX_GROUND_TRUTH_CODES.get((house, unit))
+    if gt is not None:
+        return dict(gt)
+
+    import binascii
+
+    preamble = 0b0101  # bits 24–21
+    suffix = 0b1       # bit 0
+
+    on_hash = binascii.crc32(f"lx:{house}:{unit}:on".encode()) & 0xFFFFF
+    off_hash = binascii.crc32(f"lx:{house}:{unit}:off".encode()) & 0xFFFFF
+
+    # Ensure ON and OFF are different (CRC32 collision is near-impossible
+    # for these inputs, but be safe)
+    if on_hash == off_hash:
+        off_hash ^= 0x55555
+
+    on_25 = (preamble << 21) | (on_hash << 1) | suffix
+    off_25 = (preamble << 21) | (off_hash << 1) | suffix
+
+    return {"on": on_25 << 3, "off": off_25 << 3}
 
 
 def luxorparts_bits_to_pulse_bytes(

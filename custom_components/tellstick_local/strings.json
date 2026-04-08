@@ -250,7 +250,7 @@
             "ef_test_device": "⚡ Add EF test device (all 20 variants)",
             "ef_test_raw": "⚡ Add EF test — RAW (S-only pulse variants)",
             "ef_test_native": "⚡ Add EF test — NATIVE (firmware dict variants)",
-            "lx_test": "🔌 Add Luxorparts Live-mimic (H14268 U4)"
+            "lx_test": "🔌 Add Luxorparts switch (50969/50970/50972)"
           }
         },
         "by_brand": {
@@ -334,8 +334,12 @@
           }
         },
         "lx_test": {
-          "title": "Add Luxorparts Live-mimic",
-          "description": "Creates **{count} switch entity** that exactly mimics the Telldus Live signal for **H14268 U4**.\n\nUses **hardcoded ground-truth codes** verified by RTL-433 capture of Telldus Live (2026-04-08).\n\nON = 0x5BD4B88, OFF = 0x51B1088, 10 repeats, OOK-PWM."
+          "title": "Add Luxorparts switch",
+          "description": "Creates a switch entity for a **Luxorparts 50969/50970/50972** receiver.\n\nPick a **house code** (1–65535) and **unit** (1–8). Each combination generates unique ON/OFF signals.\n\n**To teach the receiver:** put it in learn mode (hold button until LED flashes), then press **ON** in HA.",
+          "data": {
+            "house": "House code (1–65535)",
+            "unit": "Unit (1–8)"
+          }
         }
       },
       "error": {

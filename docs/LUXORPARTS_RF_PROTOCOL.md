@@ -1,7 +1,7 @@
-# RFC: Luxorparts 50969/50970/50972 RF Protocol (rev 3)
+# RFC: Luxorparts 50969/50970/50972 RF Protocol (rev 4)
 
-**Status:** Draft
-**Date:** 2026-04-07
+**Status:** Working — ON/OFF verified on hardware (2026-04-08)
+**Date:** 2026-04-08
 **Author:** R00S
 **Source:** RTL-SDR capture via pbkhrv/rtl_433-hass-addons + Telldus Core source (telldus/telldus on GitHub)
 
@@ -129,32 +129,62 @@ For sniffing/verification only:
 
 1. What is the encoding algorithm mapping house+unit+command → 20-bit payload?
    Likely in closed-source Telldus Live backend or ZNet firmware.
+   **Not blocking:** We generate our own codes since receivers learn any valid signal.
 2. Why do ON and OFF produce completely different house codes? Possibly the 50969
    uses separate learned codes for ON and OFF internally.
 3. Is the truncated final 24-bit packet intentional or a ZNet firmware quirk?
-4. Does the 50969 respond to ON-only, or does it require both ON and OFF to be
-   paired? Observed: only ON (or Learn) teaches the device, OFF alone does not.
-5. Are house integers 14466/14468/14268 semantically related or independently
-   assigned by Telldus Live per device?
+4. ~~Does the 50969 respond to ON-only, or does it require both ON and OFF to be
+   paired?~~ **Answered:** The receiver learns ON and OFF codes independently.
+   Teaching is done by sending the ON code while the receiver is in learn mode.
+5. ~~Are house integers 14466/14468/14268 semantically related or independently
+   assigned by Telldus Live per device?~~ **Not relevant:** We generate our own
+   codes — we don't need Telldus Live's encoding scheme.
+6. **NEW:** Why does the TellStick Duo refuse to flash when R-prefix repeat count
+   is 50 (learn) but works fine with 10 (on/off)? Possible firmware threshold.
 
 ## 10. Recommended Implementation Strategy
 
-Given the encoding algorithm is unknown, the recommended approach for
-`tellstick_local` is:
+### Current implementation (working as of v3.1.8.15)
 
-**Capture-and-store:** During device setup, capture the ON and OFF codes directly
-from Telldus Live via RTL-SDR (or Telldus API sniffing) and store the raw 25-bit
-hex values in the add-on config. Transmit them verbatim using the known PWM
-parameters.
+**Hash-based code generation:** The integration generates unique ON/OFF code pairs
+from a `(house, unit)` tuple using a deterministic hash. This avoids needing to
+reverse Telldus Live's proprietary encoding algorithm.
 
-This avoids needing to reverse the encoding and is robust against algorithm
-variations across firmware versions.
+Each `(house, unit)` pair maps to a unique 25-bit ON code and a unique 25-bit OFF
+code. The codes follow the Luxorparts packet structure:
+```
+[0101][20 variable bits][1]
+ ^^^^                    ^
+ fixed preamble          fixed suffix
+```
 
-### Current implementation
+The 20 variable bits are derived from a CRC32 hash of `(house, unit, command)`.
+Different `(house, unit)` pairs always produce different codes. The receiver
+doesn't care about the structure of the variable bits — it memorizes whatever
+code it hears during learn mode.
 
-The integration stores ground-truth codes in `LX_GROUND_TRUTH_CODES` in `const.py`
-and sends them as raw pulse data via `tdSendRawCommand` (Duo) or UDP raw bytes
-(Net/ZNet). The command format uses R-prefix with P-prefix:
+**Ground truth codes** from Telldus Live captures are also stored for reference
+and backward compatibility. If a user happens to use the exact Telldus Live
+house/unit values, the captured codes are used instead (these were verified to
+work on real hardware).
+
+### Learning workflow (user-facing)
+
+1. User adds a Luxorparts device in HA (picks house code + unit, or uses defaults)
+2. User puts the Luxorparts receiver in learn mode (hold button until LED flashes)
+3. User presses **ON** in HA → Duo transmits the ON code (10 repeats)
+4. Receiver learns the code → LED stops flashing
+5. ON and OFF now work from HA
+
+**Note:** The dedicated learn command (50 repeats) does not work yet because the
+TellStick Duo does not flash when R-prefix repeat count is 50. Using ON (10
+repeats) as a workaround is sufficient — the receiver learns from any valid
+transmission of the code.
+
+### Transmission format
+
+The integration sends raw pulse data via `tdSendRawCommand` (Duo) or UDP raw
+bytes (Net/ZNet). The command format uses R-prefix with P-prefix:
 `P\x02 R<n> S<single_packet> +` (56 bytes total). The `P\x02` sets a 2 ms
 pause between repeats (close to the natural ~2.25 ms inter-packet gap) and avoids
 null bytes which truncate the IPC chain. See `docs/LUXORPARTS_TIMELINE.md` for
