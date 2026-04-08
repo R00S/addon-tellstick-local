@@ -12,9 +12,6 @@
       },
       "ef_test_native_sequence": {
         "name": "Test ALL native EF variants (sequence)"
-      },
-      "lx_test_sequence": {
-        "name": "Test ALL LX variants (sequence)"
       }
     }
   },
