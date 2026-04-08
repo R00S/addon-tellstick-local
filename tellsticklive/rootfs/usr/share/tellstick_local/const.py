@@ -28,7 +28,7 @@ DOMAIN = "tellstick_local"
 
 
 
-INTEGRATION_VERSION = "3.1.8.19"
+INTEGRATION_VERSION = "3.1.8.20"
 
 
 # Backend type stored in config entry data
@@ -910,81 +910,73 @@ LX_PAUSE_MS = 2
 # To match Telldus Live's 2248 µs:  25 × 10 + 2 × 1000 = 2250 µs.
 LX_GAP_INTER_DUO = 25
 
-# Ground-truth ON/OFF codes captured from Telldus Live (RTL-433 verified).
+# ---------------------------------------------------------------------------
+# LPD (Luxorparts Device) codes — all known ON/OFF pairs, numbered 1-31.
+#
+# Each pair has both ON and OFF codes.  Pairs missing either code are
+# excluded (Remote 1 ch D had no ON capture → removed).
+#
+# LPD numbers are the ONLY identifier users see.  No house/unit in GUI.
+# Internally, lpd_number is stored as the house code (unit=1) so that
+# luxorparts_generate_codes(lpd, 1) returns the exact verified codes.
+#
+# Columns: (lpd_num, on_code, off_code, source_label, original_id)
+# source_label: "Live" = Telldus Live/ZNet, "Remote" = physical remote
+# ---------------------------------------------------------------------------
+
+LX_LPD_LIST: list[tuple[int, int, int, str, str]] = [
+    # --- Telldus Live — Labeled pairs ---
+    (1,  0x5E14538, 0x5A59738, "Live", "H14466/U1"),
+    (2,  0x559DBA8, 0x5CCC0A8, "Live", "H14468/U2"),
+    (3,  0x5BD4B88, 0x51B1088, "Live", "H14268/U4"),
+    (4,  0x340EBF8, 0x39785F8, "Live", "H21900/U1"),
+    (5,  0x6BD1C38, 0x6DB7638, "Live", "H166/U3"),
+    (6,  0x32128B8, 0x3E2CDB8, "Live", "H2190/U2"),
+    (7,  0x2450C38, 0x2633638, "Live", "H16634/U3"),
+    (8,  0x3757C38, 0x3B81638, "Live", "H21900/U3"),
+    (9,  0x39785D8, 0x340EBD8, "Live", "H21900/U4"),
+    (10, 0x3B81618, 0x3757C18, "Live", "H21900/U5"),
+    (11, 0x35A0BF8, 0x339A5F8, "Live", "H21901/U1"),
+    (12, 0x3034BF8, 0x3C4D5F8, "Live", "H29102/U1"),
+    (13, 0x53F5EB8, 0x5C548B8, "Live", "H12639/U5"),
+    (14, 0x57231E8, 0x5AC13E8, "Live", "H12639/U6"),
+    (15, 0x5E8E608, 0x5BBFF08, "Live", "H12639/U7"),
+    (16, 0x51DA248, 0x5467C48, "Live", "H12639/U8"),
+    (17, 0x5BBFF28, 0x5E8E628, "Live", "H12639/U9"),
+    (18, 0x5C54898, 0x53F5E98, "Live", "H12639/U10"),
+    (19, 0x5AC13C8, 0x57231C8, "Live", "H12639/U11"),
+    # --- Telldus Live — Unlabeled pairs ---
+    (20, 0x23CEC38, 0x292B638, "Live", "unknown"),
+    (21, 0x21A7C38, 0x25F1638, "Live", "unknown"),
+    (22, 0x206CC38, 0x289D638, "Live", "unknown"),
+    (23, 0x2709C38, 0x224A638, "Live", "unknown"),
+    (24, 0x2A86C38, 0x2FE8638, "Live", "maybe H12639/U4"),
+    # --- Physical Remotes (Remote 1 ch D excluded — no ON code) ---
+    (25, 0xAEBEEA8, 0xAEBEEB8, "Remote", "R1-A"),
+    (26, 0xAEBAEB8, 0xAEBBEA8, "Remote", "R1-B"),
+    (27, 0xAEAFEB8, 0xAEBAEA8, "Remote", "R1-C"),
+    (28, 0xAFBEEA8, 0xAFBEEB8, "Remote", "R2-A"),
+    (29, 0xAFBBEA8, 0xAFBBEB8, "Remote", "R2-B"),
+    (30, 0xAFBAEA8, 0xAFBAEB8, "Remote", "R2-C"),
+    (31, 0xAFAFEA8, 0xAFAFEB8, "Remote", "R2-D"),
+]
+
+# Ground-truth ON/OFF codes — keyed by (lpd_number, 1).
 # Format: { (house, unit): {"on": hex_code, "off": hex_code} }
 # Each hex_code is a 28-bit integer (MSB first).  The actual 25-bit code
 # occupies the top 25 bits; the bottom 3 bits are zero padding.
 # The encoder right-shifts by 3 to extract the correct 25 bits.
 #
-# Verified 2026-04-08 via RTL-433 capture of Telldus Live transmissions.
-# All pairs confirmed with consistent structural patterns:
-#   - Last cipher nibble (n5) identical for ON/OFF of same (house, unit)
-#   - Same house → shared encrypted address bytes, only unit nibble differs
-#   - State bits propagate through the cipher chain predictably
-#
-# Sources:
-#   - ZNet MQTT plugin captures: (14466,1), (14468,2), (14268,4), (21900,1)
-#   - RTL-433 sniffed from Homey app (2026-04-08, labeled H/U, OFF-then-ON):
-#     (166,3), (2190,2), (16634,3), (21900,3-5), (21901,1), (29102,1)
-#   - RTL-433 sniffed from Telldus Live (2026-04-08, labeled from end):
-#     (12639, 5-11)
-LX_GROUND_TRUTH_CODES: dict[tuple[int, int], dict[str, int]] = {
-    # ZNet MQTT plugin captures (house/unit from device config)
-    (14466, 1): {"on": 0x5E14538, "off": 0x5A59738},
-    (14468, 2): {"on": 0x559DBA8, "off": 0x5CCC0A8},
-    (14268, 4): {"on": 0x5BD4B88, "off": 0x51B1088},
-    (21900, 1): {"on": 0x340EBF8, "off": 0x39785F8},
-    # RTL-433 sniffed from Homey app (2026-04-08, all OFF-then-ON)
-    (166, 3): {"on": 0x6BD1C38, "off": 0x6DB7638},
-    (2190, 2): {"on": 0x32128B8, "off": 0x3E2CDB8},
-    (16634, 3): {"on": 0x2450C38, "off": 0x2633638},
-    (21900, 3): {"on": 0x3757C38, "off": 0x3B81638},
-    (21900, 4): {"on": 0x39785D8, "off": 0x340EBD8},
-    (21900, 5): {"on": 0x3B81618, "off": 0x3757C18},
-    (21901, 1): {"on": 0x35A0BF8, "off": 0x339A5F8},
-    (29102, 1): {"on": 0x3034BF8, "off": 0x3C4D5F8},
-    # RTL-433 sniffed from Telldus Live (2026-04-08, labeled from end)
-    (12639, 5): {"on": 0x53F5EB8, "off": 0x5C548B8},
-    (12639, 6): {"on": 0x57231E8, "off": 0x5AC13E8},
-    (12639, 7): {"on": 0x5E8E608, "off": 0x5BBFF08},
-    (12639, 8): {"on": 0x51DA248, "off": 0x5467C48},
-    (12639, 9): {"on": 0x5BBFF28, "off": 0x5E8E628},
-    (12639, 10): {"on": 0x5C54898, "off": 0x53F5E98},
-    (12639, 11): {"on": 0x5AC13C8, "off": 0x57231C8},
-}
-
-# ---------------------------------------------------------------------------
-# Additional unlabeled Telldus Live pairs — RTL-433 sniffed 2026-04-08
-# House/unit unknown, valid sequential OFF→ON pairs confirmed by suffix
-# pattern analysis (suffix match = correct pairing).
-#
-# Telldus Live 0x2... series (4 unknown + 1 maybe H12639/U4):
-#   OFF=0x292B638  ON=0x23CEC38   unknown-1
-#   OFF=0x25F1638  ON=0x21A7C38   unknown-2
-#   OFF=0x289D638  ON=0x206CC38   unknown-3
-#   OFF=0x224A638  ON=0x2709C38   unknown-4
-#   OFF=0x2FE8638  ON=0x2A86C38   maybe H12639/U4 (uncertain label)
-#
-# The 0x5... series (7 pairs) has been identified as H12639/U5-U11 and
-# added to LX_GROUND_TRUTH_CODES above.
-#
-# Physical remote pairs — Luxorparts 50969 remotes (2026-04-08)
-# Two remotes sniffed, each with A/B/C/D off+on buttons.
-# These are the {25} Luxorparts codes extracted from mixed captures that
-# also contained Homey proprietary junk ({1},{2},{3},{4} preamble codes).
-#
-# Remote 1 (0xAE... prefix):
-#   A: OFF=0xAEBEEB8  ON=0xAEBEEA8
-#   B: OFF=0xAEBBEA8  ON=0xAEBAEB8
-#   C: OFF=0xAEBAEA8  ON=0xAEAFEB8
-#   D: OFF=0xAEAFEA8  ON=(not captured)
-#
-# Remote 2 (0xAF... prefix):
-#   A: OFF=0xAFBEEB8  ON=0xAFBEEA8
-#   B: OFF=0xAFBBEB8  ON=0xAFBBEA8
-#   C: OFF=0xAFBAEB8  ON=0xAFBAEA8
-#   D: OFF=0xAFAFEB8  ON=0xAFAFEA8
-# ---------------------------------------------------------------------------
+# Keyed by (lpd_number, 1) — the LPD number IS the house code.
+# Users never see house/unit; they only see "LPD 1", "LPD 2", etc.
+# luxorparts_generate_codes(lpd, 1) returns the exact verified codes.
+LX_GROUND_TRUTH_CODES: dict[tuple[int, int], dict[str, int]] = {}
+for _lpd_num, _on_code, _off_code, _src, _orig_id in LX_LPD_LIST:
+    LX_GROUND_TRUTH_CODES[(_lpd_num, 1)] = {
+        "on": _on_code, "off": _off_code,
+    }
+# Clean up module-level loop variables
+del _lpd_num, _on_code, _off_code, _src, _orig_id
 
 
 # ---------------------------------------------------------------------------
@@ -1252,28 +1244,31 @@ def luxorparts_learn_commands(
 
 
 # ---------------------------------------------------------------------------
-# Luxorparts device flow — user-configurable house/unit
+# Luxorparts LPD test device — one entity per LPD code
 #
-# Uses Homey encryption to generate proper ON/OFF codes that the receiver
-# firmware can decrypt.  Any house (1–65535) and unit (1–8) works.
-# Ground-truth codes (from Telldus Live) are used when available.
+# Each LPD pair gets its own test entity.  The LPD number is stored as
+# the house code internally; users never see it — only "LPD 1", "LPD 2",
+# etc. in the entity name.  All entities use lx_live timing parameters.
 # ---------------------------------------------------------------------------
 
 _LX_TEST_VARIANTS: list[tuple[str, str, str, int]] = [
-    ("Luxorparts", "luxorparts", "selflearning-switch:lx_live", 11),
+    (f"LPD {lpd} — {src} {orig}",
+     "luxorparts", "selflearning-switch:lx_live", 11)
+    for lpd, _on, _off, src, orig in LX_LPD_LIST
 ]
 
 # Add LX test variants to the raw protocol catalog for visibility
 PROTOCOL_RAW_CATALOG.extend(_LX_TEST_VARIANTS)
 
-LX_TEST_VARIANTS: list[tuple[str, str]] = [
-    (entry[2].split(":", 1)[1], entry[0])
-    for entry in _LX_TEST_VARIANTS
+# Each LPD entity: (variant_suffix, label, house, unit) for config_flow.
+# house = LPD number (string), unit = "1".
+LX_LPD_ENTITIES: list[tuple[str, str, str, str]] = [
+    (f"lx_lpd{lpd}", f"LPD {lpd} — {src} {orig}",
+     str(lpd), "1")
+    for lpd, _on, _off, src, orig in LX_LPD_LIST
 ]
+
 LX_TEST_GROUP_UID = "lx_test"
-# Hardcoded to H14268/U4 — the house/unit verified by RTL-433 against Live
-LX_TEST_HOUSE = "14268"
-LX_TEST_UNIT = "4"
 
 PROTOCOL_NATIVE_CATALOG: list[tuple[str, str, str, int]] = list(
     PROTOCOL_MODEL_CATALOG

@@ -68,9 +68,7 @@ from .const import (
     ENTRY_DEVICE_ID_MAP,
     ENTRY_MIRRORS,
     ENTRY_TELLSTICK_CONTROLLER,
-    LX_TEST_HOUSE,
-    LX_TEST_UNIT,
-    LX_TEST_VARIANTS,
+    LX_LPD_ENTITIES,
     PROTOCOL_MODEL_LABELS,
     PROTOCOL_MODEL_MAP,
     PROTOCOL_NATIVE_LABELS,
@@ -2701,30 +2699,24 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         )
 
     # ------------------------------------------------------------------
-    # Luxorparts device flow — supports arbitrary house/unit codes
+    # Luxorparts LPD test device — creates entities for all LPD codes
     # ------------------------------------------------------------------
 
     async def _async_lx_test_create(
         self,
         user_input: dict[str, Any] | None,
-        variants: list[tuple[str, str]],
+        lpd_entities: list[tuple[str, str, str, str]],
         group_prefix: str,
         seq_model: str,
         step_id: str,
     ) -> SubentryFlowResult:
-        """Create a Luxorparts switch entity with user-chosen house/unit.
+        """Create Luxorparts LPD test entities.
 
-        The user picks a house code (1–65535) and unit (1–8).  The
-        integration generates unique ON/OFF codes deterministically from
-        these values.  Different house/unit pairs control different
-        switches.
-
-        Learning workflow: put receiver in learn mode, press ON in HA.
+        Each LPD code gets its own entity with a synthetic house/unit
+        that maps to the exact ON/OFF codes in LX_GROUND_TRUTH_CODES.
+        No house/unit form — codes are hardcoded from RTL-433 captures.
         """
         if user_input is not None:
-            house = str(user_input.get("house", LX_TEST_HOUSE))
-            unit = str(user_input.get("unit", LX_TEST_UNIT))
-
             entry = self._get_entry()
             entry_data = self.hass.data[DOMAIN].get(entry.entry_id, {})
             device_id_map: dict[str, Any] = entry_data.get(
@@ -2734,15 +2726,12 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             existing_devices = dict(entry.options.get(CONF_DEVICES, {}))
             created = 0
 
-            # --- Create one switch entity per variant ---
-            for variant_suffix, label in variants:
-                model = f"selflearning-switch:{variant_suffix}"
-                device_uid = f"lx_test_{variant_suffix}_{house}_{unit}"
+            # --- Create one switch entity per LPD code ---
+            for variant_suffix, label, house, unit in lpd_entities:
+                model = "selflearning-switch:lx_live"
+                device_uid = f"lx_test_{variant_suffix}"
                 if device_uid in existing_devices:
                     continue
-
-                # Include house/unit in the label for easy identification
-                entity_label = f"{label} H{house} U{unit}"
 
                 device_dict: dict[str, Any] = {
                     CONF_DEVICE_PROTOCOL: "luxorparts",
@@ -2754,7 +2743,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 device_id_map[device_uid] = device_dict
 
                 existing_devices[device_uid] = {
-                    CONF_DEVICE_NAME: entity_label,
+                    CONF_DEVICE_NAME: label,
                     CONF_DEVICE_PROTOCOL: "luxorparts",
                     CONF_DEVICE_MODEL: model,
                     CONF_DEVICE_HOUSE: house,
@@ -2771,8 +2760,8 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             )
 
             _LOGGER.info(
-                "LX test %s: created %d entities (house=%s unit=%s), reloading",
-                group_prefix, created, house, unit,
+                "LX test %s: created %d LPD entities, reloading",
+                group_prefix, created,
             )
 
             # Reload the integration entry so new entities appear immediately
@@ -2782,24 +2771,17 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
 
         return self.async_show_form(
             step_id=step_id,
-            data_schema=vol.Schema({
-                vol.Required("house", default=int(LX_TEST_HOUSE)): vol.All(
-                    int, vol.Range(min=1, max=65535),
-                ),
-                vol.Required("unit", default=int(LX_TEST_UNIT)): vol.All(
-                    int, vol.Range(min=1, max=8),
-                ),
-            }),
-            description_placeholders={"count": str(len(variants))},
+            data_schema=vol.Schema({}),
+            description_placeholders={"count": str(len(lpd_entities))},
         )
 
     async def async_step_lx_test(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
-        """Add all Luxorparts test variants."""
+        """Add all Luxorparts LPD test entities."""
         return await self._async_lx_test_create(
             user_input,
-            variants=LX_TEST_VARIANTS,
+            lpd_entities=LX_LPD_ENTITIES,
             group_prefix="lx_test",
             seq_model="lx_test_sequence",
             step_id="lx_test",
