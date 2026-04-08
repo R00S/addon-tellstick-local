@@ -903,8 +903,9 @@ LX_PULSE = LX_PULSE_SHORT
 # See docs/LUXORPARTS_TIMELINE.md for the full regression history.
 LX_PAUSE_MS = 2
 
-# Duo R-prefix path: the firmware P-prefix pause is ADDITIVE to the
-# data-level gap_inter.  Total inter-packet silence =
+# Duo R-prefix path only (not used by Net/ZNet — they use LX_GAP_INTER).
+# The firmware P-prefix pause is ADDITIVE to the data-level gap_inter.
+# Total inter-packet silence =
 #   gap_inter × 10 µs  +  LX_PAUSE_MS × 1000 µs
 # To match Telldus Live's 2248 µs:  25 × 10 + 2 × 1000 = 2250 µs.
 LX_GAP_INTER_DUO = 25
@@ -915,8 +916,8 @@ LX_GAP_INTER_DUO = 25
 # occupies the top 25 bits; the bottom 3 bits are zero padding.
 # The encoder right-shifts by 3 to extract the correct 25 bits.
 #
-# Verified 2026-04-08 via RTL-433 capture of Telldus Live off→on→learn
-# sequence for H14268/U4.  Learn = ON code × 50 repeats.
+# Verified 2026-04-08 via RTL-433 capture of Telldus Live transmission
+# (off→on→learn sequence for H14268/U4).  Learn = ON code × 50 repeats.
 LX_GROUND_TRUTH_CODES: dict[tuple[int, int], dict[str, int]] = {
     (14466, 1): {"on": 0x5E14538, "off": 0x5A59738},
     (14468, 2): {"on": 0x559DBA8, "off": 0x5CCC0A8},
