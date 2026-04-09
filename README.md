@@ -602,7 +602,7 @@ and of this project.
    updated firmware with support for local plugins. In your request, also
    ask for the supported developer **quazzie@gmail.com** with the public key
    from the plugin repository. Based on community experience (April 2026),
-   responses typically arrive within a month.
+   responses typically arrive in up to a month.
 3. Once the support request is accepted, log in to your ZNet at
    <http://tellstick.local> using your Telldus Live credentials. Go to
    **Plugins (beta)** → **Manual upload** (↑) and upload the downloaded
