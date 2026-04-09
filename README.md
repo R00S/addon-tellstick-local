@@ -573,6 +573,45 @@ If you have an RTL-SDR and can capture additional working codes, please
 
 ---
 
+## Future-proofing your TellStick ZNet (optional)
+
+> **Context:** Telldus Live has shown signs of reduced maintenance. This
+> integration does **not** use Telldus Live — it talks to the ZNet locally
+> via UDP — so you are already independent of the cloud for normal use.
+> The tip below is extra insurance in case Telldus discontinues the ZNet
+> firmware update service or changes the device's local UDP protocol.
+
+If you own a **TellStick ZNet**, you can install the open-source
+**tellstick-plugin-mqtt-hass** plugin directly onto the device. With this
+plugin installed, the ZNet can publish RF events to your local MQTT broker
+and receive on/off commands over MQTT — fully independently of Telldus Live
+and of this project.
+
+**Why this is worth doing:**
+
+- If Telldus Live is shut down, your ZNet continues to work via MQTT.
+- The plugin survives on the device through firmware updates.
+- Installation is free and requires no hardware modification.
+
+**How to get the plugin installed:**
+
+1. Follow the instructions in the plugin repository:
+   <https://github.com/quazzie/tellstick-plugin-mqtt-hass>
+2. The plugin requires a **developer key** from Telldus to be uploaded to
+   your device. Contact Telldus support (support@telldus.com) and ask for
+   a developer key for your ZNet serial number. Based on community
+   experience (April 2026), responses typically arrive within a month.
+3. Once the key is granted, follow the repository instructions to upload and
+   activate the plugin.
+
+> **Note:** This plugin is independent of this integration. You do not
+> need it for this project to work. It is purely an insurance measure —
+> a ZNet with the plugin installed is safe from future Telldus Live
+> disruptions regardless of what happens to the cloud service or to this
+> project.
+
+---
+
 ## Support
 
 - [Open an issue on GitHub][issue]
