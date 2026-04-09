@@ -595,14 +595,18 @@ and of this project.
 
 **How to get the plugin installed:**
 
-1. Follow the instructions in the plugin repository:
-   <https://github.com/quazzie/tellstick-plugin-mqtt-hass>
-2. The plugin requires a **developer key** from Telldus to be uploaded to
-   your device. Contact Telldus support (support@telldus.com) and ask for
-   a developer key for your ZNet serial number. Based on community
-   experience (April 2026), responses typically arrive within a month.
-3. Once the key is granted, follow the repository instructions to upload and
-   activate the plugin.
+1. Download the latest release from the plugin repository:
+   <https://github.com/quazzie/tellstick-plugin-mqtt-hass/releases>
+2. The plugin requires your device to have **local plugin support** enabled.
+   Open a support ticket at <http://support.telldus.com> and ask for an
+   updated firmware with support for local plugins. In your request, also
+   ask for the supported developer **quazzie@gmail.com** with the public key
+   from the plugin repository. Based on community experience (April 2026),
+   responses typically arrive in up to a month.
+3. Once the support request is accepted, log in to your ZNet at
+   <http://tellstick.local> using your Telldus Live credentials. Go to
+   **Plugins (beta)** → **Manual upload** (↑) and upload the downloaded
+   package. Reboot after install.
 
 > **Note:** This plugin is independent of this integration. You do not
 > need it for this project to work. It is purely an insurance measure —
