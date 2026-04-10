@@ -186,7 +186,7 @@
         <ul class="bullets" style="margin-top: 0.8rem;">
           <li>Utvecklaren beskriver funktionen på vanligt språk</li>
           <li>Agenten utforskar kodbasen och föreslår en plan</li>
-          <li>Agenten skriver, lintar och testar koden</li>
+          <li>Agenten skriver, lintar (kontrollerar kodkvalitet) och testar koden</li>
           <li>Utvecklaren granskar diffen i PR:en</li>
           <li>Iterera tills det fungerar på riktig hårdvara</li>
         </ul>
@@ -218,13 +218,13 @@
       <div class="card">
         <h3>⏱ När hjälper AI faktiskt en hobbyist?</h3>
         <ul class="bullets" style="margin-top: 0.5rem;">
-          <li><span class="accent2">Löser återvändsgränder</span> — bakåtkonstruktion av
-              Luxorparts 433 MHz RF-protokoll tog 3 dagars agentarbete;
+          <li><span class="accent2">Löser återvändsgränder</span> — att avkoda ett okänt RF-protokoll
+              (Luxorparts 433 MHz) tog 3 dagars agentarbete;
               att stirra på rå hex-dumpar ensam hade dödat funktionen</li>
           <li><span class="accent2">Slitgöra som ingen gillar</span> — att skriva
               den sjuttonde nästan identiska protokollenkodern är inte kul;
               arkitekturbesluten är det</li>
-          <li><span class="warn">Hastighet när du vill ha det</span> — "Jag vill ha
+          <li><span class="warn">Snabbhet när du vill ha det</span> — "Jag vill ha
               det här fungerande ikväll" är ett giltigt skäl; inte det enda</li>
           <li><span style="color:var(--muted)">Inte en ersättning för njutning</span>
               — de roliga delarna (design, hårdvarufelsökning, första enheten som
@@ -267,8 +267,8 @@
           Frågan är inte "är det billigare än att anlita någon" —
           det är <strong>"skulle den här funktionen existera alls utan det?"</strong><br>
           <span style="color:var(--muted)">
-          (För den nyfikne: 12 124 rader på ~1 820 kr = <strong>15 öre/rad</strong>.
-          En konsult tar ut 16–70 kr/rad. Roligt tal, fel fråga för ett hobbyprojekt.)
+          (För den nyfikne: 12 124 rader på ~1 820 kr = <strong>15 öre/rad</strong>;
+          en konsult tar ut 16–70 kr/rad.)
           </span>
         </p>
       </div>
@@ -278,7 +278,7 @@
   <!-- ─────────────────────────────── SLIDE 3 ─── -->
   <section class="slide" id="slide-3">
     <div class="tag">Hållbarhet &amp; kostnad</div>
-    <h2>Gör gammal hårdvara nyttig igen</h2>
+    <h2>Gör gammal hårdvara användbar igen</h2>
 
     <div class="grid-2">
       <div>
@@ -290,10 +290,13 @@
         <div class="card" style="margin-top: 1rem;">
           <h3>🌍 Miljökostnad vid byte</h3>
           <ul class="bullets">
-            <li>En ny Zigbee-koordinator: 50–150 g CO₂-ekv att tillverka</li>
-            <li>Byta 10 strömbrytare: 500–2 000 g CO₂-ekv</li>
-            <li>Fungerande TellStick Duo: tillverkad redan <span class="accent2">2009–2015</span></li>
-            <li>Förlängd livslängd med 10+ år: <span class="accent2">nära noll inbyggt kol</span></li>
+            <li>Tillverka Zigbee-koord. + 10 switchar: ~1,5–3 kg CO₂-ekv</li>
+            <li>Sjöfrakt från Asien (~15 000 km): ytterligare ~0,5–1 kg CO₂-ekv</li>
+            <li>Sista milen (lastbil/post): ~0,2–0,5 kg CO₂-ekv</li>
+            <li>Totalt ersättning: <span class="warn">~2–5 kg CO₂-ekv</span> — motsvarar
+                ungefär <span class="warn">400–1 000 km</span> i Stockholms tunnelbana</li>
+            <li>TellStick Duo tillverkad <span class="accent2">2009–2015</span> — fortsatt drift
+                innebär noll ny tillverkningspåverkan</li>
           </ul>
         </div>
       </div>
@@ -303,10 +306,14 @@
           <h3>💰 Ekonomisk kostnad vid byte</h3>
           <table>
             <tr><th>Scenario</th><th>Kostnad</th></tr>
-            <tr><td>Behåll TellStick Duo + detta tillägg</td><td class="yes">€0</td></tr>
-            <tr><td>Byt mot Zigbee-koordinator</td><td class="ok">~€30–80</td></tr>
-            <tr><td>Byt även alla 433 MHz-enheter</td><td class="no">€200–600+</td></tr>
+            <tr><td>Behåll TellStick Duo + detta tillägg</td><td class="yes">0 kr</td></tr>
+            <tr><td>Byt mot Zigbee-koordinator</td><td class="ok">~350–900 kr</td></tr>
+            <tr><td>Byt 433 MHz-enheter: ~200 kr/enhet (Nexa/KAKU)</td><td class="no">200 kr × din park</td></tr>
           </table>
+          <p style="font-size:0.82rem; margin-top:0.5rem; color:var(--muted)">
+            Nexa m.fl. har sålt uppskattningsvis 1–3 miljoner 433 MHz-enheter i Sverige sedan 1990-talet.
+            Varje befintlig enhet som stannar kvar sparar ~200 kr och ~2–5 kg CO₂.
+          </p>
         </div>
 
         <div class="card" style="margin-top: 1rem;">
@@ -356,9 +363,9 @@
         </tr>
         <tr>
           <td>Enhetskostnad</td>
-          <td class="yes">€3–15 per uttag</td>
-          <td class="ok">€10–30</td>
-          <td class="ok">€10–25</td>
+          <td class="yes">30–160 kr per uttag</td>
+          <td class="ok">110–330 kr</td>
+          <td class="ok">110–275 kr</td>
         </tr>
         <tr>
           <td>Räckvidd (utomhus)</td>
@@ -378,6 +385,12 @@
           <td class="yes">Ja (lokalt)</td>
           <td class="no">Ofta nej (molnberoende)</td>
         </tr>
+        <tr>
+          <td><span class="no">⚠ Statusbekräftelse</span></td>
+          <td class="no">Ingen — envägskommunikation</td>
+          <td class="yes">Ja — tvåvägs</td>
+          <td class="yes">Ja — tvåvägs</td>
+        </tr>
       </tbody>
     </table>
 
@@ -385,6 +398,10 @@
       <span class="accent2">Viktig insikt:</span> Ett typiskt Nexa / KAKU 433 MHz-vägguttag
       har <em>inga elektroniska komponenter alls på knappssidan</em> — det är en ren RF-sändare.
       Det fungerar fortfarande om 20 år. Prova det med en Zigbee-enhet vars leverantör har gått i konkurs.
+    </p>
+    <p style="margin-top: 0.6rem; font-size: 0.9rem; color: var(--muted);">
+      <span class="warn">Nackdel att känna till:</span> 433 MHz är envägskommunikation — HA kan inte bekräfta om en enhet faktiskt ändrat tillstånd.
+      Passar utmärkt för lampor och uttag där exakt statusåterkoppling inte är avgörande.
     </p>
   </section>
 
@@ -462,7 +479,7 @@ Automation: <span style="color:#34d399">✓ triggas korrekt</span>
       <div class="card">
         <h3>🔌 Luxorparts Net/ZNet</h3>
         <p>Luxorparts 50969/50970/50972 fungerar på TellStick Duo via förinspelade koder.
-           Att utvidga detta till Net och ZNet kräver den råa pulsvägen ovan.</p>
+           Att utvidga detta till Net och ZNet kräver råpuls-sändningen ovan.</p>
       </div>
 
       <div class="card">
@@ -477,13 +494,6 @@ Automation: <span style="color:#34d399">✓ triggas korrekt</span>
         <p>Publicera enhetsstatus till en MQTT-broker så att andra hemautomationsplattformar
            (Node-RED, openHAB) kan konsumera 433 MHz-händelser utan HA-beroende.</p>
       </div>
-
-      <div class="card">
-        <h3>🤖 AI-assisterad protokollidentifiering</h3>
-        <p>När flera protokollavkodare aktiveras vid en knapptryckning, använd signaltiming
-           och bitmönsteranalys för att föreslå det mest sannolika rätta protokollet —
-           minskar falska positiva enhetsupptäckter.</p>
-      </div>
     </div>
   </section>
 
@@ -494,7 +504,7 @@ Automation: <span style="color:#34d399">✓ triggas korrekt</span>
 
     <div class="grid-2">
       <div>
-        <p>Samma tvåkomponentarkitektur som används av Z-Wave JS och deCONZ —
+        <p>Samma tvådelade arkitektur som används av Z-Wave JS och deCONZ —
            en <span class="accent">Docker-behållare</span> för hårdvaruåtkomst och en
            <span class="accent2">Python-integration</span> för HA-entiteter.</p>
 
@@ -591,7 +601,7 @@ Fjärrkontrollknapp tryckt
           </li>
           <li>
             <strong>Framtiden är öppen</strong> — rå inspelning/uppspelning, fullständig
-            protokollportering och AI-assisterad identifiering är alla inom räckhåll.
+            protokollportering för Net/ZNet är inom räckhåll.
           </li>
         </ul>
       </div>
@@ -618,6 +628,14 @@ Fjärrkontrollknapp tryckt
             Nexa · KAKU · Proove · Intertechno · Oregon Scientific ·
             Hasta · Brateck · Luxorparts · och mer.
           </p>
+        </div>
+
+        <div class="card" style="margin-top: 1rem; text-align: center; background: rgba(251,191,36,0.07); border-color: rgba(251,191,36,0.3);">
+          <h3 style="font-size: 1rem; color: var(--warn);">☕ Bjud på en kaffe</h3>
+          <img src="https://api.qrserver.com/v1/create-qr-code/?data=https://buymeacoffee.com/r00s&size=130x130&color=000000&bgcolor=ffffff&margin=6"
+               alt="QR-kod till buymeacoffee.com/r00s"
+               style="margin-top: 0.5rem; border-radius: 6px; display: block; margin-left: auto; margin-right: auto;">
+          <p style="margin-top: 0.4rem; font-size: 0.82rem; color: var(--muted);">buymeacoffee.com/r00s</p>
         </div>
       </div>
     </div>
