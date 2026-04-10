@@ -31,6 +31,8 @@ Local-only TellStick Duo and TellStick Net/ZNet support for Home Assistant – n
 
 **v3.1 highlights:** TellStick Net / ZNet support · Mirror / range extender · full GUI device management · all 433 MHz protocols · manual device grouping
 
+📊 **Project presentation:** [English][presentation-en] · [Svenska][presentation-sv]
+
 ---
 
 ## About
@@ -649,4 +651,6 @@ See [LICENSE.md](LICENSE.md) and [NOTICE](NOTICE) for full details.
 [github-actions]: https://github.com/R00S/addon-tellstick-local/actions
 [issue]: https://github.com/R00S/addon-tellstick-local/issues
 [maintenance-shield]: https://img.shields.io/maintenance/yes/2026.svg
+[presentation-en]: https://htmlpreview.github.io/?https://github.com/R00S/addon-tellstick-local/blob/main/presentation.html
+[presentation-sv]: https://htmlpreview.github.io/?https://github.com/R00S/addon-tellstick-local/blob/main/presentation-sv.html
 [project-stage-shield]: https://img.shields.io/badge/project%20stage-stable-brightgreen.svg

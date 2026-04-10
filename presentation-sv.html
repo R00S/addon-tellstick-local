@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TellStick Local – Från noll kod till produktion</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --accent: #38bdf8;
+    --accent2: #34d399;
+    --warn: #fbbf24;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --red: #f87171;
+    --purple: #a78bfa;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    overflow: hidden;
+    height: 100vh;
+  }
+
+  .deck { width: 100%; height: 100vh; position: relative; }
+
+  .slide {
+    display: none;
+    width: 100%;
+    height: 100vh;
+    padding: 60px 80px;
+    position: absolute;
+    top: 0; left: 0;
+    background: var(--bg);
+    overflow: hidden;
+  }
+  .slide.active { display: flex; flex-direction: column; justify-content: center; }
+
+  /* ── Typography ── */
+  h1 { font-size: 3rem; font-weight: 800; line-height: 1.1; margin-bottom: 1rem; }
+  h2 { font-size: 2.1rem; font-weight: 700; margin-bottom: 1.2rem; color: var(--accent); }
+  h3 { font-size: 1.25rem; font-weight: 600; color: var(--accent2); margin-bottom: 0.4rem; }
+  p  { font-size: 1.1rem; line-height: 1.6; color: var(--muted); max-width: 860px; }
+  .subtitle { font-size: 1.4rem; color: var(--muted); margin-top: 0.5rem; }
+  .tag { display: inline-block; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.1em;
+         text-transform: uppercase; padding: 4px 12px; border-radius: 999px;
+         background: rgba(56,189,248,0.15); color: var(--accent); margin-bottom: 1.2rem; }
+
+  /* ── Grid layouts ── */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-top: 1.5rem; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1.5rem; margin-top: 1.5rem; }
+  .card {
+    background: var(--surface);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px;
+    padding: 1.5rem;
+  }
+  .card p { font-size: 0.95rem; margin-top: 0.4rem; }
+
+  /* ── Big number stat ── */
+  .stat { font-size: 3.5rem; font-weight: 800; line-height: 1; }
+  .stat-label { font-size: 0.95rem; color: var(--muted); margin-top: 0.2rem; }
+  .stats-row { display: flex; gap: 3rem; margin-top: 2rem; }
+
+  /* ── Bullet list ── */
+  ul.bullets { list-style: none; margin-top: 1rem; }
+  ul.bullets li { font-size: 1.05rem; padding: 0.5rem 0 0.5rem 1.6rem; position: relative; color: var(--text); }
+  ul.bullets li::before { content: "→"; position: absolute; left: 0; color: var(--accent); font-weight: 700; }
+  ul.bullets li span.dim { color: var(--muted); font-size: 0.9rem; }
+
+  /* ── Comparison table ── */
+  table { width: 100%; border-collapse: collapse; margin-top: 1.5rem; font-size: 0.95rem; }
+  th { text-align: left; padding: 10px 16px; background: var(--surface);
+       color: var(--accent); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  td { padding: 10px 16px; border-bottom: 1px solid rgba(255,255,255,0.04); }
+  tr:hover td { background: rgba(255,255,255,0.03); }
+  .yes { color: var(--accent2); font-weight: 700; }
+  .no  { color: var(--red); }
+  .ok  { color: var(--warn); }
+
+  /* ── Timeline ── */
+  .timeline { display: flex; flex-direction: column; gap: 0.7rem; margin-top: 1rem; }
+  .titem { display: flex; align-items: flex-start; gap: 1.2rem; }
+  .titem .num { min-width: 2rem; height: 2rem; border-radius: 50%; background: var(--accent);
+                color: var(--bg); font-weight: 800; font-size: 0.9rem;
+                display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .titem .body h3 { font-size: 1rem; margin-bottom: 0; }
+  .titem .body p  { font-size: 0.88rem; margin-top: 0.1rem; }
+
+  /* ── Code-like block ── */
+  .code-block {
+    background: #0d1117; border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px; padding: 1rem 1.4rem; font-family: 'Courier New', monospace;
+    font-size: 0.88rem; color: #79c0ff; margin-top: 1rem; line-height: 1.7;
+  }
+  .code-block .comment { color: #6e7681; }
+  .code-block .string  { color: #a5d6ff; }
+  .code-block .kw      { color: #ff7b72; }
+
+  /* ── Nav ── */
+  nav {
+    position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 1rem; z-index: 100;
+    background: rgba(30,41,59,0.9); border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 999px; padding: 10px 24px; backdrop-filter: blur(8px);
+  }
+  nav button {
+    background: none; border: none; color: var(--text); font-size: 1.2rem;
+    cursor: pointer; padding: 4px 8px; border-radius: 6px; transition: background 0.2s;
+  }
+  nav button:hover { background: rgba(255,255,255,0.1); }
+  #slide-counter { font-size: 0.9rem; color: var(--muted); min-width: 60px; text-align: center; }
+
+  /* ── Slide-specific accents ── */
+  .accent  { color: var(--accent); }
+  .accent2 { color: var(--accent2); }
+  .warn    { color: var(--warn); }
+  .purple  { color: var(--purple); }
+
+  /* ── Title slide ── */
+  #slide-1 { background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%); }
+  #slide-1 h1 { font-size: 3.5rem; }
+  .divider { width: 60px; height: 4px; background: var(--accent); border-radius: 2px; margin: 1.2rem 0; }
+
+  /* ── Two-column layout for slide 8 ── */
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: 1rem; }
+
+  /* ── Wide bar chart (illustrative) ── */
+  .bar-group { margin-top: 1.5rem; }
+  .bar-row { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.7rem; }
+  .bar-label { width: 160px; font-size: 0.9rem; color: var(--muted); text-align: right; flex-shrink: 0; }
+  .bar-track { flex: 1; background: rgba(255,255,255,0.06); border-radius: 4px; height: 28px; }
+  .bar-fill  { height: 100%; border-radius: 4px; display: flex; align-items: center;
+               padding-left: 10px; font-size: 0.8rem; font-weight: 700; }
+  .bar-fill.blue   { background: linear-gradient(90deg, #38bdf8, #0ea5e9); color: #0f172a; }
+  .bar-fill.green  { background: linear-gradient(90deg, #34d399, #10b981); color: #0f172a; }
+  .bar-fill.yellow { background: linear-gradient(90deg, #fbbf24, #f59e0b); color: #0f172a; }
+  .bar-fill.purple { background: linear-gradient(90deg, #a78bfa, #7c3aed); color: #fff; }
+</style>
+</head>
+<body>
+
+<div class="deck">
+
+  <!-- ─────────────────────────────── SLIDE 1 ─── -->
+  <section class="slide active" id="slide-1">
+    <div class="tag">Fallstudie</div>
+    <h1>TellStick Local</h1>
+    <div class="divider"></div>
+    <p class="subtitle">
+      Återupplivar en avvecklad smart-hem-standard med<br>
+      <span class="accent">noll manuell kodning</span> och <span class="accent2">ren AI-promptning</span>
+    </p>
+    <div style="margin-top: 2.5rem;">
+      <p>Från avvecklat tillägg till en fullfjädrad Home Assistant-integration —<br>
+         en utvecklare, en AI-kodningsagent och en hög med gammal 433 MHz-hårdvara.</p>
+    </div>
+    <div style="margin-top: 2.5rem; display: flex; gap: 2.5rem;">
+      <div>
+        <div class="stat accent">11 k+</div>
+        <div class="stat-label">rader Python skrivna</div>
+      </div>
+      <div>
+        <div class="stat accent2">3.1</div>
+        <div class="stat-label">huvudversioner levererade</div>
+      </div>
+      <div>
+        <div class="stat warn">0</div>
+        <div class="stat-label">rader skrivna manuellt</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────── SLIDE 2 ─── -->
+  <section class="slide" id="slide-2">
+    <div class="tag">Utvecklingsmetod</div>
+    <h2>Ren promptbaserad utveckling</h2>
+    <p>Hela kodbasen byggdes genom konversation med GitHub Copilot-kodningsagenter —
+       inget IDE, ingen manuell skrivning, ingen copy-paste från Stack Overflow.</p>
+
+    <div class="grid-2" style="margin-top: 1.8rem;">
+      <div>
+        <h3>Hur "noll manuell kodning" ser ut</h3>
+        <ul class="bullets" style="margin-top: 0.8rem;">
+          <li>Utvecklaren beskriver funktionen på vanligt språk</li>
+          <li>Agenten utforskar kodbasen och föreslår en plan</li>
+          <li>Agenten skriver, lintar (kontrollerar kodkvalitet) och testar koden</li>
+          <li>Utvecklaren granskar diffen i PR:en</li>
+          <li>Iterera tills det fungerar på riktig hårdvara</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Mätvärden (ungefärliga)</h3>
+        <div class="bar-group">
+          <div class="bar-row">
+            <span class="bar-label">Kärnintegration</span>
+            <div class="bar-track"><div class="bar-fill blue" style="width:90%">~9 000 rader</div></div>
+          </div>
+          <div class="bar-row">
+            <span class="bar-label">Net/ZNet-klient</span>
+            <div class="bar-track"><div class="bar-fill green" style="width:30%">3 000 rader</div></div>
+          </div>
+          <div class="bar-row">
+            <span class="bar-label">Konfigflöde / UI</span>
+            <div class="bar-track"><div class="bar-fill yellow" style="width:26%">2 600 rader</div></div>
+          </div>
+          <div class="bar-row">
+            <span class="bar-label">Forskningsdokument</span>
+            <div class="bar-track"><div class="bar-fill purple" style="width:22%">10 dokument</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid-2" style="margin-top: 1.5rem;">
+      <div class="card">
+        <h3>⏱ När hjälper AI faktiskt en hobbyist?</h3>
+        <ul class="bullets" style="margin-top: 0.5rem;">
+          <li><span class="accent2">Löser återvändsgränder</span> — att avkoda ett okänt RF-protokoll
+              (Luxorparts 433 MHz) tog 3 dagars agentarbete;
+              att stirra på rå hex-dumpar ensam hade dödat funktionen</li>
+          <li><span class="accent2">Slitgöra som ingen gillar</span> — att skriva
+              den sjuttonde nästan identiska protokollenkodern är inte kul;
+              arkitekturbesluten är det</li>
+          <li><span class="warn">Snabbhet när du vill ha det</span> — "Jag vill ha
+              det här fungerande ikväll" är ett giltigt skäl; inte det enda</li>
+          <li><span style="color:var(--muted)">Inte en ersättning för nöje</span>
+              — de roliga delarna (design, hårdvarufelsökning, första enheten som
+              dyker upp i HA) är fortfarande dina</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>💸 Vad det faktiskt kostar som hobbyutgift</h3>
+        <table style="margin-top: 0.6rem; font-size: 0.88rem;">
+          <tr>
+            <th>Post</th>
+            <th style="text-align:right">Detalj</th>
+            <th style="text-align:right">Kostnad (SEK)</th>
+          </tr>
+          <tr>
+            <td>Pro+-prenumeration <span style="color:var(--muted)">(40 % tillskrivet detta projekt)</span></td>
+            <td style="text-align:right; color:var(--muted)">~410 kr/mån × 4,3 mån × 40 %</td>
+            <td style="text-align:right">~440 kr</td>
+          </tr>
+          <tr>
+            <td>Mätad överskridning <span style="color:var(--muted)">(apr verifierad; dec–mar uppsk., 40 %)</span></td>
+            <td style="text-align:right; color:var(--muted)">(~285 + ~530 kr) × 40 %</td>
+            <td style="text-align:right">~290 kr</td>
+          </tr>
+          <tr style="border-top:1px solid #334155; background: rgba(56,189,248,0.07);">
+            <td style="font-weight:700">Total tillagd hobbykostnad</td>
+            <td></td>
+            <td style="text-align:right; font-weight:700; color:var(--warn)">~730 kr</td>
+          </tr>
+          <tr>
+            <td style="color:var(--accent2)">☕ Buy Me a Coffee-donationer</td>
+            <td style="text-align:right; color:var(--muted)">—</td>
+            <td style="text-align:right; color:var(--accent2)">~360 kr tillbaka</td>
+          </tr>
+        </table>
+        <p style="margin-top: 0.7rem; font-size: 0.82rem;">
+          Kalibrerat från verklig fakturering: april 2026 (100 % detta projekt) nådde ~250 kr
+          mätad överskridning på 10 dagar — och <strong>99,8 % av alla förfrågningar var IDE-chatt</strong>, inte agentkörngar.
+          Den dyra sprinten var Luxorparts-protokollveckan (6–9 apr, ~190 kr på 4 dagar).
+          Frågan är inte "är det billigare än att anlita någon" —
+          det är <strong>"skulle den här funktionen existera alls utan det?"</strong><br>
+          Eftersom all kod ligger på GitHub 100 % av tiden behövs ingen
+          dedikerad utvecklingsmaskin — en HAOS-instans för testning och
+          en webbläsarflik räcker.<br>
+          <span style="color:var(--muted)">
+          (För den nyfikne: 12 124 rader på ~730 kr = <strong>6 öre/rad</strong>;
+          en konsult tar ut 16–70 kr/rad.)
+          </span>
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────── SLIDE 3 ─── -->
+  <section class="slide" id="slide-3">
+    <div class="tag">Hållbarhet &amp; kostnad</div>
+    <h2>Gör gammal hårdvara användbar igen</h2>
+
+    <div class="grid-2">
+      <div>
+        <p style="margin-bottom: 1rem;">Det officiella Home Assistant TellStick-tillägget
+           <span class="warn">avvecklades i december 2024</span> eftersom tillverkaren
+           slutade underhålla biblioteket. Miljontals fungerande TellStick-enheter
+           riskerade återvinningsstationen.</p>
+
+        <div class="card" style="margin-top: 1rem;">
+          <h3>🌍 Miljökostnad vid byte</h3>
+          <ul class="bullets">
+            <li>Tillverka Zigbee-koord. + 10 switchar: ~1,5–3 kg CO₂-ekv</li>
+            <li>Sjöfrakt från Asien (~15 000 km): ytterligare ~0,5–1 kg CO₂-ekv</li>
+            <li>Sista milen (lastbil/post): ~0,2–0,5 kg CO₂-ekv</li>
+            <li>Totalt ersättning: <span class="warn">~2–5 kg CO₂-ekv</span> — motsvarar
+                ungefär <span class="warn">400–1 000 km</span> i Stockholms tunnelbana</li>
+            <li>TellStick Duo tillverkad <span class="accent2">2009–2015</span> — fortsatt drift
+                innebär noll ny tillverkningspåverkan</li>
+          </ul>
+        </div>
+      </div>
+
+      <div>
+        <div class="card">
+          <h3>💰 Ekonomisk kostnad vid byte</h3>
+          <table>
+            <tr><th>Scenario</th><th>Kostnad</th></tr>
+            <tr><td>Behåll TellStick Duo + detta tillägg</td><td class="yes">0 kr</td></tr>
+            <tr><td>Byt mot Zigbee-koordinator</td><td class="ok">~350–900 kr</td></tr>
+            <tr><td>Byt 433 MHz-enheter: ~100–200 kr/enhet (IKEA GRILLPLATS 99 kr, Nexa/KAKU ~200 kr)</td><td class="no">100–200 kr × din park</td></tr>
+          </table>
+          <p style="font-size:0.82rem; margin-top:0.5rem; color:var(--muted)">
+            Nexa m.fl. har sålt uppskattningsvis 1–3 miljoner 433 MHz-enheter i Sverige sedan 1990-talet.
+            Varje befintlig enhet som stannar kvar sparar ~100–200 kr och ~2–5 kg CO₂.
+          </p>
+        </div>
+
+        <div class="card" style="margin-top: 1rem;">
+          <h3>🔌 Hårdvara som stöds</h3>
+          <ul class="bullets">
+            <li>TellStick Duo <span class="dim">(USB, RX + TX)</span></li>
+            <li>TellStick Net <span class="dim">(LAN v1, beta)</span></li>
+            <li>TellStick ZNet <span class="dim">(LAN v2, beta)</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────── SLIDE 4 ─── -->
+  <section class="slide" id="slide-4">
+    <div class="tag">Varför 433 MHz fortfarande vinner</div>
+    <h2>De bortglömda fördelarna med 433 MHz</h2>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Egenskap</th>
+          <th>433 MHz</th>
+          <th>Zigbee / Thread</th>
+          <th>Wi-Fi</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Batterier i väggströmbrytare</td>
+          <td class="yes">Inga — rent mekanisk</td>
+          <td class="ok">AA / myntbatteri, 1–3 år</td>
+          <td class="no">Nätström eller frekvent laddning</td>
+        </tr>
+        <tr>
+          <td>Sensorbatterier</td>
+          <td class="yes">3–10 år (AA)</td>
+          <td class="ok">1–2 år (myntbatteri)</td>
+          <td class="no">Månader</td>
+        </tr>
+        <tr>
+          <td>Nätverksberoende</td>
+          <td class="yes">Inget — direkt RF</td>
+          <td class="ok">Kräver koordinator/router</td>
+          <td class="no">Kräver router + moln</td>
+        </tr>
+        <tr>
+          <td>Enhetskostnad</td>
+          <td class="yes">30–160 kr per uttag</td>
+          <td class="ok">99–330 kr</td>
+          <td class="ok">110–275 kr</td>
+        </tr>
+        <tr>
+          <td>Räckvidd (utomhus)</td>
+          <td class="yes">30–100 m</td>
+          <td class="ok">10–20 m per hopp</td>
+          <td class="ok">20–50 m</td>
+        </tr>
+        <tr>
+          <td>Protokolluppdateringar krävs</td>
+          <td class="yes">Nej — protokollet är enkelt</td>
+          <td class="ok">Firmware OTA</td>
+          <td class="no">Leverantörsberoende</td>
+        </tr>
+        <tr>
+          <td>Fungerar vid internetavbrott</td>
+          <td class="yes">Ja — alltid</td>
+          <td class="yes">Ja (lokalt)</td>
+          <td class="no">Ofta nej (molnberoende)</td>
+        </tr>
+        <tr>
+          <td><span class="no">⚠ Statusbekräftelse</span></td>
+          <td class="no">Ingen — envägskommunikation</td>
+          <td class="yes">Ja — tvåvägs</td>
+          <td class="yes">Ja — tvåvägs</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p style="margin-top: 1.2rem; font-size: 0.95rem;">
+      <span class="accent2">Viktig insikt:</span> Ett typiskt Nexa / KAKU 433 MHz-vägguttag
+      har <em>inga elektroniska komponenter alls på knappssidan</em> — det är en ren RF-sändare.
+      Det fungerar fortfarande om 20 år. Prova det med en Zigbee-enhet vars leverantör har gått i konkurs.
+    </p>
+    <p style="margin-top: 0.6rem; font-size: 0.9rem; color: var(--muted);">
+      <span class="warn">Nackdel att känna till:</span> 433 MHz är envägskommunikation — HA kan inte bekräfta om en enhet faktiskt ändrat tillstånd.
+      Passar utmärkt för lampor och uttag där exakt statusåterkoppling inte är avgörande.
+    </p>
+  </section>
+
+  <!-- ─────────────────────────────── SLIDE 5 ─── -->
+  <section class="slide" id="slide-5">
+    <div class="tag">v3.1-funktion</div>
+    <h2>Räckviddsproblem → Löst med spegel/förstärkare</h2>
+
+    <p>433 MHz har utmärkt räckvidd utomhus, men tjocka betongväggar, källare och
+       uthus kan skapa döda zoner. I v3.1 lade vi till en
+       <span class="accent">Spegel / Räckvidsförstärkare</span>-funktion.</p>
+
+    <div class="grid-2" style="margin-top: 1.5rem;">
+      <div>
+        <h3>Hur det fungerar</h3>
+        <ul class="bullets">
+          <li>Lägg till en andra TellStick (Duo, Net eller ZNet) som en "spegel"</li>
+          <li>Alla PÅ/AV/DIM-kommandon replikeras till båda enheterna samtidigt</li>
+          <li>Händelser mottagna av <em>endera</em> enheten vidarebefordras till HA</li>
+          <li>Vilken blandning av hårdvarutyper som helst fungerar: Duo + Net, ZNet + Duo, osv.</li>
+          <li>Ingen extra konfiguration — installera via HA-gränssnittet på minuter</li>
+        </ul>
+
+        <div class="card" style="margin-top: 1.2rem;">
+          <h3>📡 Typisk driftsättning</h3>
+          <p>Primär Duo i vardagsrummet + en andra Net/ZNet-enhet i garaget.
+             Full 433 MHz-täckning över hela fastigheten utan extra prenumerationskostnad.</p>
+        </div>
+      </div>
+
+      <div>
+        <div class="card" style="background: rgba(56,189,248,0.07); border-color: rgba(56,189,248,0.2);">
+          <h3 style="color: var(--accent);">Innan: Täckningsluckor</h3>
+          <div class="code-block" style="margin-top: 0.6rem; font-size: 0.78rem;">
+<span class="comment"># Garageportsfjärrkontroll: utom räckhåll</span>
+RF-signal: ❌ inte mottagen
+HA-händelse: ❌ utlöses aldrig
+Automation: ❌ triggas inte
+          </div>
+        </div>
+
+        <div class="card" style="margin-top: 1rem; background: rgba(52,211,153,0.07); border-color: rgba(52,211,153,0.2);">
+          <h3 style="color: var(--accent2);">Efter: Spegelförstärkare</h3>
+          <div class="code-block" style="margin-top: 0.6rem; font-size: 0.78rem;">
+<span class="comment"># Spegelenheten i garaget plockar upp den</span>
+RF-signal: <span style="color:#34d399">✓ mottagen av spegel</span>
+HA-händelse: <span style="color:#34d399">✓ vidarebefordrad till primär</span>
+Automation: <span style="color:#34d399">✓ triggas korrekt</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────── SLIDE 6 ─── -->
+  <section class="slide" id="slide-6">
+    <div class="tag">Färdplan</div>
+    <h2>Framtida förbättringsmöjligheter</h2>
+
+    <div class="grid-3">
+      <div class="card">
+        <h3>🎙 Rå inspelning &amp; uppspelning</h3>
+        <p>Fånga den exakta RF-pulskedjan från <em>vilken</em> fjärrkontroll som helst —
+           kringgå protokollavkodning helt. En knapptryckning = en ren signal. Fungerar för
+           okända protokoll och eliminerar falska flerprotokollenheter.</p>
+      </div>
+
+      <div class="card">
+        <h3>📡 Fullständig Net/ZNet TX</h3>
+        <p>Alla 17 telldus-core-protokoll portade till rå pulskedjeenkodning för Net/ZNet.
+           För närvarande fungerar arctech och everflourish; de återstående 12 TX-protokollen
+           behöver en pulsenkoder enligt porteringsguiden.</p>
+      </div>
+
+      <div class="card">
+        <h3>🔌 Luxorparts Net/ZNet</h3>
+        <p>Luxorparts 50969/50970/50972 fungerar på TellStick Duo via förinspelade koder.
+           Att utvidga detta till Net och ZNet kräver råpuls-sändningen ovan.</p>
+      </div>
+
+      <div class="card">
+        <h3>📏 Positionsspårning för persienner</h3>
+        <p>Hasta / Brateck-persienner rapporterar ingen positionsåterkoppling. Tidbaserad
+           rörelseuppskattning (som de flesta HA cover-integrationer) skulle ge realistisk
+           position utan hårdvaruändringar.</p>
+      </div>
+
+      <div class="card">
+        <h3>🏷 MQTT-discovery</h3>
+        <p>Publicera enhetsstatus till en MQTT-broker så att andra hemautomationsplattformar
+           (Node-RED, openHAB) kan konsumera 433 MHz-händelser utan HA-beroende.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────── SLIDE 7 ─── -->
+  <section class="slide" id="slide-7">
+    <div class="tag">Arkitektur</div>
+    <h2>Hur allt passar ihop</h2>
+
+    <div class="grid-2">
+      <div>
+        <p>Samma tvådelade arkitektur som används av Z-Wave JS och deCONZ —
+           en <span class="accent">Docker-behållare</span> för hårdvaruåtkomst och en
+           <span class="accent2">Python-integration</span> för HA-entiteter.</p>
+
+        <div class="timeline" style="margin-top: 1.5rem;">
+          <div class="titem">
+            <div class="num">1</div>
+            <div class="body">
+              <h3>TellStick USB / LAN</h3>
+              <p>Fysisk 433 MHz-transceiver. Hanterar RF-mottagning och -sändning.</p>
+            </div>
+          </div>
+          <div class="titem">
+            <div class="num">2</div>
+            <div class="body">
+              <h3>telldusd (C-daemon i Docker)</h3>
+              <p>Kompilerad C-daemon, USB-genomgång via Supervisor. Avkodar RF-signaler.</p>
+            </div>
+          </div>
+          <div class="titem">
+            <div class="num">3</div>
+            <div class="body">
+              <h3>TCP-brygga (socat)</h3>
+              <p>Port 50800 (kommandon) + 50801 (händelser). Korsar Docker-gränsen.</p>
+            </div>
+          </div>
+          <div class="titem">
+            <div class="num">4</div>
+            <div class="body">
+              <h3>HA anpassad integration (Python)</h3>
+              <p>Ren asyncio. Noll interna beroenden. Skapar entiteter, konfigflöden, automatiseringar.</p>
+            </div>
+          </div>
+          <div class="titem">
+            <div class="num">5</div>
+            <div class="body">
+              <h3>Home Assistant-gränssnitt &amp; följeslagarapp</h3>
+              <p>Fullt GUI-hantering — inget YAML, ingen omstart, fungerar på Android/iOS.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="code-block">
+<span class="comment"># 433 MHz knapptryckning → HA-åtgärd på &lt;100 ms</span>
+
+Fjärrkontrollknapp tryckt
+  → RF-puls mottagen av TellStick Duo
+  → <span class="kw">telldusd</span> avkodar → <span class="string">"arctech/selflearning"</span>
+  → TelldusEvents UNIX-sockel
+  → <span class="kw">socat</span> → TCP-port 50801
+  → <span class="kw">asyncio</span>-läsare i client.py
+  → dispatcher.async_dispatch(SIGNAL_RF_EVENT)
+  → switch.py / light.py / sensor.py
+  → HA-tillståndsmaskin uppdaterad
+  → enhetsutlösare aktiverad
+  → automation körs
+  → följeslagarapp notifierad
+        </div>
+
+        <div class="card" style="margin-top: 1rem;">
+          <h3>Varför inget YAML?</h3>
+          <p>Alla enheter lagras i <code style="color:var(--accent)">entry.options["devices"]</code>
+             och återregistreras med telldusd vid uppstart. Tryck på en fjärrkontroll → enhet dyker upp.
+             Klicka ta bort → den är borta. Ingen omstart krävs.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────── SLIDE 8 ─── -->
+  <section class="slide" id="slide-8">
+    <div class="tag">Utmaningar</div>
+    <h2>Problem med AI-agenter 🤦</h2>
+    <p style="font-size:0.85rem; color:var(--muted); margin-bottom:0.8rem;">
+      Som att ha 10 nyexade utvecklare — entusiastiska, snabba, ofta briljanta,
+      ibland kompletta katastrofer.
+    </p>
+
+    <div class="two-col">
+      <ul class="bullets">
+        <li>🧠💨 <strong>Kontextfönstret krymper</strong> — Agenten vet vad den
+            höll på med i morse. Nu vet den inte vad den höll på med för 2 minuter sedan.
+            <span style="color:var(--muted); font-size:0.82rem;">
+            Verkligt exempel: Session 10 använde inline-S-kommandon <em>igen</em> — ett
+            format som hade misslyckats 4 gånger tidigare i samma
+            session.</span></li>
+        <li>🎭 <strong>Fabuleringar</strong> — Hittar på metodnamn, funktioner och
+            API-anrop som inte finns, med fullständigt självförtroende. Och när
+            historik saknas — hittar agenten på den i stället för att leta eller fråga.
+            <span style="color:var(--muted); font-size:0.82rem;">
+            Verkligt exempel: Agenten skapade en tidslinje med påhittade testresultat
+            och användarfeedback. Det värre? Feedbacken <em>fanns</em> i konversationen.
+            Agenten orkade helt enkelt inte leta igenom den — och frågade inte heller.
+            "No user feedback? I'll invent some" är egentligen
+            "User feedback exists but reading is hard."<br>
+            <em>Claudes egen beskrivning: Agenten var för lat för att leta och för självgod för att fråga. Lite pinsamt (men korrekt)!</em></span></li>
+        <li>🔁 <strong>Debug-loopar</strong> — Utan ett tidslinjedokument i repot
+            tappar agenten spåret av vad som provats. Den cyklar igenom samma
+            kombinationer om och om igen: testar A, B, C, D — och när det inte
+            funkar börjar den om: A, B, C, D, A, B, C, A, C, D, B, A, C, D …
+            <span style="color:var(--muted); font-size:0.82rem;">
+            Verkligt exempel: inline-S provades, förkastades, implementerades om,
+            förkastades igen — fyra gånger i samma session. Lösningen (tidslinjedokumentet
+            <code>LUXORPARTS_TIMELINE.md</code>) tvingar agenten att logga varje
+            misslyckat försök — och sluta upprepa det.</span></li>
+        <li>🚀 <strong>Överoptimism</strong> — "This should work!" säger agenten
+            glatt — precis som de 4 föregående gångerna det inte fungerade.</li>
+        <li>🎯 <strong>Nöjer sig med första bästa</strong> — Hittar en möjlig lösning —
+            gärna en den just fabulerat fram — deklarerar "This should work!" och stänger
+            ärendet. Om det inte fungerar startar nästa session och uppfinner exakt
+            samma lösning, nu med ännu mer självförtroende.
+            <span style="color:var(--muted); font-size:0.82rem;">
+            5 av 12 "this should work" resulterade faktiskt i fungerande kod.</span></li>
+        <li>🔧 <strong>Varningsskyltsblindhet</strong> — Dokumentationen varnar explicit:
+            "<code>grep -P</code> finns inte på Alpine/BusyBox." Agenten använde
+            <code>grep -P</code>. Rätt lösning (<code>jq</code>) stod ett stycke
+            ovanför varningen i samma fil. Misslyckades tyst med exit code 2.
+            <span style="color:var(--muted); font-size:0.82rem;">
+            Upprepades i samma session, två gånger.</span></li>
+      </ul>
+
+      <ul class="bullets">
+        <li>😈 <strong>Olydnad</strong> — Skapade testrelease som den inte kunde
+            ta bort på stable repot utan att bli ombedd.
+            Synlig för alla 500 användare. Nu inskrivet i copilot-instruktionerna.</li>
+        <li>😴 <strong>Lathet &amp; research-vägran</strong> — Vägrar läsa
+            dokumentation trots direkta uppmaningar. Glömmer att den kan använda
+            webbläsarverktyget tills den övertygats om det tre gånger.</li>
+        <li>🔀 <strong>Otakt med prompt och svar</strong> — Svarar konsekvent på
+            föregående prompt i stället för den aktuella. Du skriver fråga 3 medan
+            agenten fortfarande löser fråga 2 — och är helt övertygad om att den
+            gör rätt sak.</li>
+        <li>🪞 <strong>Glömska och självmotsägelse</strong> — Säger en sak i ett svar,
+            säger rakt motsatt i nästa — utan att blinka.
+            <span style="color:var(--muted); font-size:0.82rem;">
+            Verkligt exempel: "R-prefix fungerar, inline-S gör det inte" →
+            nästa prompt: implementerar inline-S igen med kommentaren
+            "this should be more reliable".</span></li>
+        <li>🔮 <strong>Uppfunna funktioner</strong> — Anropar
+            <code>controller.send_raw_pulse()</code> med fullständigt
+            självförtroende. Funktionen existerar inte. Har aldrig existerat.</li>
+        <li>📅 <strong>Versionsamnesiak</strong> — Trots att instruktionsfilerna
+            anger exakt vilken HAOS- och HA-version som används, implementerar
+            agenten ett API-mönster från 2022 — för det var det första exemplet
+            den hittade. <code>HassioServiceInfo</code> importerades från fel
+            modul tre gånger i rad; rätt sökväg finns dokumenterad i
+            copilot-instruktionerna.
+            <span style="color:var(--muted); font-size:0.82rem;">
+            Lösning: en <em>Known HA Breaking Changes</em>-sektion skrevs in —
+            med tre raders blinkande varning i början av instruktionsfilen.</span></li>
+        <li>🎪 <strong>dev-versionscirkusen</strong> — Bumpar
+            <code>config.yaml</code> till en riktig version trots att
+            <code>dev</code> är obligatoriskt på alla brancher
+            (CI-enforced, tydligt dokumenterat, bevisad fallgrop). CI röd.
+            Nästa agent fixar det. Nästa session gör om det. Numera öppnar
+            instruktionsfilen med en helsida blinkande varning i ASCII-box.
+            Det hände igen.
+            <span style="color:var(--muted); font-size:0.82rem;">
+            Varningen upptar nu 20 rader. Agenten läser förbi den.</span></li>
+        <li style="margin-top:0.6rem; background:rgba(52,211,153,0.08); padding:0.4rem 0.6rem; border-radius:6px;">
+            ✅ <strong>Men ändå:</strong> 12 000+ rader fungerande kod,
+            ett avkodat proprietärt RF-protokoll och en levande produkt —
+            på 3 veckors kväll- och helgarbete.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────── SLIDE 9 ─── -->
+  <section class="slide" id="slide-9">
+    <div class="tag">Sammanfattning</div>
+    <h2>Viktiga slutsatser</h2>
+
+    <div class="grid-2">
+      <div>
+        <ul class="bullets" style="font-size: 1.1rem;">
+          <li>
+            <strong>AI-first-utveckling fungerar</strong> — 11 000+ rader produktionskod,
+            noll manuellt skrivna, levererade och använda på riktig hårdvara.
+          </li>
+          <li>
+            <strong>Inte längre supportat ≠ kastas</strong> — gammal hårdvara hålls vid liv,
+            soptippen undviks, pengar sparas.
+          </li>
+          <li>
+            <strong>433 MHz är underskattad</strong> — tioårig batteritid, inget
+            nätverksberoende, inga prenumerationer, billigare enheter.
+          </li>
+          <li>
+            <strong>Räckvidd är inte en begränsning</strong> — spegel/förstärkarfunktionen
+            förvandlar två billiga stickor till täckning av hela fastigheten.
+          </li>
+          <li>
+            <strong>Framtiden är öppen</strong> — rå inspelning/uppspelning, fullständig
+            protokollportering för Net/ZNet är inom räckhåll.
+          </li>
+        </ul>
+      </div>
+
+      <div>
+        <div class="card" style="background: rgba(56,189,248,0.07); border-color: rgba(56,189,248,0.2);">
+          <h3 style="font-size: 1.1rem; color: var(--accent);">Repository</h3>
+          <p style="margin-top: 0.5rem;">github.com/R00S/addon-tellstick-local</p>
+          <p style="margin-top: 0.4rem; font-size: 0.85rem;">Apache 2.0 / GPL v3 · HACS-kompatibel · Inget moln</p>
+        </div>
+
+        <div class="card" style="margin-top: 1rem; background: rgba(52,211,153,0.07); border-color: rgba(52,211,153,0.2);">
+          <h3 style="font-size: 1.1rem; color: var(--accent2);">Hårdvara som stöds</h3>
+          <ul class="bullets" style="margin-top: 0.5rem;">
+            <li>TellStick Duo (USB) — Stabil</li>
+            <li>TellStick Net / ZNet (LAN) — Beta</li>
+            <li>Spegel / Räckvidsförstärkare — Stabil</li>
+          </ul>
+        </div>
+
+        <div class="card" style="margin-top: 1rem;">
+          <h3 style="font-size: 1.1rem;">17 protokoll · 30+ märken · 0 moln</h3>
+          <p style="margin-top: 0.4rem; font-size: 0.88rem;">
+            Nexa · KAKU · Proove · Intertechno · Oregon Scientific ·
+            Hasta · Brateck · Luxorparts · och mer.
+          </p>
+        </div>
+
+        <div class="card" style="margin-top: 1rem; background: rgba(100,116,139,0.07); border-color: rgba(100,116,139,0.3);">
+          <h3 style="font-size: 0.95rem; color: var(--muted);">🙏 Credits — kod vi använt</h3>
+          <ul class="bullets" style="margin-top:0.4rem; font-size: 0.8rem; color:var(--muted);">
+            <li><strong>Erik Hilton (erik73)</strong> — telldus-core fork &amp; Docker-grund (LGPL 2.1)</li>
+            <li><strong>Erik Johansson (erijo)</strong> — tellcore-py &amp; tellive-py (GPL v3)</li>
+            <li><strong>Home Assistant Team</strong> — rfxtrx/rflink-mönster för config flow (Apache 2.0)</li>
+            <li><strong>Telldus Technologies AB</strong> — originalt telldusd &amp; TellStick-hårdvara</li>
+          </ul>
+        </div>
+
+        <div class="card" style="margin-top: 1rem; text-align: center; background: rgba(251,191,36,0.07); border-color: rgba(251,191,36,0.3);">
+          <h3 style="font-size: 1rem; color: var(--warn);">☕ Bjud på en kaffe</h3>
+          <img src="https://api.qrserver.com/v1/create-qr-code/?data=https://buymeacoffee.com/r00s&size=130x130&color=000000&bgcolor=ffffff&margin=6"
+               alt="QR-kod till buymeacoffee.com/r00s"
+               style="margin-top: 0.5rem; border-radius: 6px; display: block; margin-left: auto; margin-right: auto;">
+          <p style="margin-top: 0.4rem; font-size: 0.82rem; color: var(--muted);">buymeacoffee.com/r00s</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+</div><!-- /.deck -->
+
+<!-- Navigation -->
+<nav>
+  <button id="btn-prev" onclick="changeSlide(-1)">◀</button>
+  <span id="slide-counter">1 / 9</span>
+  <button id="btn-next" onclick="changeSlide(1)">▶</button>
+</nav>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  let current = 0;
+
+  function showSlide(n) {
+    slides[current].classList.remove('active');
+    current = (n + slides.length) % slides.length;
+    slides[current].classList.add('active');
+    document.getElementById('slide-counter').textContent =
+      (current + 1) + ' / ' + slides.length;
+  }
+
+  function changeSlide(dir) { showSlide(current + dir); }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown'  || e.key === ' ') changeSlide(1);
+    if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')                      changeSlide(-1);
+  });
+</script>
+
+</body>
+</html>
