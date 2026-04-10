@@ -127,6 +127,9 @@
   #slide-1 h1 { font-size: 3.5rem; }
   .divider { width: 60px; height: 4px; background: var(--accent); border-radius: 2px; margin: 1.2rem 0; }
 
+  /* ── Two-column layout for slide 8 ── */
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: 1rem; }
+
   /* ── Wide bar chart (illustrative) ── */
   .bar-group { margin-top: 1.5rem; }
   .bar-row { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.7rem; }
@@ -611,6 +614,18 @@ Fjärrkontrollknapp tryckt
             misslyckat försök — och sluta upprepa det.</span></li>
         <li>🚀 <strong>Överoptimism</strong> — "This should work!" säger agenten
             glatt — precis som de 4 föregående gångerna det inte fungerade.</li>
+        <li>🎯 <strong>Nöjer sig med första bästa</strong> — Hittar en möjlig lösning —
+            gärna en den just fabulerat fram — deklarerar "This should work!" och stänger
+            ärendet. Om det inte fungerar startar nästa session och uppfinner exakt
+            samma lösning, nu med ännu mer självförtroende.
+            <span style="color:var(--muted); font-size:0.82rem;">
+            5 av 12 "this should work" resulterade faktiskt i fungerande kod.</span></li>
+        <li>🔧 <strong>Varningsskyltsblindhet</strong> — Dokumentationen varnar explicit:
+            "<code>grep -P</code> finns inte på Alpine/BusyBox." Agenten använde
+            <code>grep -P</code>. Rätt lösning (<code>jq</code>) stod ett stycke
+            ovanför varningen i samma fil. Misslyckades tyst med exit code 2.
+            <span style="color:var(--muted); font-size:0.82rem;">
+            Upprepades i samma session, två gånger.</span></li>
       </ul>
 
       <ul class="bullets">
@@ -633,6 +648,24 @@ Fjärrkontrollknapp tryckt
         <li>🔮 <strong>Uppfunna funktioner</strong> — Anropar
             <code>controller.send_raw_pulse()</code> med fullständigt
             självförtroende. Funktionen existerar inte. Har aldrig existerat.</li>
+        <li>📅 <strong>Versionsamnesiak</strong> — Trots att instruktionsfilerna
+            anger exakt vilken HAOS- och HA-version som används, implementerar
+            agenten ett API-mönster från 2022 — för det var det första exemplet
+            den hittade. <code>HassioServiceInfo</code> importerades från fel
+            modul tre gånger i rad; rätt sökväg finns dokumenterad i
+            copilot-instruktionerna.
+            <span style="color:var(--muted); font-size:0.82rem;">
+            Lösning: en <em>Known HA Breaking Changes</em>-sektion skrevs in —
+            med tre raders blinkande varning i början av instruktionsfilen.</span></li>
+        <li>🎪 <strong>dev-versionscirkusen</strong> — Bumpar
+            <code>config.yaml</code> till en riktig version trots att
+            <code>dev</code> är obligatoriskt på alla brancher
+            (CI-enforced, tydligt dokumenterat, bevisad fallgrop). CI röd.
+            Nästa agent fixar det. Nästa session gör om det. Numera öppnar
+            instruktionsfilen med en helsida blinkande varning i ASCII-box.
+            Det hände igen.
+            <span style="color:var(--muted); font-size:0.82rem;">
+            Varningen upptar nu 20 rader. Agenten läser förbi den.</span></li>
         <li style="margin-top:0.6rem; background:rgba(52,211,153,0.08); padding:0.4rem 0.6rem; border-radius:6px;">
             ✅ <strong>Men ändå:</strong> 12 000+ rader fungerande kod,
             ett avkodat proprietärt RF-protokoll och en levande produkt —
