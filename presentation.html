@@ -225,28 +225,23 @@
         <table style="margin-top: 0.6rem; font-size: 0.88rem;">
           <tr>
             <th>Item</th>
-            <th style="text-align:right">Count</th>
-            <th style="text-align:right">List-price cost</th>
+            <th style="text-align:right">Detail</th>
+            <th style="text-align:right">Cost</th>
           </tr>
           <tr>
-            <td>Coding agent sessions <span style="color:var(--muted)">(workflow runs, verified)</span></td>
-            <td style="text-align:right; color:var(--muted)">402</td>
-            <td style="text-align:right">402 × $0.04 = $16.08</td>
+            <td>Pro+ subscription <span style="color:var(--muted)">(~50% attr. Dec–Mar, 100% Apr)</span></td>
+            <td style="text-align:right; color:var(--muted)">$39/mo × 4.3 mo</td>
+            <td style="text-align:right">~$117</td>
           </tr>
           <tr>
-            <td>Copilot code reviews <span style="color:var(--muted)">(verified)</span></td>
-            <td style="text-align:right; color:var(--muted)">69</td>
-            <td style="text-align:right">69 × $0.04 = $2.76</td>
-          </tr>
-          <tr>
-            <td>IDE chat sessions <span style="color:var(--muted)">(untrackable → est. 1 per PR)</span></td>
-            <td style="text-align:right; color:var(--warn)">~77</td>
-            <td style="text-align:right; color:var(--warn)">~$3.08</td>
+            <td>Metered overage <span style="color:var(--muted)">(Apr verified from billing; Dec–Mar est.)</span></td>
+            <td style="text-align:right; color:var(--muted)">$27 + ~$50</td>
+            <td style="text-align:right">~$77</td>
           </tr>
           <tr style="border-top:1px solid #334155;">
-            <td style="color:var(--muted)">Total (estimated)</td>
-            <td style="text-align:right; color:var(--muted)">~548</td>
-            <td style="text-align:right">~$21.92</td>
+            <td style="color:var(--muted)">Total AI tooling cost</td>
+            <td></td>
+            <td style="text-align:right">~$194</td>
           </tr>
           <tr>
             <td>Hardware for testing <span style="color:var(--muted)">(already owned)</span></td>
@@ -261,15 +256,16 @@
           <tr style="background: rgba(56,189,248,0.07);">
             <td style="font-weight:700">Net cost to developer</td>
             <td></td>
-            <td style="text-align:right; font-weight:700; color:var(--accent2)">− ~$16</td>
+            <td style="text-align:right; font-weight:700; color:var(--warn)">~$156</td>
           </tr>
         </table>
         <p style="margin-top: 0.7rem; font-size: 0.82rem;">
-          402 + 69 agent/review runs verified by paginating all workflow history across both repos
-          (GitHub preserves run numbers through repo renames, so no sessions are missed).
-          ~130 lines of code touched per session.
-          Pro plan includes 300 requests/month — at ~100 sessions/month actual overage is likely $0.
-          List-price cost shown; real spend is lower.
+          Calibrated against GitHub billing data: April 2026 (100% this project, no other work) hit
+          $26.50 metered overage in 10 days — 1,500 included quota + 662 overage = 2,162 requests.
+          Only 5 came from agent workflow runs; <strong>~2,157 (99.8%) were IDE Chat</strong> — planning,
+          steering, and review conversations invisible to any API.
+          At 12,124 lines of production code, that works out to <strong>~1.6¢/line</strong>
+          vs ~$1.67–$7.50/line for a human developer (104–469× cheaper).
         </p>
       </div>
     </div>
