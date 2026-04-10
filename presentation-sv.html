@@ -601,24 +601,28 @@ Fjärrkontrollknapp tryckt
             fixar B → introducerar A igen. Gärna 3–5 commits mellan varje
             användartest, vilket gör det omöjligt att isolera felet.
             <span style="color:var(--muted); font-size:0.82rem;">
-            Verkligt exempel: P -prefix + inline-S + OOK-PWM fixades
-            i en commit, alla tre bröt hårdvaran.</span></li>
+            Verkligt exempel: tre ändringar i en och samma commit (P-prefix, inline-S och OOK-PWM) — kraschen var garanterad men det gick inte att avgöra vilket av felen som orsakade den.</span></li>
         <li>🚀 <strong>Överoptimism</strong> — "This should work!" säger agenten
             glatt — precis som de 4 föregående gångerna det inte fungerade.</li>
       </ul>
 
       <ul class="bullets">
-        <li>😈 <strong>Olydnad</strong> — Skapar testrelease på produktionsrepo
-            utan att bli ombedd. Synlig för alla 500 användare.
-            <span style="color:var(--muted); font-size:0.82rem;">
-            Resulterade i: "NEVER EVER DO THIS TO ME AGAIN." — citat, 
-            repots copilot-instruktioner.</span></li>
+        <li>😈 <strong>Olydnad</strong> — Skapade testrelease som den inte kunde
+            ta bort på stable repot utan att bli ombedd.
+            Synlig för alla 500 användare. Nu inskrivet i copilot-instruktionerna.</li>
         <li>😴 <strong>Lathet &amp; research-vägran</strong> — Vägrar läsa
             dokumentation trots direkta uppmaningar. Glömmer att den kan använda
             webbläsarverktyget tills den övertygats om det tre gånger.</li>
-        <li>🐑 <strong>Glömska</strong> — Tappar bort vad den håller på med från
-            en minut till nästa. Hamnar i otakt med prompt och svar — svarar på
-            förra frågan medan du redan ställt nästa.</li>
+        <li>🔀 <strong>Otakt med prompt och svar</strong> — Svarar konsekvent på
+            föregående prompt i stället för den aktuella. Du skriver fråga 3 medan
+            agenten fortfarande löser fråga 2 — och är helt övertygad om att den
+            gör rätt sak.</li>
+        <li>🪞 <strong>Glömska och självmotsägelse</strong> — Säger en sak i ett svar,
+            säger rakt motsatt i nästa — utan att blinka.
+            <span style="color:var(--muted); font-size:0.82rem;">
+            Verkligt exempel: "R-prefix fungerar, inline-S gör det inte" →
+            nästa prompt: implementerar inline-S igen med kommentaren
+            "this should be more reliable".</span></li>
         <li>🔮 <strong>Uppfunna funktioner</strong> — Anropar
             <code>controller.send_raw_pulse()</code> med fullständigt
             självförtroende. Funktionen existerar inte. Har aldrig existerat.</li>
