@@ -577,6 +577,61 @@ Fjärrkontrollknapp tryckt
 
   <!-- ─────────────────────────────── SLIDE 8 ─── -->
   <section class="slide" id="slide-8">
+    <div class="tag">Utmaningar</div>
+    <h2>Problem med AI-agenter 🤦</h2>
+    <p style="font-size:0.85rem; color:var(--muted); margin-bottom:0.8rem;">
+      Som att ha 10 nyexade utvecklare — entusiastiska, snabba, ofta briljanta,
+      ibland kompletta katastrofer.
+    </p>
+
+    <div class="two-col">
+      <ul class="bullets">
+        <li>🧠💨 <strong>Kontextfönstret krymper</strong> — Agenten vet vad den
+            höll på med i morse. Nu vet den inte vad den höll på med för 2 minuter sedan.
+            <span style="color:var(--muted); font-size:0.82rem;">
+            Verkligt exempel: Session 10 använde inline-S-kommandon <em>igen</em> — ett
+            format som hade misslyckats 4 gånger tidigare i samma
+            session.</span></li>
+        <li>🎭 <strong>Fabuleringar</strong> — Hittar på metodnamn, funktioner och
+            API-anrop som inte finns, med fullständigt självförtroende.
+            <span style="color:var(--muted); font-size:0.82rem;">
+            Verkligt exempel: Agenten skapade en tidslinje med påhittade
+            testresultat — "no user feedback? I'll invent some."</span></li>
+        <li>🔁 <strong>Debug-loopar</strong> — Fixar bugg A → introducerar bugg B →
+            fixar B → introducerar A igen. Gärna 3–5 commits mellan varje
+            användartest, vilket gör det omöjligt att isolera felet.
+            <span style="color:var(--muted); font-size:0.82rem;">
+            Verkligt exempel: P -prefix + inline-S + OOK-PWM fixades
+            i en commit, alla tre bröt hårdvaran.</span></li>
+        <li>🚀 <strong>Överoptimism</strong> — "This should work!" säger agenten
+            glatt — precis som de 4 föregående gångerna det inte fungerade.</li>
+      </ul>
+
+      <ul class="bullets">
+        <li>😈 <strong>Olydnad</strong> — Skapar testrelease på produktionsrepo
+            utan att bli ombedd. Synlig för alla 500 användare.
+            <span style="color:var(--muted); font-size:0.82rem;">
+            Resulterade i: "NEVER EVER DO THIS TO ME AGAIN." — citat, 
+            repots copilot-instruktioner.</span></li>
+        <li>😴 <strong>Lathet &amp; research-vägran</strong> — Vägrar läsa
+            dokumentation trots direkta uppmaningar. Glömmer att den kan använda
+            webbläsarverktyget tills den övertygats om det tre gånger.</li>
+        <li>🐑 <strong>Glömska</strong> — Tappar bort vad den håller på med från
+            en minut till nästa. Hamnar i otakt med prompt och svar — svarar på
+            förra frågan medan du redan ställt nästa.</li>
+        <li>🔮 <strong>Uppfunna funktioner</strong> — Anropar
+            <code>controller.send_raw_pulse()</code> med fullständigt
+            självförtroende. Funktionen existerar inte. Har aldrig existerat.</li>
+        <li style="margin-top:0.6rem; background:rgba(52,211,153,0.08); padding:0.4rem 0.6rem; border-radius:6px;">
+            ✅ <strong>Men ändå:</strong> 12 000+ rader fungerande kod,
+            ett avkodat proprietärt RF-protokoll och en levande produkt —
+            på 3 veckors kväll- och helgarbete.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────── SLIDE 9 ─── -->
+  <section class="slide" id="slide-9">
     <div class="tag">Sammanfattning</div>
     <h2>Viktiga slutsatser</h2>
 
@@ -630,6 +685,16 @@ Fjärrkontrollknapp tryckt
           </p>
         </div>
 
+        <div class="card" style="margin-top: 1rem; background: rgba(100,116,139,0.07); border-color: rgba(100,116,139,0.3);">
+          <h3 style="font-size: 0.95rem; color: var(--muted);">🙏 Credits — kod vi använt</h3>
+          <ul class="bullets" style="margin-top:0.4rem; font-size: 0.8rem; color:var(--muted);">
+            <li><strong>Erik Hilton (erik73)</strong> — telldus-core fork &amp; Docker-grund (LGPL 2.1)</li>
+            <li><strong>Erik Johansson (erijo)</strong> — tellcore-py &amp; tellive-py (GPL v3)</li>
+            <li><strong>Home Assistant Team</strong> — rfxtrx/rflink-mönster för config flow (Apache 2.0)</li>
+            <li><strong>Telldus Technologies AB</strong> — originalt telldusd &amp; TellStick-hårdvara</li>
+          </ul>
+        </div>
+
         <div class="card" style="margin-top: 1rem; text-align: center; background: rgba(251,191,36,0.07); border-color: rgba(251,191,36,0.3);">
           <h3 style="font-size: 1rem; color: var(--warn);">☕ Bjud på en kaffe</h3>
           <img src="https://api.qrserver.com/v1/create-qr-code/?data=https://buymeacoffee.com/r00s&size=130x130&color=000000&bgcolor=ffffff&margin=6"
@@ -641,12 +706,13 @@ Fjärrkontrollknapp tryckt
     </div>
   </section>
 
+
 </div><!-- /.deck -->
 
 <!-- Navigation -->
 <nav>
   <button id="btn-prev" onclick="changeSlide(-1)">◀</button>
-  <span id="slide-counter">1 / 8</span>
+  <span id="slide-counter">1 / 9</span>
   <button id="btn-next" onclick="changeSlide(1)">▶</button>
 </nav>
 
