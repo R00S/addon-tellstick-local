@@ -216,12 +216,23 @@
 
     <div class="grid-2" style="margin-top: 1.5rem;">
       <div class="card">
-        <h3>⏱ Time</h3>
-        <p>Days of prompting to reach a working, tested integration. Traditional development
-           of equivalent scope would take weeks of full-time work.</p>
+        <h3>⏱ When does AI actually help a hobbyist?</h3>
+        <ul class="bullets" style="margin-top: 0.5rem;">
+          <li><span class="accent2">Unblocking dead-ends</span> — reverse-engineering
+              the Luxorparts 433 MHz RF protocol took 3 days of agent work;
+              staring at raw hex dumps alone would have killed the feature</li>
+          <li><span class="accent2">Grunt work nobody enjoys</span> — writing
+              the 17th nearly-identical protocol encoder is not fun; the
+              architecture decisions are</li>
+          <li><span class="warn">Speed when you want it</span> — "I want this
+              working tonight" is a valid reason; not the only one</li>
+          <li><span style="color:var(--muted)">Not a replacement for enjoyment</span>
+              — the fun parts (design, hardware debugging, first device appearing
+              in HA) are still yours</li>
+        </ul>
       </div>
       <div class="card">
-        <h3>💸 Development Cost Breakdown</h3>
+        <h3>💸 What it actually costs as a hobby expense</h3>
         <table style="margin-top: 0.6rem; font-size: 0.88rem;">
           <tr>
             <th>Item</th>
@@ -229,43 +240,32 @@
             <th style="text-align:right">Cost</th>
           </tr>
           <tr>
-            <td>Pro+ subscription <span style="color:var(--muted)">(~50% attr. Dec–Mar, 100% Apr)</span></td>
+            <td>Pro+ subscription</td>
             <td style="text-align:right; color:var(--muted)">$39/mo × 4.3 mo</td>
             <td style="text-align:right">~$117</td>
           </tr>
           <tr>
-            <td>Metered overage <span style="color:var(--muted)">(Apr verified from billing; Dec–Mar est.)</span></td>
+            <td>Metered overage <span style="color:var(--muted)">(Apr verified; Dec–Mar est.)</span></td>
             <td style="text-align:right; color:var(--muted)">$27 + ~$50</td>
             <td style="text-align:right">~$77</td>
           </tr>
-          <tr style="border-top:1px solid #334155;">
-            <td style="color:var(--muted)">Total AI tooling cost</td>
+          <tr style="border-top:1px solid #334155; background: rgba(56,189,248,0.07);">
+            <td style="font-weight:700">Total added hobby cost</td>
             <td></td>
-            <td style="text-align:right">~$194</td>
+            <td style="text-align:right; font-weight:700; color:var(--warn)">~$194</td>
           </tr>
           <tr>
-            <td>Hardware for testing <span style="color:var(--muted)">(already owned)</span></td>
-            <td style="text-align:right; color:var(--muted)">—</td>
-            <td style="text-align:right">$0</td>
-          </tr>
-          <tr style="border-top: 1px solid rgba(52,211,153,0.3);">
             <td style="color:var(--accent2)">☕ Buy Me a Coffee donations</td>
             <td style="text-align:right; color:var(--muted)">—</td>
-            <td style="text-align:right; color:var(--accent2); font-weight:700">− $38</td>
-          </tr>
-          <tr style="background: rgba(56,189,248,0.07);">
-            <td style="font-weight:700">Net cost to developer</td>
-            <td></td>
-            <td style="text-align:right; font-weight:700; color:var(--warn)">~$156</td>
+            <td style="text-align:right; color:var(--accent2)">$38 back</td>
           </tr>
         </table>
         <p style="margin-top: 0.7rem; font-size: 0.82rem;">
-          Calibrated against GitHub billing data: April 2026 (100% this project, no other work) hit
-          $26.50 metered overage in 10 days — 1,500 included quota + 662 overage = 2,162 requests.
-          Only 5 came from agent workflow runs; <strong>~2,157 (99.8%) were IDE Chat</strong> — planning,
-          steering, and review conversations invisible to any API.
-          At 12,124 lines of production code, that works out to <strong>~1.6¢/line</strong>
-          vs ~$1.67–$7.50/line for a human developer (104–469× cheaper).
+          Calibrated from real billing: April 2026 (100% this project) hit $26.50 metered overage
+          in 10 days — and <strong>99.8% of all requests were IDE Chat</strong>, not agent runs.
+          The expensive sprint was Luxorparts protocol week (Apr 6–9, ~$20 in 4 days).
+          The question isn't "is it cheaper than hiring someone" —
+          it's <strong>"would this feature exist at all without it?"</strong>
         </p>
       </div>
     </div>
