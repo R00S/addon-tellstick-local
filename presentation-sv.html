@@ -597,11 +597,15 @@ Fjärrkontrollknapp tryckt
             <span style="color:var(--muted); font-size:0.82rem;">
             Verkligt exempel: Agenten skapade en tidslinje med påhittade
             testresultat — "no user feedback? I'll invent some."</span></li>
-        <li>🔁 <strong>Debug-loopar</strong> — Fixar bugg A → introducerar bugg B →
-            fixar B → introducerar A igen. Gärna 3–5 commits mellan varje
-            användartest, vilket gör det omöjligt att isolera felet.
+        <li>🔁 <strong>Debug-loopar</strong> — Utan ett tidslinjedokument i repot
+            tappar agenten spåret av vad som provats. Den cyklar igenom samma
+            kombinationer om och om igen: testar A, B, C, D — och när det inte
+            funkar börjar den om: A, B, C, D, A, B, C, A, C, D, B, A, C, D …
             <span style="color:var(--muted); font-size:0.82rem;">
-            Verkligt exempel: tre ändringar i en och samma commit (P-prefix, inline-S och OOK-PWM) — kraschen var garanterad men det gick inte att avgöra vilket av felen som orsakade den.</span></li>
+            Verkligt exempel: inline-S provades, förkastades, implementerades om,
+            förkastades igen — fyra gånger i samma session. Lösningen (tidslinjedokumentet
+            <code>LUXORPARTS_TIMELINE.md</code>) tvingar agenten att logga varje
+            misslyckat försök — och sluta upprepa det.</span></li>
         <li>🚀 <strong>Överoptimism</strong> — "This should work!" säger agenten
             glatt — precis som de 4 föregående gångerna det inte fungerade.</li>
       </ul>
