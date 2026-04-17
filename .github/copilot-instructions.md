@@ -7,14 +7,15 @@
 █                                                                              █
 █   manifest.json version = X.Y.Z.W                                           █
 █                                                                              █
-█   W = bump between prompts WITHIN SAME AGENT SESSION (same PR)              █
-█   Z = bump when a NEW AGENT starts (new session / new PR)                   █
+█   W = bump for each new prompt/task on the SAME PR (same branch)           █
+█   Z = bump only when a BRAND NEW PR is created (new branch/ticket)          █
 █   Y = minor feature release                                                 █
 █   X = major release                                                          █
 █                                                                              █
-█   CURRENT VERSION: 2.1.13.0                                                  █
-█   (bump W → 2.1.13.1, 2.1.13.2, etc. for next prompt in this session)      █
-█   (new agent → 2.1.14.0)                                                    █
+█   ⚠️  DO NOT hardcode a version here — it will always be stale.             █
+█   ALWAYS read manifest.json to get the current version, then bump W.        █
+█   Every agent instance is stateless/new — that does NOT mean bump Z.        █
+█   Only bump Z when the PR itself is new (different branch from last time).  █
 █                                                                              █
 █   config.yaml version MUST ALWAYS be 'dev' on branches (linter-enforced)    █
 █                                                                              █
@@ -108,15 +109,16 @@ similar projects.
 
 The version in `manifest.json` follows `X.Y.Z.W`:
 
-| Digit | When to bump                                                |
-| ----- | ----------------------------------------------------------- |
-| **W** | Between prompts **within the same agent session** (same PR) |
-| **Z** | When a **new agent** starts working (new session/PR)        |
-| **Y** | Minor feature release                                       |
-| **X** | Major release                                               |
+| Digit | When to bump                                                             |
+| ----- | ------------------------------------------------------------------------ |
+| **W** | Each new prompt/task **on the same PR** (same branch)                    |
+| **Z** | Only when a **brand new PR** is opened (new branch — not a new agent instance) |
+| **Y** | Minor feature release                                                    |
+| **X** | Major release                                                            |
 
-Example: Agent starts at `2.1.0.0`. After each user prompt it bumps to
-`2.1.0.1`, `2.1.0.2`, etc. A new agent on the next PR starts at `2.1.1.0`.
+**How to determine the current version:** always `grep '"version"' custom_components/tellstick_local/manifest.json` — never rely on a version written in these instructions (it will be stale). Then bump **W** for this prompt.
+
+Example: PR opens at `3.1.5.0`. Each user prompt in that PR bumps W → `3.1.5.1`, `3.1.5.2`, etc. When a completely new PR is opened later, bump Z → `3.1.6.0`. A new agent instance handling a prompt on the *same* PR is NOT a reason to bump Z — all cloud agent instances are stateless/new, that is normal.
 
 ## What File to Edit for Each Change
 
