@@ -1,5 +1,10 @@
 # Agent Handover Document
 
+> **🛑 FIRST: Read the branch timeline file before doing anything.**
+> Every branch has one at `docs/<branch-name>-<A.B.C.x>.md`
+> (e.g. `docs/retrieve-rtl-conf-luxorparts-3.1.12.x.md`).
+> Find it: `BRANCH=$(git branch --show-current | sed 's|.*/||'); VERSION=$(jq -r '.version' custom_components/tellstick_local/manifest.json | cut -d. -f1-3); echo "docs/${BRANCH}-${VERSION}.x.md"`
+
 This document provides context for AI agents working on this repository.
 
 ## Repository Overview

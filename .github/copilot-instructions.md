@@ -42,6 +42,33 @@
 ████████████████████████████████████████████████████████████████████████████████
 ```
 
+## Branch Timeline Files
+
+```
+████████████████████████████████████████████████████████████████████████████████
+█                                                                              █
+█   🛑 READ THE BRANCH TIMELINE BEFORE DOING ANYTHING 🛑                      █
+█                                                                              █
+█   Every branch has a timeline file:                                         █
+█     docs/<branch-name-without-prefix>-<A.B.C.x>.md                         █
+█                                                                              █
+█   Example: branch copilot/retrieve-rtl-conf-luxorparts, version 3.1.12.5   █
+█     → docs/retrieve-rtl-conf-luxorparts-3.1.12.x.md                        █
+█                                                                              █
+█   HOW TO FIND IT:                                                            █
+█     BRANCH=$(git branch --show-current | sed 's|.*/||')                     █
+█     VERSION=$(jq -r '.version' custom_components/tellstick_local/manifest.json | cut -d. -f1-3) █
+█     FILE="docs/${BRANCH}-${VERSION}.x.md"                                   █
+█                                                                              █
+█   RULES:                                                                     █
+█     1. Read it FIRST — before reading any other file or writing code.        █
+█     2. If it does not exist, CREATE it before doing anything else.           █
+█     3. After each discovery, failed attempt, or implemented fix — UPDATE it. █
+█     4. This prevents debug loops and lost discoveries across agent sessions. █
+█                                                                              █
+████████████████████████████████████████████████████████████████████████████████
+```
+
 ## Quick Commands
 
 ```bash
