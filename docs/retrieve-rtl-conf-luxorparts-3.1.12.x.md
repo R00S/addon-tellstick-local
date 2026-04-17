@@ -273,3 +273,38 @@ to use the on/off command for pairing.
 
 - [ ] Confirm whether RTL-433 conf needs any further changes for this branch's scope
 - [ ] Confirm with user whether additional LPD pairs need to be captured
+
+---
+
+## Session — 2026-04-17: Remove arc_raw_test Proove dimmer test device (v3.1.12.7)
+
+### What was removed
+
+The `arc_raw_test` test device was added to empirically verify whether raw
+S-byte payloads (with no `protocol` key) could make the ZNet LED blink.
+
+**Confirmed finding:** Raw S-only packets generate **nothing** on ZNet/Net —
+`handleSend()` raises `KeyError('protocol')` before the RF chip is reached.
+Only the native dict path (with `protocol/model/house/unit/method` keys) works.
+
+This was the last open question for arctech on ZNet. The test has served its
+purpose, the result is documented in `docs/ZNET_PROTOCOL_PORTING_GUIDE.md`,
+and the test device has been removed.
+
+### Files changed
+
+- `const.py`: removed `ARC_RAW_TEST_GROUP_UID/HOUSE/UNIT/VARIANTS` block
+- `config_flow.py`: removed `ARC_RAW_TEST_*` imports, `"arc_raw_test"` menu option, `async_step_arc_raw_test()` method
+- `button.py`: removed `ARC_RAW_TEST_VARIANTS` import, `"arc_raw_test_sequence"` entry from `_SEQ_MODELS`
+- `net_client.py`: removed `_arctech_selflearning_on_off_pulse_train()` (test-only function) and the `:arc_raw` model suffix branch in the arctech encoder
+- `strings.json` / `translations/en.json`: removed `arc_raw_test_sequence` button string, menu label, step definition
+- All changes synced to bundled copy in `tellsticklive/rootfs/usr/share/tellstick_local/`
+- `docs/ZNET_PROTOCOL_PORTING_GUIDE.md`: updated arctech row with confirmed finding
+- Version bumped: `3.1.12.6` → `3.1.12.7`
+
+### Note: Luxorparts untouched
+
+The Luxorparts implementation (widget 20, catalog entry, LX raw encoder, all
+switch/button/config_flow code) is **unchanged** — identical to the state in
+`main`. Luxorparts currently only works on the Duo (native arctech selflearning
+via the raw OOK-PWM encoder). Net/ZNet support is unverified.

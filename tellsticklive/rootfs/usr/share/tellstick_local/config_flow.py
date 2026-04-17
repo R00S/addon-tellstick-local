@@ -64,10 +64,6 @@ from .const import (
     ENTRY_DEVICE_ID_MAP,
     ENTRY_MIRRORS,
     ENTRY_TELLSTICK_CONTROLLER,
-    ARC_RAW_TEST_GROUP_UID,
-    ARC_RAW_TEST_HOUSE,
-    ARC_RAW_TEST_UNIT,
-    ARC_RAW_TEST_VARIANTS,
     PROTOCOL_MODEL_LABELS,
     PROTOCOL_MODEL_MAP,
     PROTOCOL_NATIVE_LABELS,
@@ -2193,7 +2189,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         if backend == BACKEND_NET:
             return self.async_show_menu(
                 step_id="user",
-                menu_options=["by_brand", "by_protocol_native", "by_protocol_native_nofix", "arc_raw_test"],
+                menu_options=["by_brand", "by_protocol_native", "by_protocol_native_nofix"],
             )
         return self.async_show_menu(
             step_id="user",
@@ -2357,101 +2353,6 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                     ): vol.In(PROTOCOL_NATIVE_LABELS),
                 }
             ),
-        )
-
-    async def async_step_arc_raw_test(
-        self, user_input: dict[str, Any] | None = None
-    ) -> SubentryFlowResult:
-        """ZNet: add arctech raw vs native test devices for a Proove selflearning dimmer.
-
-        Creates two light entities + one sequence button so the tester can
-        compare the ZNet LED response to:
-          1. NATIVE dict  — native firmware dict (current working path)
-          2. RAW S-bytes  — S-only pulse train with no protocol/house/unit keys
-                            (expected to NOT work: handleSend() crashes with KeyError)
-
-        Watch the TellStick LED: only the variant that reaches the RF chip will blink.
-        """
-        errors: dict[str, str] = {}
-
-        if user_input is not None:
-            house = str(user_input.get("house", ARC_RAW_TEST_HOUSE))
-            unit = str(user_input.get("unit", ARC_RAW_TEST_UNIT))
-
-            entry = self._get_entry()
-            entry_data = self.hass.data[DOMAIN].get(entry.entry_id, {})
-            device_id_map: dict[str, Any] = entry_data.get(ENTRY_DEVICE_ID_MAP, {})
-
-            existing_devices = dict(entry.options.get(CONF_DEVICES, {}))
-            group_uid = f"{ARC_RAW_TEST_GROUP_UID}_{house}_{unit}"
-            created = 0
-
-            for variant_suffix, label in ARC_RAW_TEST_VARIANTS:
-                model = f"selflearning-dimmer:{variant_suffix}"
-                device_uid = f"{ARC_RAW_TEST_GROUP_UID}_{variant_suffix}_{house}_{unit}"
-                if device_uid in existing_devices:
-                    continue
-
-                device_dict: dict[str, Any] = {
-                    CONF_DEVICE_PROTOCOL: "arctech",
-                    CONF_DEVICE_MODEL: model,
-                    CONF_DEVICE_HOUSE: house,
-                    CONF_DEVICE_UNIT: unit,
-                    CONF_DEVICE_ENCODING: "",
-                }
-                device_id_map[device_uid] = device_dict
-
-                existing_devices[device_uid] = {
-                    CONF_DEVICE_NAME: label,
-                    CONF_DEVICE_PROTOCOL: "arctech",
-                    CONF_DEVICE_MODEL: model,
-                    CONF_DEVICE_HOUSE: house,
-                    CONF_DEVICE_UNIT: unit,
-                    CONF_DEVICE_ENCODING: "",
-                    "group_uid": group_uid,
-                }
-                created += 1
-
-            # Sequence marker — creates a sequence button in button.py
-            seq_uid = f"{ARC_RAW_TEST_GROUP_UID}_seq_{house}_{unit}"
-            if seq_uid not in existing_devices:
-                existing_devices[seq_uid] = {
-                    CONF_DEVICE_NAME: f"Arc raw test — sequence ALL (h={house} u={unit})",
-                    CONF_DEVICE_PROTOCOL: "arctech",
-                    CONF_DEVICE_MODEL: "arc_raw_test_sequence",
-                    CONF_DEVICE_HOUSE: house,
-                    CONF_DEVICE_UNIT: unit,
-                    CONF_DEVICE_ENCODING: "",
-                    "group_uid": group_uid,
-                }
-                created += 1
-
-            new_options = dict(entry.options)
-            new_options[CONF_DEVICES] = existing_devices
-            self.hass.config_entries.async_update_entry(entry, options=new_options)
-
-            _LOGGER.info(
-                "Arc raw test: created %d entities (house=%s unit=%s), reloading",
-                created, house, unit,
-            )
-
-            await self.hass.config_entries.async_reload(entry.entry_id)
-            return self.async_abort(reason="device_added")
-
-        return self.async_show_form(
-            step_id="arc_raw_test",
-            data_schema=vol.Schema(
-                {
-                    vol.Required("house", default=int(ARC_RAW_TEST_HOUSE)): vol.All(
-                        int, vol.Range(min=0, max=67108863),
-                    ),
-                    vol.Required("unit", default=int(ARC_RAW_TEST_UNIT)): vol.All(
-                        int, vol.Range(min=1, max=16),
-                    ),
-                }
-            ),
-            description_placeholders={"count": str(len(ARC_RAW_TEST_VARIANTS))},
-            errors=errors,
         )
 
     async def async_step_params(

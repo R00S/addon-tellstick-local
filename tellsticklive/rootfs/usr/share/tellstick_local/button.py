@@ -22,7 +22,6 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .client import RawDeviceEvent
 from .const import (
-    ARC_RAW_TEST_VARIANTS,
     CONF_DEVICE_HOUSE,
     CONF_DEVICE_MODEL,
     CONF_DEVICE_NAME,
@@ -72,7 +71,6 @@ async def async_setup_entry(
             "ef_test_sequence": (EF_TEST_VARIANTS, "ef_test_sequence", "everflourish", "ef_test"),
             "ef_test_raw_sequence": (EF_TEST_RAW_VARIANTS, "ef_test_raw_sequence", "everflourish", "ef_test"),
             "ef_test_native_sequence": (EF_TEST_NATIVE_VARIANTS, "ef_test_native_sequence", "everflourish", "ef_test"),
-            "arc_raw_test_sequence": (ARC_RAW_TEST_VARIANTS, "arc_raw_test_sequence", "arctech", "arc_raw_test"),
         }
 
         # Sequence "ALL" marker → create the sequence button
