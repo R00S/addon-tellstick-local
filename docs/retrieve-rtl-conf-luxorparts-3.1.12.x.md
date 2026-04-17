@@ -123,6 +123,25 @@ after each discovery or implementation step.
 
 ---
 
+## Verification: musl fix covers ALL release actions
+
+There is **one Dockerfile** (`tellsticklive/Dockerfile`) used by every
+build workflow. The fix (lines 23–26: `apk add --no-cache --upgrade musl
+musl-utils musl-dev`) is therefore applied to all of them:
+
+| Workflow | How it builds | Fix applies? |
+|---|---|---|
+| `create-test-release.yaml` | calls `deploy.yaml` → same Dockerfile | ✅ Yes |
+| `create-release.yaml` | calls `deploy.yaml` → same Dockerfile | ✅ Yes |
+| `create-stable-release.yaml` | calls `deploy.yaml` with `is_stable: true` → same Dockerfile | ✅ Yes |
+| `edge.yaml` (dev branch push) | builds directly from same Dockerfile | ✅ Yes |
+| `deploy.yaml` (direct GitHub release event) | builds from same Dockerfile | ✅ Yes |
+
+No per-workflow Dockerfile, no build matrix override, no conditional
+execution that could bypass the fix. All five workflows are covered.
+
+---
+
 ## Current state (end of session)
 
 | Item | Status |
@@ -131,6 +150,7 @@ after each discovery or implementation step.
 | Branch timeline file | ✅ Created (this file) |
 | Convention in instruction files | ✅ Added to AGENTS.md + copilot-instructions.md |
 | Create Test Release action | ✅ Should now work on any branch |
+| Fix covers all release actions | ✅ Verified — single Dockerfile shared by all 5 workflows |
 
 ---
 
