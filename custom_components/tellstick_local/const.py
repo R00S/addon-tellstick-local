@@ -9,14 +9,13 @@ DOMAIN = "tellstick_local"
 # hasn't restarted yet).
 #
 # VERSION BUMP RULES — ALWAYS run `git branch --show-current` first:
-#   X.Y.Z.W
-#   W → bump after each user input/response on the current branch
-#   Z → bump ONLY when the git branch name changes
-#   Y → minor feature release
-#   X → major release
+#   A.B.C.D
+#   A, B → USER-MANAGED ONLY.  Agents NEVER change A or B.
+#   C    → bump when the git branch name changes; reset D to 0.
+#   D    → bump whenever making code changes on the current branch.
 #
-#   Run `git branch --show-current` — same branch name → bump W.
-#   Different branch name → bump Z then reset W to 0.
+#   Same branch name → bump D only.
+#   Different branch name → bump C, reset D to 0.
 #
 #   BUMP ALL FOUR FILES — they must always be identical:
 #     1. custom_components/tellstick_local/manifest.json          ("version")
@@ -26,7 +25,7 @@ DOMAIN = "tellstick_local"
 
 
 
-INTEGRATION_VERSION = "3.1.12.3"
+INTEGRATION_VERSION = "3.1.12.4"
 
 
 # Backend type stored in config entry data

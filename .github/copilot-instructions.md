@@ -5,17 +5,17 @@
 █                                                                              █
 █   🛑🛑🛑 READ THIS FIRST — VERSION BUMPING RULES 🛑🛑🛑                    █
 █                                                                              █
-█   manifest.json version = X.Y.Z.W                                           █
+█   manifest.json version = A.B.C.D                                           █
 █                                                                              █
-█   W = bump after each user input/response on the current branch             █
-█   Z = bump only when the git branch name changes                            █
-█   Y = minor feature release                                                 █
-█   X = major release                                                          █
+█   A, B  — set by the USER only.  Agents NEVER touch A or B.                █
+█   C     — bump when the git branch name changes; reset D to 0.              █
+█   D     — bump whenever making code changes on the current branch.          █
 █                                                                              █
 █   ⚠️  DO NOT hardcode a version here — it will always be stale.             █
-█   ALWAYS read manifest.json to get the current version, then bump W.        █
-█   Run `git branch --show-current` — same branch name → bump W only.        █
-█   Z only changes when the branch name itself is different.                  █
+█   ALWAYS read manifest.json to get the current version, then bump D.        █
+█   Run `git branch --show-current`:                                          █
+█     same branch name  → bump D only                                         █
+█     different branch  → bump C, reset D to 0                                █
 █                                                                              █
 █   config.yaml version MUST ALWAYS be 'dev' on branches (linter-enforced)    █
 █                                                                              █
@@ -100,25 +100,27 @@ not re-fetch any frontend assets. This has caused multiple silent broken release
 similar projects.
 
 ```
-□ EVERY commit with code changes → bump manifest.json "version": "X.Y.Z.W"
+□ EVERY commit with code changes → bump manifest.json "version": "A.B.C.D"
 ```
 
 `tellsticklive/config.yaml` stays `version: dev` forever on branches.
 
-### Version ticking scheme (`X.Y.Z.W`)
+### Version ticking scheme (`A.B.C.D`)
 
-The version in `manifest.json` follows `X.Y.Z.W`:
+The version in `manifest.json` follows `A.B.C.D`:
 
-| Digit | When to bump                                                             |
-| ----- | ------------------------------------------------------------------------ |
-| **W** | After each user input/response — always, on every change                 |
-| **Z** | Only when the **git branch name changes** (different branch from before) |
-| **Y** | Minor feature release                                                    |
-| **X** | Major release                                                            |
+| Digit | Who controls it | When to bump                                                              |
+| ----- | --------------- | ------------------------------------------------------------------------- |
+| **A** | **User only**   | Major release — agents never touch this                                   |
+| **B** | **User only**   | Minor feature release — agents never touch this                           |
+| **C** | Agent           | When `git branch --show-current` returns a **different branch name** — bump C, reset D to 0 |
+| **D** | Agent           | Whenever making **any code changes** on the current branch                |
 
-**How to determine the current version:** always `grep '"version"' custom_components/tellstick_local/manifest.json` — never rely on a version written in these instructions (it will be stale). Then bump **W** for this prompt.
+**Rule for agents: only ever change C or D. Never change A or B.**
 
-Example: branch `fix/my-feature` starts at `3.1.5.0`. Each user prompt bumps W → `3.1.5.1`, `3.1.5.2`, etc. A new branch `fix/other-thing` starts at `3.1.6.0` (Z bumped). The branch name is the only trigger for Z.
+**How to determine the current version:** always `grep '"version"' custom_components/tellstick_local/manifest.json` — never rely on a version written in these instructions (it will be stale). Then bump D.
+
+Example: `git branch --show-current` → `fix/my-feature`, version is `3.1.5.2`. Each set of changes bumps D → `3.1.5.3`, `3.1.5.4`, etc. Later, `git branch --show-current` → `fix/other-thing` (different name) → bump C, reset D to 0 → `3.1.6.0`.
 
 ## What File to Edit for Each Change
 
