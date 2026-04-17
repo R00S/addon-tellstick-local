@@ -7,15 +7,15 @@
 █                                                                              █
 █   manifest.json version = X.Y.Z.W                                           █
 █                                                                              █
-█   W = bump for each new prompt/task on the SAME PR (same branch)           █
-█   Z = bump only when a BRAND NEW PR is created (new branch/ticket)          █
+█   W = bump after each user input/response on the current branch             █
+█   Z = bump only when the git branch name changes                            █
 █   Y = minor feature release                                                 █
 █   X = major release                                                          █
 █                                                                              █
 █   ⚠️  DO NOT hardcode a version here — it will always be stale.             █
 █   ALWAYS read manifest.json to get the current version, then bump W.        █
-█   Every agent instance is stateless/new — that does NOT mean bump Z.        █
-█   Only bump Z when the PR itself is new (different branch from last time).  █
+█   Run `git branch --show-current` — same branch name → bump W only.        █
+█   Z only changes when the branch name itself is different.                  █
 █                                                                              █
 █   config.yaml version MUST ALWAYS be 'dev' on branches (linter-enforced)    █
 █                                                                              █
@@ -111,14 +111,14 @@ The version in `manifest.json` follows `X.Y.Z.W`:
 
 | Digit | When to bump                                                             |
 | ----- | ------------------------------------------------------------------------ |
-| **W** | Each new prompt/task **on the same PR** (same branch)                    |
-| **Z** | Only when a **brand new PR** is opened (new branch — not a new agent instance) |
+| **W** | After each user input/response — always, on every change                 |
+| **Z** | Only when the **git branch name changes** (different branch from before) |
 | **Y** | Minor feature release                                                    |
 | **X** | Major release                                                            |
 
 **How to determine the current version:** always `grep '"version"' custom_components/tellstick_local/manifest.json` — never rely on a version written in these instructions (it will be stale). Then bump **W** for this prompt.
 
-Example: PR opens at `3.1.5.0`. Each user prompt in that PR bumps W → `3.1.5.1`, `3.1.5.2`, etc. When a completely new PR is opened later, bump Z → `3.1.6.0`. A new agent instance handling a prompt on the *same* PR is NOT a reason to bump Z — all cloud agent instances are stateless/new, that is normal.
+Example: branch `fix/my-feature` starts at `3.1.5.0`. Each user prompt bumps W → `3.1.5.1`, `3.1.5.2`, etc. A new branch `fix/other-thing` starts at `3.1.6.0` (Z bumped). The branch name is the only trigger for Z.
 
 ## What File to Edit for Each Change
 
