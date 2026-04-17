@@ -123,7 +123,44 @@ after each discovery or implementation step.
 
 ---
 
-## Verification: musl fix covers ALL release actions
+## Fix: redundant "restart required" notifications after HAOS restart (v3.1.12.6)
+
+### Problem
+
+Every time HAOS restarts after an app upgrade, the integration shows a
+"Restart Home Assistant" notification. Users find this confusing because they
+already restarted HAOS (which includes an HA Core restart).
+
+### Root cause
+
+HAOS starts HA Core **before** it starts add-on containers. So:
+1. HA Core boots, loads the OLD integration from disk
+2. App container boots, `integration.sh` copies NEW integration files to disk
+3. Notification fires: "restart HA to load new code"
+
+The notification is technically correct but feels redundant to users who
+just restarted HAOS.
+
+### Fix (`integration.sh`)
+
+When `integration.sh` detects a version update and copies new files, it now
+calls `POST http://supervisor/core/restart` to automatically restart HA Core.
+HA restarts silently, loads the new integration, `_check_version_mismatch`
+sees matching versions → no notification.
+
+Fallback: if the supervisor API call fails (HTTP status ≠ 200), falls back
+to the previous behaviour (manual notification + config entry reload).
+
+The Python-side `_check_version_mismatch` in `__init__.py` is unchanged —
+it remains the authoritative source for the repair issue and serves as a
+safety net if the auto-restart path fails or if files are updated via HACS.
+
+### Version bump
+`3.1.12.5` → `3.1.12.6`
+
+---
+
+
 
 There is **one Dockerfile** (`tellsticklive/Dockerfile`) used by every
 build workflow. The fix (lines 23–26: `apk add --no-cache --upgrade musl
