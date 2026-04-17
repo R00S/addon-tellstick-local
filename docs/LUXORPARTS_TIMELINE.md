@@ -446,6 +446,81 @@ Learn via dedicated learn command will be investigated in a future version.
 
 ---
 
+---
+
+## Session — 2026-04-17: Fix Docker build failure (musl version conflict)
+
+### Problem
+
+All CI builds (both `main` and `copilot/retrieve-rtl-conf-luxorparts`) were failing
+with exit code 4 from the Docker `RUN` step in `tellsticklive/Dockerfile`:
+
+```
+ERROR: failed to build: failed to solve: process "..." did not complete successfully: exit code: 4
+```
+
+Exit code 4 from Alpine's `apk` is `NO_SOLUTION` — the package solver could not satisfy
+all dependency constraints.
+
+### Root cause
+
+The base image `ghcr.io/erik73/base-python/amd64:4.0.8` (Alpine 3.22.1) was built with
+`musl=1.2.5-r10` pinned in `/etc/apk/world`. As of April 2026 the Alpine 3.22 package
+repository only ships `musl-dev-1.2.5-r12`, which declares a hard dependency:
+`musl=1.2.5-r12`. Because the world file pins the installed `musl` at r10, the solver
+refuses to upgrade it and cannot install `musl-dev` — which is a transitive dependency
+of `build-base` inside our `.build-dependencies` virtual package group.
+
+Confirmed by running `apk add --virtual .build-dependencies ... build-base ...` directly
+inside the base image container:
+
+```
+ERROR: unable to select packages:
+  musl-1.2.5-r10:
+    breaks: musl-dev-1.2.5-r12[musl=1.2.5-r12]
+    satisfies: world[musl=1.2.5-r10]
+```
+
+### Community research
+
+This is a recurring pattern across all HA addon Dockerfiles that build native code.
+Identical bugs found (same symptoms, same root cause, different r-level bumps):
+
+- **`jean-luc1203/jkbms-rs485-addon` #142** (filed and fixed 2026-04-11, 6 days before
+  this session): `musl=1.2.5-r22` vs `musl-dev-1.2.5-r23`. Author's fix:
+  `apk add --no-cache --upgrade musl musl-utils musl-dev` before `.build-dependencies`.
+- **`icanos/hassio-plejd` #336**: same pattern on aarch64.
+- General Alpine guidance: when a base image pins a system library version and the repo
+  moves on, the correct fix is to `apk add --upgrade <pkg>` to remove the world pin
+  and allow the solver to upgrade the library alongside its `-dev` counterpart.
+
+### Fix applied
+
+Added `apk add --no-cache --upgrade musl musl-utils musl-dev` as a distinct step inside
+the `RUN` chain in `tellsticklive/Dockerfile`, immediately after the runtime deps and
+before the `.build-dependencies` virtual package:
+
+```dockerfile
+&& apk add --no-cache --upgrade \
+    musl \
+    musl-utils \
+    musl-dev \
+&& apk add --no-cache --virtual .build-dependencies \
+    argp-standalone \
+    build-base \
+    ...
+```
+
+Upgrading all three together (`musl`, `musl-utils`, `musl-dev`) ensures they land on the
+same r-level so no further version mismatches occur in that family.
+
+Verified locally: all three `apk add` steps and the subsequent `cmake` / `make` steps
+succeed inside the base image with this change applied.
+
+**Version bumped:** `3.1.12.4` → `3.1.12.5`
+
+---
+
 ## Anti-patterns to avoid
 
 1. **Never switch to inline S repeats** without first testing on hardware.

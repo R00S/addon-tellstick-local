@@ -20,6 +20,10 @@ RUN apk add --no-cache \
         libftdi1 \
         libstdc++ \
         socat \
+    && apk add --no-cache --upgrade \
+        musl \
+        musl-utils \
+        musl-dev \
     && apk add --no-cache --virtual .build-dependencies \
         argp-standalone \
         build-base \
