@@ -12,6 +12,9 @@
       },
       "ef_test_native_sequence": {
         "name": "Test ALL native EF variants (sequence)"
+      },
+      "arc_raw_test_sequence": {
+        "name": "Arc raw test — sequence ALL (native + raw)"
       }
     }
   },
@@ -246,7 +249,8 @@
             "by_protocol_native_nofix": "Add by protocol (TellStick native — no unit fix)",
             "ef_test_device": "⚡ Add EF test device (all 20 variants)",
             "ef_test_raw": "⚡ Add EF test — RAW (S-only pulse variants)",
-            "ef_test_native": "⚡ Add EF test — NATIVE (firmware dict variants)"
+            "ef_test_native": "⚡ Add EF test — NATIVE (firmware dict variants)",
+            "arc_raw_test": "⚡ Arc raw test — Proove selflearning dimmer (native vs raw S-bytes)"
           }
         },
         "by_brand": {
@@ -327,6 +331,14 @@
           "data": {
             "house": "House code (0–16383)",
             "unit": "Unit (1–4)"
+          }
+        },
+        "arc_raw_test": {
+          "title": "Arc raw test — Proove selflearning dimmer",
+          "description": "Creates **{count} light entities** + **1 sequence button** to compare how the ZNet handles arctech selflearning:\n\n1. **NATIVE dict** — sends `protocol/model/house/unit/method` through `handleSend()`. This is the current working path; the ZNet LED **should blink**.\n\n2. **RAW S-bytes** — sends only the raw pulse-train bytes (no protocol/house/unit keys). `handleSend()` is expected to crash with `KeyError('protocol')` before the RF chip is reached; the ZNet LED should **NOT blink**.\n\nWatch the TellStick LED while running the sequence button to confirm which path works.",
+          "data": {
+            "house": "House code (0–67108863, 26-bit)",
+            "unit": "Unit (1–16)"
           }
         }
       },

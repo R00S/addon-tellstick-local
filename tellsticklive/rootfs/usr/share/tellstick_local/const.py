@@ -862,6 +862,27 @@ EF_TEST_HOUSE = "100"
 EF_TEST_UNIT = "1"
 
 # ---------------------------------------------------------------------------
+# Arctech raw test device — two entities for a Proove selflearning dimmer:
+#   1. NATIVE dict (arctech native firmware path — LED should blink on ZNet)
+#   2. RAW S-bytes only (no protocol dict — handleSend() expected to crash)
+#
+# Purpose: empirically verify that raw S-byte payloads are silently dropped
+# on ZNet when no 'protocol' key is present, and confirm the native dict
+# path is the correct approach for arctech selflearning dimmer.
+# ---------------------------------------------------------------------------
+
+ARC_RAW_TEST_GROUP_UID = "arc_raw_test"
+# Default house/unit for arctech raw test (can be overridden in the flow).
+# Pick a plausible Proove selflearning house code (26-bit, decimal).
+ARC_RAW_TEST_HOUSE = "12345678"
+ARC_RAW_TEST_UNIT = "1"
+# (variant_suffix, label) pairs — suffix is appended to model as ':arc_native' / ':arc_raw'
+ARC_RAW_TEST_VARIANTS: list[tuple[str, str]] = [
+    ("arc_native", "Proove dimmer — NATIVE dict ✅ (should blink)"),
+    ("arc_raw", "Proove dimmer — RAW S-bytes ❓ (will ZNet LED blink?)"),
+]
+
+# ---------------------------------------------------------------------------
 # Luxorparts / Cleverio raw pulse encoder
 #
 # Luxorparts 50969/50970/50972 433 MHz receivers use a proprietary

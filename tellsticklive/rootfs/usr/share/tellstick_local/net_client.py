@@ -1131,6 +1131,29 @@ _METHOD_INT: dict[str, int] = {
 }
 
 
+def _arctech_selflearning_on_off_pulse_train(house: int, unit0: int, on_off: bool) -> bytes:
+    """Build raw arctech selflearning on/off pulse train (unit is 0-indexed).
+
+    Ported from molobrakos/tellsticknet/protocols/arctech.py stringForSelflearning().
+    Signal matches what the TellStick Duo emits (verified by RTL-433 SDR capture):
+      pulse ≈ 208 µs, short gap ≈ 268 µs (bit=0), long gap ≈ 1300 µs (bit=1),
+      sync gap ≈ 2576 µs, 74 pulses total per packet.
+
+    NOTE: Used exclusively by the ``arc_raw_test`` path.  S-only packets sent via
+    the ZNet UDP "send" command silently fail: ``handleSend()`` crashes with a
+    ``KeyError`` on the missing ``protocol`` key before the RF chip is reached.
+    See docs/ZNET_PROTOCOL_PORTING_GUIDE.md.
+    """
+    code = _SHORT + bytes([255])               # start pulse + sync gap (~2550 µs)
+    for i in range(25, -1, -1):                # 26-bit house code MSB first
+        code += _ONE if house & (1 << i) else _ZERO
+    code += _ZERO                              # group bit = 0
+    code += _ONE if on_off else _ZERO          # on/off bit
+    for i in range(3, -1, -1):                 # 4-bit unit (0-indexed) MSB first
+        code += _ONE if unit0 & (1 << i) else _ZERO
+    return code + _SHORT
+
+
 def _arctech_dim_pulse_train(house: int, unit0: int, level: int) -> bytes:
     """Build raw arctech selflearning dim pulse train (unit is 0-indexed).
 
@@ -2884,16 +2907,34 @@ class TellStickNetController:
         elif protocol == "arctech":
             # Arctech-specific encoder.  Always returns a native firmware dict
             # (protocol/model/house/unit/method) for all methods including dim.
-            # Raw S-byte paths were removed: handleSend() crashes before the RF
-            # chip is reached when house/unit keys are absent from the dict.
+            # Exception: model suffix ':arc_raw' triggers the raw S-bytes test
+            # path (arc_raw_test flow) which sends S-only without protocol dict.
             # See docs/ZNET_PROTOCOL_PORTING_GUIDE.md for details.
-            arctech_dict = _encode_arctech_command(model, house, unit, method_name, param)
-            if arctech_dict is None:
-                _LOGGER.warning(
-                    "Net arctech: unsupported method=%s model=%s", method_name, model
+            model_suffix = model_full.split(":", 1)[1] if ":" in model_full else ""
+            if model_suffix == "arc_raw":
+                # Raw S-bytes test path: mimic what the TellStick Duo emits.
+                # handleSend() is expected to crash at msg['protocol'] (KeyError)
+                # before the RF chip is ever reached — ZNet LED should NOT blink.
+                try:
+                    house_int = int(house)
+                    unit0 = max(0, int(unit) - 1)
+                except (TypeError, ValueError):
+                    _LOGGER.warning(
+                        "Net arctech raw: invalid house=%r or unit=%r", house, unit
+                    )
+                    return -1
+                on_off = method_name in ("turnon", "dim", "learn")
+                send_kwargs = dict(
+                    S=_arctech_selflearning_on_off_pulse_train(house_int, unit0, on_off)
                 )
-                return -1
-            send_kwargs = dict(arctech_dict)
+            else:
+                arctech_dict = _encode_arctech_command(model, house, unit, method_name, param)
+                if arctech_dict is None:
+                    _LOGGER.warning(
+                        "Net arctech: unsupported method=%s model=%s", method_name, model
+                    )
+                    return -1
+                send_kwargs = dict(arctech_dict)
         elif protocol == "everflourish":
             # Everflourish variant dispatch.  The model suffix (e.g. ":ef_v5")
             # selects the encoding variant.  See _encode_everflourish_variant().
