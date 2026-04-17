@@ -347,6 +347,17 @@ put receiver in learn mode → press Learn.
 or have additional working codes, please
 [open an issue](https://github.com/R00S/addon-tellstick-local/issues).
 
+### ⚠️ Arctech dimmers on TellStick Net / ZNet — on/off only
+
+The **TellStick Net / ZNet** firmware cannot perform variable-brightness
+dimming for arctech `selflearning-dimmer` devices. Dim commands fall back to
+full-brightness on — the brightness slider in HA has no effect on Net/ZNet.
+
+Use a **TellStick Duo** if you need real dimming. If you have both a Duo and a
+Net/ZNet, set the Duo as your **primary device** and add the Net/ZNet as a
+**mirror/range extender** — the Duo handles all dimming while the Net/ZNet
+extends coverage.
+
 ---
 
 ## Troubleshooting

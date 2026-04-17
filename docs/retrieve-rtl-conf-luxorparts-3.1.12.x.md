@@ -276,6 +276,28 @@ to use the on/off command for pairing.
 
 ---
 
+## Session — 2026-04-17: Document arctech dimmer ZNet on/off-only limitation (v3.1.12.8)
+
+### What was documented
+
+User confirmed: variable-brightness dimming does not work on ZNet/Net for arctech
+`selflearning-dimmer` — only on Duo. The code already had the correct workaround
+(sends TURNON+selflearning-dimmer model → firmware converts to DIM(255)), but the
+user-facing docs did not mention this limitation.
+
+### Files changed
+
+- `README.md`:
+  - Hardware status block: added note that arctech dimmers are on/off only on Net/ZNet
+  - Added "Mixing Duo and Net/ZNet" bullet: use Duo as primary device
+  - Supported devices: added "Arctech dimmer note" after Nexa note
+  - Known limitations: added new section "Arctech dimmers on TellStick Net / ZNet — on/off only"
+- `tellsticklive/DOCS.md`:
+  - Added "⚠️ Arctech dimmers on TellStick Net / ZNet — on/off only" section after Luxorparts
+- Version bumped: `3.1.12.7` → `3.1.12.8`
+
+---
+
 ## Session — 2026-04-17: Remove arc_raw_test Proove dimmer test device (v3.1.12.7)
 
 ### What was removed
