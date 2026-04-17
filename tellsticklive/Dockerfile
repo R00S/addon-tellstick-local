@@ -18,15 +18,15 @@ ENV LANG=C.UTF-8
 RUN apk add --no-cache \
         confuse=3.3-r4 \
         libftdi1=1.5-r4 \
-        libstdc++=14.2.0-r6 \
-        socat=1.8.0.3-r1 \
+        libstdc++=15.2.0-r3 \
+        socat=1.8.1.1-r0 \
     && apk add --no-cache --virtual .build-dependencies \
         argp-standalone=1.5.0-r1 \
-        build-base=0.5-r3 \
-        cmake=3.31.7-r1 \
+        build-base=0.5-r4 \
+        cmake=4.2.3-r0 \
         confuse-dev=3.3-r4 \
-        gcc=14.2.0-r6 \
-        git=2.49.1-r0 \
+        gcc=15.2.0-r3 \
+        git=2.53.0-r1 \
         libftdi1-dev=1.5-r4 \
     && ln -s /usr/include/libftdi1/ftdi.h /usr/include/ftdi.h \
     && mkdir -p /usr/src \
