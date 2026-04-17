@@ -134,7 +134,85 @@ after each discovery or implementation step.
 
 ---
 
+## RTL-433 configuration (`docs/rtl_433.conf`)
+
+The file `docs/rtl_433.conf` already exists in the repo from previous sessions.
+It was created to capture raw 433 MHz signals for debugging Luxorparts and
+other protocol work.
+
+**Key design decisions recorded in the file comments:**
+
+- **No `protocol N` lines** — intentional. Adding any `protocol N` line
+  disables all other built-in decoders. Without restriction, all built-in
+  decoders run first; only truly unknown signals fall through to
+  `report_unknown on`. This gives full protocol coverage AND captures
+  unknown frames (Nexa dim levels, Luxorparts proprietary signals, etc.).
+
+- **`report_unknown on`** — captures any signal no built-in decoder
+  recognises. This is how Luxorparts raw signals and Nexa dimmer dim-level
+  commands (20/40/60/80/100%) were captured.
+
+- **Output:** `mqtt://core-mosquitto:1883/rtl_433[/model][/id]` — publishes
+  to the Mosquitto broker add-on using HA Supervisor's internal hostname.
+
+**How to use:**
+1. Install `pbkhrv/rtl_433-hass-addons` from the HA add-on store
+2. Copy `docs/rtl_433.conf` to the add-on configuration directory
+3. Install and start Mosquitto broker add-on
+4. Press a remote — decoded JSON appears as MQTT messages under `rtl_433/`
+
+---
+
+## Luxorparts test device (`const.py` — `DEVICE_CATALOG`)
+
+The Luxorparts test device is in `DEVICE_CATALOG` at line ~321 of `const.py`:
+
+```python
+# NOTE: Luxorparts/Cleverio 50969, 50970, 50972 — BETA (Duo only)
+# Uses raw RF pulse encoding via LPD codes.  Pick LPD 1-24 to select
+# a verified Telldus Live code pair.  Not available on Net/ZNet yet.
+("Luxorparts — On/off (beta, Duo only)", "luxorparts", "selflearning-switch:lx_live", 20),
+```
+
+Widget 20 means the user picks `house` = LPD number (1–24); `unit` is fixed
+at 1. The LPD number selects one of the 24 verified ON/OFF code pairs
+captured via RTL-433 from Telldus Live transmissions (see
+`luxorparts_generate_codes()` in `const.py`).
+
+**Protocol details (from `const.py` lines ~883–960):**
+
+- OOK-PWM, 433.92 MHz
+- Bit 1: short pulse ≈ 392 µs + long gap ≈ 1108 µs (total ≈ 1500 µs)
+- Bit 0: long pulse ≈ 1148 µs + short gap ≈ 352 µs (total ≈ 1500 µs)
+- 25 data bits, MSB first
+- 10 repeats for on/off, 48 for learn/pairing
+- Inter-packet gap ≈ 2248 µs
+- Encryption: nibble-substitution cipher ported from Homey `se.luxorparts-1`
+  `lib/PayloadEncryption.js`
+
+**All 24 LPD code pairs** are in `const.py` at `_LX_VERIFIED_CODES`, verified
+via RTL-433 captures of Telldus Live signals. Pairs 1–13 are labeled
+(address confirmed from user's Telldus Live device list); pairs 14–24 are
+unlabeled (captured but device address unconfirmed).
+
+**Encoding path in the integration:**
+
+```
+switch.py → async_turn_on/off
+  → controller.send_luxorparts_raw(lpd, "on"/"off")
+    → luxorparts_generate_codes(lpd, 1) → code
+    → luxorparts_build_packet(code, repeats=10)  → raw bytes
+    → client.py send_raw_command(bytes)          → TCP → telldusd → Duo
+```
+
+**Known working:** On/off with `P\x02 R<10> S<50 bytes>+` format makes the
+Duo flash and is accepted by the physical Luxorparts receiver (verified,
+version 3.1.8.14). Learn (48 repeats) does not flash the Duo — workaround is
+to use the on/off command for pairing.
+
+---
+
 ## Pending / future work on this branch
 
-- [ ] Retrieve RTL-433 conf for Luxorparts (original branch purpose — not yet
-  started; user to confirm scope)
+- [ ] Confirm whether RTL-433 conf needs any further changes for this branch's scope
+- [ ] Confirm with user whether additional LPD pairs need to be captured
