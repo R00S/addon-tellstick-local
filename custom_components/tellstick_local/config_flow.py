@@ -2192,6 +2192,8 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         For Duo backend all protocols work natively via telldusd.
         """
         entry = self._get_entry()
+        if entry.data.get(CONF_MIRROR_OF):
+            return self.async_abort(reason="mirror_is_secondary")
         backend = entry.data.get(CONF_BACKEND, BACKEND_DUO)
         if backend == BACKEND_NET:
             return self.async_show_menu(
