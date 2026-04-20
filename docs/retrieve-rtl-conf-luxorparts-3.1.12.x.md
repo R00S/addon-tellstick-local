@@ -522,3 +522,65 @@ The Luxorparts implementation (widget 20, catalog entry, LX raw encoder, all
 switch/button/config_flow code) is **unchanged** — identical to the state in
 `main`. Luxorparts currently only works on the Duo (native arctech selflearning
 via the raw OOK-PWM encoder). Net/ZNet support is unverified.
+
+---
+
+## Session — 2026-04-20: Fix "Invalid handler specified" + CI checkout SHA (v3.1.12.14)
+
+### Problem 1 — "Config flow could not be loaded: Invalid handler specified"
+
+**Root cause:** `strings.json` listed `ef_test_device`, `ef_test_raw`, and
+`ef_test_native` as menu options under `config_subentries.device.step.user`
+and as step definitions, but `config_flow.py` had **no corresponding
+`async_step_ef_test_*` handlers**.
+
+HA 2025.12+ validates menu options referenced in `strings.json` against the
+flow class at handler registration time. When a menu option has no handler,
+HA rejects the entire flow registration → "Invalid handler specified" when
+the user clicks "+ Add 433 MHz device".
+
+**Fix:** Removed `ef_test_device`, `ef_test_raw`, `ef_test_native` from:
+- `config_subentries.device.step.user.menu_options` in both files
+- Step definitions (`config_subentries.device.step.ef_test_*`) in both files
+
+The `ef_test_sequence` / `ef_test_raw_sequence` / `ef_test_native_sequence`
+**button entity strings were kept** — they are still used by `button.py`.
+
+### Problem 2 — CI: `actions/checkout` Node.js 20 deprecation warning
+
+`create-stable-release.yaml` and `create-test-release.yaml` used
+`actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683` (Node.js 20,
+forced to Node.js 24 from June 2 2026 = ~6 weeks away).
+
+Updated both files to `actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd`
+(same SHA already used in `ci.yaml`, `deploy.yaml`, `edge.yaml`).
+
+### Files changed
+
+- `custom_components/tellstick_local/strings.json`: removed ef_test menu options + step defs
+- `custom_components/tellstick_local/translations/en.json`: same
+- `tellsticklive/rootfs/usr/share/tellstick_local/strings.json`: synced
+- `tellsticklive/rootfs/usr/share/tellstick_local/translations/en.json`: synced
+- `.github/workflows/create-stable-release.yaml`: updated checkout SHA
+- `.github/workflows/create-test-release.yaml`: updated checkout SHA (×2)
+- Version bumped: `3.1.12.13` → `3.1.12.14`
+
+### Problem 3 — Mirror entry "Invalid handler specified" (not graceful abort)
+
+**Root cause:** `async_get_supported_subentry_types` returned `{}` for mirror
+entries. When the global "+ Add 433 MHz device" button was clicked and HA
+tried to create the subentry flow for a mirror config entry, it found no
+registered handler for subentry type "device" → raw JSON error
+`{"message":"Invalid handler specified"}` instead of the graceful
+`mirror_is_secondary` abort message.
+
+**Fix:** Always return `{SUBENTRY_TYPE_DEVICE: TellStickLocalAddDeviceFlow}`
+from `async_get_supported_subentry_types`, even for mirror entries.
+`async_step_user` already has the `mirror_is_secondary` abort, which HA
+now shows as a proper "This TellStick is a mirror — devices must be added
+through the primary hub entry." message.
+
+### Additional files changed (Problem 3)
+
+- `custom_components/tellstick_local/config_flow.py`: removed `return {}` branch from `async_get_supported_subentry_types`
+- `tellsticklive/rootfs/usr/share/tellstick_local/config_flow.py`: synced
