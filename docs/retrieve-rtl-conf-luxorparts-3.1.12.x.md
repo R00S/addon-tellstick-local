@@ -276,6 +276,51 @@ to use the on/off command for pairing.
 
 ---
 
+## Session — 2026-04-20: Fix persistent restart notification after HAOS restart (v3.1.12.9)
+
+### Problem (user-reported)
+
+After every HAOS restart the "Restart required — TellStick Local v3.1.12.8 installed
+(currently loaded: v3.1.12.6)" notification kept appearing, even when nothing had been
+updated. The user confirmed both the app and the integration UI showed v3.1.12.8, so
+the notification was stale/re-fired unnecessarily.
+
+### Root cause
+
+`INTEGRATION_VERSION` in `const.py` was **never updated** alongside `manifest.json`
+for versions 3.1.12.7 and 3.1.12.8. The constant was stuck at `"3.1.12.6"`.
+
+At every HA startup, `_check_version_mismatch()` reads the on-disk `manifest.json`
+(= 3.1.12.8) and compares it to the loaded `INTEGRATION_VERSION` (= 3.1.12.6). They
+always differ → notification fires afresh every boot, regardless of whether any update
+occurred. The user also saw the stale notification persist after restart because the
+mismatch meant the `pn_async_dismiss` path was never reached (the re-fire overwrote it).
+
+The comment at the top of `const.py` explicitly says **all four files must always
+be identical**, but past commits only touched `manifest.json` and forgot `const.py`.
+
+### Fix
+
+Updated all four version fields to `3.1.12.9`:
+
+| File | Old | New |
+|------|-----|-----|
+| `custom_components/tellstick_local/manifest.json` | 3.1.12.8 | 3.1.12.9 |
+| `custom_components/tellstick_local/const.py` (INTEGRATION_VERSION) | 3.1.12.6 | 3.1.12.9 |
+| `tellsticklive/rootfs/usr/share/tellstick_local/manifest.json` | 3.1.12.7 | 3.1.12.9 |
+| `tellsticklive/rootfs/usr/share/tellstick_local/const.py` (INTEGRATION_VERSION) | 3.1.12.6 | 3.1.12.9 |
+
+### After-fix behaviour
+
+- **HAOS restart, no update:** integration.sh sees bundled = installed = 3.1.12.9 → skips
+  copy → `_check_version_mismatch` sees match → calls `pn_async_dismiss` → stale
+  notification cleared. No new notification created. ✓
+- **Genuine app update to 3.1.12.x+1:** integration.sh copies new files → `_check_version_mismatch`
+  detects mismatch → fires notification once. Auto-restart (or manual restart) loads
+  new code where INTEGRATION_VERSION matches → match on next boot → notification cleared. ✓
+
+---
+
 ## Session — 2026-04-17: Document arctech dimmer ZNet on/off-only limitation (v3.1.12.8)
 
 ### What was documented
