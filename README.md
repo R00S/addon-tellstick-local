@@ -292,6 +292,12 @@ primary and the device updates in HA as usual.
 > TellStick entry already exists. You cannot set up a mirror without a primary.
 > Mirror entries do not load their own platform entities — they only forward.
 
+> **Adding devices to a mirror:** The global **+ Add 433 MHz device** button
+> is available for all entries, including mirrors. If you click it while a mirror
+> entry is selected, the flow immediately shows:
+> _"This TellStick is a mirror — devices must be added through the primary hub entry."_
+> To add or teach devices, open the **primary** TellStick entry instead.
+
 ### Pre-configuring devices in the app YAML
 
 If you need a TX-only device available immediately (e.g. a Brateck projector
@@ -539,6 +545,12 @@ and run the manual setup flow.
 1. Check the HA log for warnings like "No telldusd device ID for …"
 2. Try deleting the device and re-adding it via the "Add device" button
 3. Verify house/unit codes via Configure → Edit device
+
+### "Add device shows 'This TellStick is a mirror' message"
+
+This is correct — mirror entries inherit their devices from the primary and
+cannot hold devices of their own. To add or teach a device, click **+ Add 433 MHz device**
+from the **primary** TellStick hub entry instead.
 
 ### "Multiple devices appear from one remote button press"
 
