@@ -1,12 +1,20 @@
 """Constants for TellStick Local integration."""
 from __future__ import annotations
 
+import json as _json
+import pathlib as _pathlib
+
 DOMAIN = "tellstick_local"
 
-# Must match manifest.json "version".  Frozen at import time so the
-# integration can detect when on-disk files were updated behind a
-# running HA instance (i.e. the app copied a newer version but HA
-# hasn't restarted yet).
+# Read the integration version directly from manifest.json at import time.
+# This value is frozen once the module is imported (Python caches modules),
+# so it represents the version of the code currently running in memory.
+#
+# If the TellStick Local app later overwrites manifest.json with a newer
+# version while HA is running, INTEGRATION_VERSION still holds the old
+# value → _check_version_mismatch() detects the difference and fires the
+# repair issue.  On HA restart the module is re-imported, reading the new
+# version → versions match → repair issue cleared automatically.
 #
 # VERSION BUMP RULES — ALWAYS run `git branch --show-current` first:
 #   A.B.C.D
@@ -14,18 +22,12 @@ DOMAIN = "tellstick_local"
 #   C    → bump when the git branch name changes; reset D to 0.
 #   D    → bump whenever making code changes on the current branch.
 #
-#   Same branch name → bump D only.
-#   Different branch name → bump C, reset D to 0.
-#
-#   BUMP ALL FOUR FILES — they must always be identical:
-#     1. custom_components/tellstick_local/manifest.json          ("version")
-#     2. custom_components/tellstick_local/const.py               (INTEGRATION_VERSION)
-#     3. tellsticklive/rootfs/usr/share/tellstick_local/manifest.json  ("version")
-#     4. tellsticklive/rootfs/usr/share/tellstick_local/const.py  (INTEGRATION_VERSION)
-
-
-
-INTEGRATION_VERSION = "3.1.12.10"
+#   BUMP BOTH manifest.json files (no longer need to touch const.py):
+#     1. custom_components/tellstick_local/manifest.json
+#     2. tellsticklive/rootfs/usr/share/tellstick_local/manifest.json
+INTEGRATION_VERSION: str = _json.loads(
+    (_pathlib.Path(__file__).parent / "manifest.json").read_text(encoding="utf-8")
+)["version"]
 
 
 # Backend type stored in config entry data

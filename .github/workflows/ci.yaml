@@ -118,3 +118,28 @@ jobs:
           persist-credentials: false
       - name: 🚀 Run YAMLLint
         uses: frenck/action-yamllint@34b4bbcaeabedcfefad6adea8c5bbc42af0e2d47
+
+  lint-integration-versions:
+    name: Integration version sync
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⤵️ Check out code from GitHub
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: 🔍 Verify both manifest.json files have the same version
+        run: |
+          SRC="custom_components/tellstick_local/manifest.json"
+          BUNDLED="tellsticklive/rootfs/usr/share/tellstick_local/manifest.json"
+          SRC_VER=$(jq -r '.version' "${SRC}")
+          BUNDLED_VER=$(jq -r '.version' "${BUNDLED}")
+          echo "custom_components version : ${SRC_VER}"
+          echo "bundled version           : ${BUNDLED_VER}"
+          if [ "${SRC_VER}" != "${BUNDLED_VER}" ]; then
+            echo "::error::Integration manifest versions are out of sync!"
+            echo "::error::  ${SRC}: ${SRC_VER}"
+            echo "::error::  ${BUNDLED}: ${BUNDLED_VER}"
+            echo "::error::Bump both files to the same version."
+            exit 1
+          fi
+          echo "✅ Versions match: ${SRC_VER}"

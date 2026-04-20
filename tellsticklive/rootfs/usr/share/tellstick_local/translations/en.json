@@ -18,7 +18,15 @@
   "issues": {
     "restart_required": {
       "title": "Restart required — TellStick Local v{new_version} installed",
-      "description": "The TellStick Local app installed integration **v{new_version}** (currently loaded: v{current_version}).\n\nRestart Home Assistant to activate the new version."
+      "description": "The TellStick Local app installed integration **v{new_version}** (currently loaded: v{current_version}).\n\nRestart Home Assistant to activate the new version.",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Restart Home Assistant",
+            "description": "Home Assistant will restart now to activate TellStick Local **v{new_version}**.\n\nClick **Submit** to restart."
+          }
+        }
+      }
     },
     "dev_channel": {
       "title": "⚠️ TellStick Local — you are on the dev channel",
@@ -335,7 +343,8 @@
         "teach_failed": "Failed to send pairing signal. Check that the TellStick app is running."
       },
       "abort": {
-        "device_added": "Device paired successfully! It will appear in your device list shortly."
+        "device_added": "Device paired successfully! It will appear in your device list shortly.",
+        "mirror_is_secondary": "This TellStick is a mirror — devices must be added through the primary hub entry."
       }
     }
   },

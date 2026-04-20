@@ -321,7 +321,154 @@ Updated all four version fields to `3.1.12.9`:
 
 ---
 
-## Session — 2026-04-17: Document arctech dimmer ZNet on/off-only limitation (v3.1.12.8)
+## Session — 2026-04-20: Hide mirror entries from Add 433 MHz device hub picker (v3.1.12.10)
+
+### Problem (user-reported)
+
+When the user had both a primary TellStick and a mirror (range extender) entry
+configured, the "Add 433 MHz device" config flow's hub picker showed the mirror
+entry as a selectable option. Selecting it caused a confusing / broken flow
+because mirror entries have no devices of their own.
+
+### Fix
+
+`config_flow.py`: filtered `async_step_add_rf_device_entry_selector` to exclude
+mirror config entries (entries with `CONF_MIRROR_OF` set) from the hub picker.
+Only primary entries are shown.
+
+### Files changed
+
+- `config_flow.py` — exclude mirror entries from hub picker
+- `manifest.json` — version `3.1.12.9` → `3.1.12.10`
+- All changes synced to bundled copy
+
+---
+
+## Session — 2026-04-20: Graceful abort when mirror entry selected in device picker (v3.1.12.11)
+
+### Problem (user-reported)
+
+After the v3.1.12.10 fix hid mirror entries from the picker, there was still a
+path where a mirror entry could end up selected (e.g. via direct URL or stale
+state). The resulting flow would silently do nothing or show a confusing error.
+
+### Fix
+
+`config_flow.py`: added an explicit `async_abort("mirror_is_secondary")` with a
+clear user-facing message when a mirror entry is detected mid-flow.
+
+Added `mirror_is_secondary` abort string to `strings.json` and
+`translations/en.json`.
+
+### Files changed
+
+- `config_flow.py` — abort with clear message
+- `strings.json` / `translations/en.json` — added `mirror_is_secondary` abort text
+- `manifest.json` — version `3.1.12.10` → `3.1.12.11`
+- Bundled `config_flow.py` synced (strings/translations not synced — CI copies
+  them from source at build time)
+
+---
+
+## Session — 2026-04-20: Fix docker/login-action SHA failure in CI (v3.1.12.12)
+
+### Problem (user-reported)
+
+The "Create Test Release" action was failing. Root cause: `docker/login-action`
+was pinned to a specific commit SHA that GitHub's tarball endpoint was failing
+to resolve intermittently (transient download failure).
+
+### Fix
+
+Updated `docker/login-action` pin to `v4.1.0` (a current stable tag) in both
+`deploy.yaml` and `edge.yaml`.
+
+**Note:** This commit did NOT update `INTEGRATION_VERSION` in `const.py` —
+it was left at `3.1.12.10` while `manifest.json` went to `3.1.12.12`.
+This caused the same const.py drift bug documented in the v3.1.12.9 session
+to recur immediately (repair issue fired on every boot again).
+
+### Files changed
+
+- `.github/workflows/deploy.yaml` — updated docker/login-action pin
+- `.github/workflows/edge.yaml` — updated docker/login-action pin
+- `manifest.json` — version `3.1.12.11` → `3.1.12.12`
+
+---
+
+## Session — 2026-04-20: Permanent fix for version drift + graceful restart repair (v3.1.12.13)
+
+### Problems (user-reported)
+
+1. "Restart required" repair issue still appearing after every restart — the
+   const.py / manifest.json drift bug has now recurred **twice** (3.1.12.6 and
+   3.1.12.10 both forgotten during version bumps).
+2. The repair dialog only had "Ignore" — no way to take action from the dialog
+   ("not very graceful abort").
+3. Three sessions (v3.1.12.10, .11, .12) were missing from the timeline.
+
+### Root cause of recurring drift
+
+`INTEGRATION_VERSION` was a hardcoded string in `const.py`. Every version bump
+required updating **four files** (two `manifest.json` + two `const.py`). The
+const.py files were routinely forgotten.
+
+### Fix 1 — Dynamic version read (permanent)
+
+`INTEGRATION_VERSION` in `const.py` (both copies) now reads directly from
+`manifest.json` at module import time:
+
+```python
+INTEGRATION_VERSION: str = _json.loads(
+    (_pathlib.Path(__file__).parent / "manifest.json").read_text(encoding="utf-8")
+)["version"]
+```
+
+- At import time, Python reads manifest.json from the same directory → frozen
+  to the version that was on disk when HA started.
+- If the app later overwrites manifest.json with a newer version,
+  `INTEGRATION_VERSION` still holds the old value → mismatch detected ✓
+- On HA restart, module re-imports → new version read → versions match → issue
+  cleared ✓
+- **Version bumps now only require updating the two `manifest.json` files.**
+  `const.py` never needs to be touched for version bumps.
+
+`ISSUE_RESTART` and `ISSUE_DEV_CHANNEL` moved from local `_ISSUE_*` constants
+in `__init__.py` to exported constants in `const.py`, so `repairs.py` can
+import them without a circular dependency.
+
+### Fix 2 — Fixable repair with "Restart" button
+
+- `repairs.py` (new): implements `async_create_fix_flow` + `RestartRepairFlow`
+  that calls `homeassistant.restart` when the user clicks "Fix → Submit".
+- `__init__.py`: `is_fixable=False` → `is_fixable=True`.
+- `strings.json` / `translations/en.json`: added `fix_flow.step.init` strings
+  for the restart confirmation form.
+
+### Fix 3 — CI enforcement
+
+New CI job `lint-integration-versions` in `ci.yaml` compares the `version`
+field in both `manifest.json` files on every push/PR. If they differ, CI fails
+with a clear error message pointing to both files.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `custom_components/tellstick_local/const.py` | Dynamic version read; add `ISSUE_RESTART`, `ISSUE_DEV_CHANNEL` |
+| `custom_components/tellstick_local/manifest.json` | `3.1.12.12` → `3.1.12.13` |
+| `custom_components/tellstick_local/__init__.py` | Import `ISSUE_*` from const; `is_fixable=True`; remove local `_ISSUE_*` |
+| `custom_components/tellstick_local/repairs.py` | New — fix flow for restart repair |
+| `custom_components/tellstick_local/strings.json` | Add `fix_flow` step under `restart_required` |
+| `custom_components/tellstick_local/translations/en.json` | Same |
+| `tellsticklive/rootfs/usr/share/tellstick_local/const.py` | Same dynamic version read + issue constants |
+| `tellsticklive/rootfs/usr/share/tellstick_local/manifest.json` | `3.1.12.10` → `3.1.12.13` |
+| `tellsticklive/rootfs/usr/share/tellstick_local/__init__.py` | Synced from source |
+| `tellsticklive/rootfs/usr/share/tellstick_local/repairs.py` | Synced from source |
+| `tellsticklive/rootfs/usr/share/tellstick_local/strings.json` | Synced from source |
+| `tellsticklive/rootfs/usr/share/tellstick_local/translations/` | Synced from source |
+| `.github/workflows/ci.yaml` | New `lint-integration-versions` job |
+| `docs/retrieve-rtl-conf-luxorparts-3.1.12.x.md` | Backfill v3.1.12.10–.13 sessions |
 
 ### What was documented
 
