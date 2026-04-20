@@ -1305,7 +1305,14 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         def async_get_supported_subentry_types(
             cls, config_entry: ConfigEntry
         ) -> dict[str, type[ConfigSubentryFlow]]:
-            """Return subentries supported by this handler."""
+            """Return subentries supported by this handler.
+
+            Mirror entries inherit all devices from their primary and never
+            store devices of their own, so they must not appear in the
+            'Add 433 MHz device' hub picker.
+            """
+            if config_entry.data.get(CONF_MIRROR_OF):
+                return {}
             return {SUBENTRY_TYPE_DEVICE: TellStickLocalAddDeviceFlow}
 
 
