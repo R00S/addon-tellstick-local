@@ -5,16 +5,17 @@
 █                                                                              █
 █   🛑🛑🛑 READ THIS FIRST — VERSION BUMPING RULES 🛑🛑🛑                    █
 █                                                                              █
-█   manifest.json version = X.Y.Z.W                                           █
+█   manifest.json version = A.B.C.D                                           █
 █                                                                              █
-█   W = bump between prompts WITHIN SAME AGENT SESSION (same PR)              █
-█   Z = bump when a NEW AGENT starts (new session / new PR)                   █
-█   Y = minor feature release                                                 █
-█   X = major release                                                          █
+█   A, B  — set by the USER only.  Agents NEVER touch A or B.                █
+█   C     — bump when the git branch name changes; reset D to 0.              █
+█   D     — bump whenever making code changes on the current branch.          █
 █                                                                              █
-█   CURRENT VERSION: 2.1.13.0                                                  █
-█   (bump W → 2.1.13.1, 2.1.13.2, etc. for next prompt in this session)      █
-█   (new agent → 2.1.14.0)                                                    █
+█   ⚠️  DO NOT hardcode a version here — it will always be stale.             █
+█   ALWAYS read manifest.json to get the current version, then bump D.        █
+█   Run `git branch --show-current`:                                          █
+█     same branch name  → bump D only                                         █
+█     different branch  → bump C, reset D to 0                                █
 █                                                                              █
 █   config.yaml version MUST ALWAYS be 'dev' on branches (linter-enforced)    █
 █                                                                              █
@@ -37,6 +38,33 @@
 █   PROTOCOL: TEXT-BASED (telldusd socket encoding):                        █
 █     → Edit: custom_components/tellstick_local/client.py                      █
 █     → NEVER use binary framing — protocol is text-based                      █
+█                                                                              █
+████████████████████████████████████████████████████████████████████████████████
+```
+
+## Branch Timeline Files
+
+```
+████████████████████████████████████████████████████████████████████████████████
+█                                                                              █
+█   🛑 READ THE BRANCH TIMELINE BEFORE DOING ANYTHING 🛑                      █
+█                                                                              █
+█   Every branch has a timeline file:                                         █
+█     docs/<branch-name-without-prefix>-<A.B.C.x>.md                         █
+█                                                                              █
+█   Example: branch copilot/retrieve-rtl-conf-luxorparts, version 3.1.12.5   █
+█     → docs/retrieve-rtl-conf-luxorparts-3.1.12.x.md                        █
+█                                                                              █
+█   HOW TO FIND IT:                                                            █
+█     BRANCH=$(git branch --show-current | sed 's|.*/||')                     █
+█     VERSION=$(jq -r '.version' custom_components/tellstick_local/manifest.json | cut -d. -f1-3) █
+█     FILE="docs/${BRANCH}-${VERSION}.x.md"                                   █
+█                                                                              █
+█   RULES:                                                                     █
+█     1. Read it FIRST — before reading any other file or writing code.        █
+█     2. If it does not exist, CREATE it before doing anything else.           █
+█     3. After each discovery, failed attempt, or implemented fix — UPDATE it. █
+█     4. This prevents debug loops and lost discoveries across agent sessions. █
 █                                                                              █
 ████████████████████████████████████████████████████████████████████████████████
 ```
@@ -99,24 +127,27 @@ not re-fetch any frontend assets. This has caused multiple silent broken release
 similar projects.
 
 ```
-□ EVERY commit with code changes → bump manifest.json "version": "X.Y.Z.W"
+□ EVERY commit with code changes → bump manifest.json "version": "A.B.C.D"
 ```
 
 `tellsticklive/config.yaml` stays `version: dev` forever on branches.
 
-### Version ticking scheme (`X.Y.Z.W`)
+### Version ticking scheme (`A.B.C.D`)
 
-The version in `manifest.json` follows `X.Y.Z.W`:
+The version in `manifest.json` follows `A.B.C.D`:
 
-| Digit | When to bump                                                |
-| ----- | ----------------------------------------------------------- |
-| **W** | Between prompts **within the same agent session** (same PR) |
-| **Z** | When a **new agent** starts working (new session/PR)        |
-| **Y** | Minor feature release                                       |
-| **X** | Major release                                               |
+| Digit | Who controls it | When to bump                                                              |
+| ----- | --------------- | ------------------------------------------------------------------------- |
+| **A** | **User only**   | Major release — agents never touch this                                   |
+| **B** | **User only**   | Minor feature release — agents never touch this                           |
+| **C** | Agent           | When `git branch --show-current` returns a **different branch name** — bump C, reset D to 0 |
+| **D** | Agent           | Whenever making **any code changes** on the current branch                |
 
-Example: Agent starts at `2.1.0.0`. After each user prompt it bumps to
-`2.1.0.1`, `2.1.0.2`, etc. A new agent on the next PR starts at `2.1.1.0`.
+**Rule for agents: only ever change C or D. Never change A or B.**
+
+**How to determine the current version:** always `grep '"version"' custom_components/tellstick_local/manifest.json` — never rely on a version written in these instructions (it will be stale). Then bump D.
+
+Example: `git branch --show-current` → `fix/my-feature`, version is `3.1.5.2`. Each set of changes bumps D → `3.1.5.3`, `3.1.5.4`, etc. Later, `git branch --show-current` → `fix/other-thing` (different name) → bump C, reset D to 0 → `3.1.6.0`.
 
 ## What File to Edit for Each Change
 

@@ -58,6 +58,8 @@ from .const import (
     ENTRY_MIRRORS,
     ENTRY_TELLSTICK_CONTROLLER,
     INTEGRATION_VERSION,
+    ISSUE_DEV_CHANNEL,
+    ISSUE_RESTART,
     PLATFORMS,
     SIGNAL_EVENT,
     SIGNAL_NEW_DEVICE,
@@ -170,9 +172,6 @@ _SENSOR_SUFFIX: dict[int, str] = {
     64: "wind_gust",
 }
 
-_ISSUE_RESTART = "restart_required"
-_ISSUE_DEV_CHANNEL = "dev_channel"
-
 # Protocols that are receive-only sensors — telldusd emits TDSensorEvent for
 # these (not controllable devices).  Pre-configured app-config entries for these
 # protocols are skipped during startup import because they have no house/unit and
@@ -198,14 +197,14 @@ async def _check_version_mismatch(hass: HomeAssistant) -> None:
         _LOGGER.debug("Could not read on-disk manifest for version check: %s", exc)
         # Clear any stale issue/notification — if we can't verify a mismatch,
         # assume it's resolved so users don't see stale alerts after restart.
-        async_delete_issue(hass, DOMAIN, _ISSUE_RESTART)
-        pn_async_dismiss(hass, _ISSUE_RESTART)
+        async_delete_issue(hass, DOMAIN, ISSUE_RESTART)
+        pn_async_dismiss(hass, ISSUE_RESTART)
         return
 
     if not disk_version or disk_version == INTEGRATION_VERSION:
         # Versions match — clear any stale repair issue / notification
-        async_delete_issue(hass, DOMAIN, _ISSUE_RESTART)
-        pn_async_dismiss(hass, _ISSUE_RESTART)
+        async_delete_issue(hass, DOMAIN, ISSUE_RESTART)
+        pn_async_dismiss(hass, ISSUE_RESTART)
         return
 
     _LOGGER.warning(
@@ -217,10 +216,10 @@ async def _check_version_mismatch(hass: HomeAssistant) -> None:
     async_create_issue(
         hass,
         DOMAIN,
-        _ISSUE_RESTART,
-        is_fixable=False,
+        ISSUE_RESTART,
+        is_fixable=True,
         severity=IssueSeverity.WARNING,
-        translation_key=_ISSUE_RESTART,
+        translation_key=ISSUE_RESTART,
         translation_placeholders={
             "new_version": disk_version,
             "current_version": INTEGRATION_VERSION,
@@ -235,7 +234,7 @@ async def _check_version_mismatch(hass: HomeAssistant) -> None:
             "Go to **Settings → Developer tools → Restart**."
         ),
         title=f"Restart required — TellStick Local v{disk_version} installed",
-        notification_id=_ISSUE_RESTART,
+        notification_id=ISSUE_RESTART,
     )
 
 
@@ -264,13 +263,13 @@ async def _check_dev_channel(hass: HomeAssistant) -> None:
         async_create_issue(
             hass,
             DOMAIN,
-            _ISSUE_DEV_CHANNEL,
+            ISSUE_DEV_CHANNEL,
             is_fixable=False,
             severity=IssueSeverity.WARNING,
-            translation_key=_ISSUE_DEV_CHANNEL,
+            translation_key=ISSUE_DEV_CHANNEL,
         )
     else:
-        async_delete_issue(hass, DOMAIN, _ISSUE_DEV_CHANNEL)
+        async_delete_issue(hass, DOMAIN, ISSUE_DEV_CHANNEL)
 
 
 @callback
@@ -844,6 +843,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         for device_uid, device_cfg in stored_devices.items():
             # Skip sensor entries — they don't register with telldusd
             if device_uid.startswith("sensor_"):
+                continue
+            # Luxorparts bypasses telldusd entirely — store a param dict
+            # (same as Net backend) so button.py / switch.py can detect it
+            # and send raw commands directly.
+            if device_cfg.get(CONF_DEVICE_PROTOCOL) == "luxorparts":
+                device_id_map[device_uid] = {
+                    CONF_DEVICE_PROTOCOL: "luxorparts",
+                    CONF_DEVICE_MODEL: device_cfg.get(CONF_DEVICE_MODEL, ""),
+                    CONF_DEVICE_HOUSE: device_cfg.get(CONF_DEVICE_HOUSE, ""),
+                    CONF_DEVICE_UNIT: device_cfg.get(CONF_DEVICE_UNIT, ""),
+                    CONF_DEVICE_ENCODING: "",
+                }
                 continue
             try:
                 # Prefer the "params" dict (new format) over house/unit (old format)

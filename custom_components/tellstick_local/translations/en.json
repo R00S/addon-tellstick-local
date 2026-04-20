@@ -18,7 +18,15 @@
   "issues": {
     "restart_required": {
       "title": "Restart required — TellStick Local v{new_version} installed",
-      "description": "The TellStick Local app installed integration **v{new_version}** (currently loaded: v{current_version}).\n\nRestart Home Assistant to activate the new version."
+      "description": "The TellStick Local app installed integration **v{new_version}** (currently loaded: v{current_version}).\n\nRestart Home Assistant to activate the new version.",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Restart Home Assistant",
+            "description": "Home Assistant will restart now to activate TellStick Local **v{new_version}**.\n\nClick **Submit** to restart."
+          }
+        }
+      }
     },
     "dev_channel": {
       "title": "⚠️ TellStick Local — you are on the dev channel",
@@ -243,10 +251,7 @@
             "by_protocol": "Add by protocol",
             "by_protocol_raw": "Add by protocol (raw pulse)",
             "by_protocol_native": "Add by protocol (TellStick native — unit-1 fix)",
-            "by_protocol_native_nofix": "Add by protocol (TellStick native — no unit fix)",
-            "ef_test_device": "⚡ Add EF test device (all 20 variants)",
-            "ef_test_raw": "⚡ Add EF test — RAW (S-only pulse variants)",
-            "ef_test_native": "⚡ Add EF test — NATIVE (firmware dict variants)"
+            "by_protocol_native_nofix": "Add by protocol (TellStick native — no unit fix)"
           }
         },
         "by_brand": {
@@ -304,30 +309,6 @@
         "confirm": {
           "title": "Send pairing signal",
           "description": "**{name}** ({protocol}/{model}) will learn house code **{house}**, unit **{unit}**.\n\nPut your 433 MHz receiver in **learn mode** now, then click **Submit** — the pairing signal is sent immediately."
-        },
-        "ef_test_device": {
-          "title": "Add EF test device",
-          "description": "Creates **21 entities** in one click:\n- **20 switch entities** — one per everflourish encoding variant (v1–v20)\n- **1 sequence button** — fires all 20 variants in order with 2 s delays\n\nWatch the TellStick LED to see which variant(s) make it blink.\n\nHouse/unit values are shared across all variants.",
-          "data": {
-            "house": "House code (0–16383)",
-            "unit": "Unit (1–4)"
-          }
-        },
-        "ef_test_raw": {
-          "title": "Add EF test device — RAW pulse variants",
-          "description": "Creates **{count} switch entities** + **1 sequence button** for raw S-only pulse encoding tests.\n\nThese variants send raw pulse-train bytes directly — this is the path that makes the TellStick ZNet LED blink.\n\nVariations include: timing sweeps, repeat counts, preamble lengths, signal copies, terminators, inverted bits.",
-          "data": {
-            "house": "House code (0–16383)",
-            "unit": "Unit (1–4)"
-          }
-        },
-        "ef_test_native": {
-          "title": "Add EF test device — NATIVE firmware variants",
-          "description": "Creates **{count} switch entities** + **1 sequence button** for native firmware dict encoding tests.\n\nThese variants send protocol dicts through the ZNet firmware's protocol handler. Testing confirms these currently do NOT make the ZNet LED blink — this device is for exhaustive testing of the native path.\n\nVariations include: model names, unit/house offsets, S+native combos, R/P values.",
-          "data": {
-            "house": "House code (0–16383)",
-            "unit": "Unit (1–4)"
-          }
         }
       },
       "error": {
@@ -335,7 +316,8 @@
         "teach_failed": "Failed to send pairing signal. Check that the TellStick app is running."
       },
       "abort": {
-        "device_added": "Device paired successfully! It will appear in your device list shortly."
+        "device_added": "Device paired successfully! It will appear in your device list shortly.",
+        "mirror_is_secondary": "This TellStick is a mirror — devices must be added through the primary hub entry."
       }
     }
   },

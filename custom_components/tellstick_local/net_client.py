@@ -2884,9 +2884,6 @@ class TellStickNetController:
         elif protocol == "arctech":
             # Arctech-specific encoder.  Always returns a native firmware dict
             # (protocol/model/house/unit/method) for all methods including dim.
-            # Raw S-byte paths were removed: handleSend() crashes before the RF
-            # chip is reached when house/unit keys are absent from the dict.
-            # See docs/ZNET_PROTOCOL_PORTING_GUIDE.md for details.
             arctech_dict = _encode_arctech_command(model, house, unit, method_name, param)
             if arctech_dict is None:
                 _LOGGER.warning(

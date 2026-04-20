@@ -49,6 +49,11 @@ Live account, and no YAML file editing.
 >   major protocols (arctech, everflourish, waveman, sartano, x10, hasta, brateck). Sensor
 >   decoding works for fineoffset, mandolyn, and oregon. Some edge cases may remain.
 >   No Telldus Live account needed — the integration talks to the Net/ZNet via local UDP.
+>   **Note:** arctech dimmers (`selflearning-dimmer`) only support on/off on Net/ZNet —
+>   variable-brightness dimming requires a **TellStick Duo**.
+> - **Mixing Duo and Net/ZNet:** If you have both, use the **Duo as your primary device**
+>   and add the Net/ZNet as a mirror/range extender. The Duo supports full dimming; the
+>   Net/ZNet does not.
 > - **Mirror / range extender** — **Stable.** Use a second TellStick (any mix of Duo / Net /
 >   ZNet) to extend 433 MHz coverage. Commands are replicated to both hardware units; events
 >   received by either unit are forwarded to the primary.
@@ -287,6 +292,12 @@ primary and the device updates in HA as usual.
 > TellStick entry already exists. You cannot set up a mirror without a primary.
 > Mirror entries do not load their own platform entities — they only forward.
 
+> **Adding devices to a mirror:** The global **+ Add 433 MHz device** button
+> is available for all entries, including mirrors. If you click it while a mirror
+> entry is selected, the flow immediately shows:
+> _"This TellStick is a mirror — devices must be added through the primary hub entry."_
+> To add or teach devices, open the **primary** TellStick entry instead.
+
 ### Pre-configuring devices in the app YAML
 
 If you need a TX-only device available immediately (e.g. a Brateck projector
@@ -360,6 +371,12 @@ each protocol supports.
 > **Nexa note:** Nexa _switches, dimmers, remotes and buttons_ use the `arctech`
 > protocol. Nexa _thermometers and weather sensors_ (LMST-606, WDS-100 etc.) use
 > the `fineoffset` protocol — they appear automatically as sensor entities.
+
+> **Arctech dimmer note:** Variable-brightness dimming (`selflearning-dimmer`) works
+> fully on **TellStick Duo** only. On **TellStick Net / ZNet**, dimmers are limited to
+> on/off — the ZNet firmware cannot pass a brightness level to the RF encoder. The
+> dimmer entity still appears in HA but brightness sliders have no effect on ZNet.
+> Use a TellStick Duo if you need variable dimming.
 
 > **Sartano note:** Sartano/codeswitch auto-detection is **off by default**
 > because `telldusd` often falsely decodes arctech signals as sartano. If you
@@ -529,6 +546,12 @@ and run the manual setup flow.
 2. Try deleting the device and re-adding it via the "Add device" button
 3. Verify house/unit codes via Configure → Edit device
 
+### "Add device shows 'This TellStick is a mirror' message"
+
+This is correct — mirror entries inherit their devices from the primary and
+cannot hold devices of their own. To add or teach a device, click **+ Add 433 MHz device**
+from the **primary** TellStick hub entry instead.
+
 ### "Multiple devices appear from one remote button press"
 
 This is normal — `telldusd` runs all protocol decoders on every RF signal. A single
@@ -545,6 +568,19 @@ them permanently.
 ---
 
 ## Known limitations
+
+### Arctech dimmers on TellStick Net / ZNet — on/off only
+
+The **TellStick Net / ZNet** firmware cannot perform variable-brightness dimming
+for arctech `selflearning-dimmer` devices. The ZNet firmware's `handleSend()` call
+does not pass the brightness level to the RF encoder, so any dim command falls back
+to a full-brightness on command. Dimmer entities still appear in HA, but the
+brightness slider has no effect.
+
+**Workaround:** Use a **TellStick Duo** (USB) as your primary device. The Duo's
+`telldusd` daemon supports the full arctech dim command including variable brightness.
+If you have both a Duo and a Net/ZNet, add the Net/ZNet as a **mirror/range extender**
+so it only relays on/off commands and the Duo handles all dimming.
 
 ### Luxorparts / Cleverio 50969, 50970, 50972 — Beta (Duo only)
 

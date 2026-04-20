@@ -1,34 +1,38 @@
 """Constants for TellStick Local integration."""
 from __future__ import annotations
 
+import json as _json
+import pathlib as _pathlib
+
 DOMAIN = "tellstick_local"
 
-# Must match manifest.json "version".  Frozen at import time so the
-# integration can detect when on-disk files were updated behind a
-# running HA instance (i.e. the app copied a newer version but HA
-# hasn't restarted yet).
+# Read the integration version directly from manifest.json at import time.
+# This value is frozen once the module is imported (Python caches modules),
+# so it represents the version of the code currently running in memory.
+#
+# If the TellStick Local app later overwrites manifest.json with a newer
+# version while HA is running, INTEGRATION_VERSION still holds the old
+# value → _check_version_mismatch() detects the difference and fires the
+# repair issue.  On HA restart the module is re-imported, reading the new
+# version → versions match → repair issue cleared automatically.
 #
 # VERSION BUMP RULES — ALWAYS run `git branch --show-current` first:
-#   X.Y.Z.W
-#   W → bump for each prompt on the SAME branch (same feature branch)
-#   Z → bump ONLY when working on a NEW branch (different branch name)
-#   Y → minor feature release
-#   X → major release
+#   A.B.C.D
+#   A, B → USER-MANAGED ONLY.  Agents NEVER change A or B.
+#   C    → bump when the git branch name changes; reset D to 0.
+#   D    → bump whenever making code changes on the current branch.
 #
-#   Trigger for Z: the git branch name changes.  That's it.
-#   A new agent context window on the SAME branch is still a W bump.
-#   Run `git branch --show-current` — if the branch matches the memory,
-#   bump W.  If it's a different branch, bump Z.
-#
-#   BUMP ALL FOUR FILES — they must always be identical:
-#     1. custom_components/tellstick_local/manifest.json          ("version")
-#     2. custom_components/tellstick_local/const.py               (INTEGRATION_VERSION)
-#     3. tellsticklive/rootfs/usr/share/tellstick_local/manifest.json  ("version")
-#     4. tellsticklive/rootfs/usr/share/tellstick_local/const.py  (INTEGRATION_VERSION)
+#   BUMP BOTH manifest.json files (no longer need to touch const.py):
+#     1. custom_components/tellstick_local/manifest.json
+#     2. tellsticklive/rootfs/usr/share/tellstick_local/manifest.json
+INTEGRATION_VERSION: str = _json.loads(
+    (_pathlib.Path(__file__).parent / "manifest.json").read_text(encoding="utf-8")
+)["version"]
 
-
-
-INTEGRATION_VERSION = "3.1.11.2"
+# Repair issue IDs — defined here so repairs.py can import them without
+# creating a circular dependency on __init__.py.
+ISSUE_RESTART = "restart_required"
+ISSUE_DEV_CHANNEL = "dev_channel"
 
 
 # Backend type stored in config entry data

@@ -112,7 +112,7 @@ The only reliable approach for each version is:
 
 | Protocol       | Net/ZNet TX Status | Method Used                                    | Source                                         |
 | -------------- | ----------------- | ---------------------------------------------- | ---------------------------------------------- |
-| `arctech`      | ✅ Working        | Native dict (on/off/learn); DIM→full brightness via TURNON+selflearning-dimmer model | `tellstick-server/ProtocolArctech.py` |
+| `arctech`      | ✅ Working        | Native dict (on/off/learn); DIM→full brightness via TURNON+selflearning-dimmer model. **Confirmed:** raw S-only packets (no `protocol` key) silently dropped — `handleSend()` raises `KeyError('protocol')` before RF chip is reached. | `tellstick-server/ProtocolArctech.py` |
 | `everflourish` | 🔬 Testing²       | Native dict variants (ef_n*); raw S-only variants have no proven success | `tellstick-server/ProtocolEverflourish.py` |
 | `brateck`      | ❌ **Needs port** | Falls through to generic dict (BROKEN) | `tellstick-server/ProtocolBrateck.py`          |
 | `comen`        | ❌ **Needs port** | Falls through to generic dict (BROKEN) | `tellstick-server/ProtocolComen.py`¹           |

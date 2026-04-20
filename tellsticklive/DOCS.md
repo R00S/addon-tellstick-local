@@ -84,9 +84,12 @@ All device management happens in the integration under **Settings → Devices & 
 See the [project README](https://github.com/R00S/addon-tellstick-local) for
 full pairing instructions and supported devices.
 
-> **Upgrade notifications:** When the app updates the integration code, HA shows a
-> persistent notification if a restart is needed. Go to
-> **Settings → Developer tools → Restart** to apply the update.
+> **Upgrade notifications:** When the app updates the integration code to a
+> new version, HA shows a persistent notification that a restart is needed.
+> Go to **Settings → Developer tools → Restart** to apply the update.
+> Normal HA restarts (e.g. HAOS update) do **not** trigger this notification —
+> it only fires when the integration files on disk are actually newer than what
+> is currently loaded.
 
 ---
 
@@ -194,6 +197,11 @@ vice versa.
 
 The mirror appears as _"TellStick (mirror of Primary)"_ in Devices & Services.
 It shares the primary's devices — no separate device management needed.
+
+> **Adding devices:** Mirror entries cannot hold devices of their own.
+> If you click **+ Add 433 MHz device** while a mirror entry is selected,
+> the flow shows: _"This TellStick is a mirror — devices must be added
+> through the primary hub entry."_ Use the primary entry to add or teach devices.
 
 > **No Telldus Live required (Net/ZNet):** This integration talks to the Net/ZNet
 > locally — no cloud account needed. If you also use Telldus Live on the same
@@ -346,6 +354,17 @@ put receiver in learn mode → press Learn.
 **Not yet available on TellStick Net/ZNet.** If you need Net/ZNet support
 or have additional working codes, please
 [open an issue](https://github.com/R00S/addon-tellstick-local/issues).
+
+### ⚠️ Arctech dimmers on TellStick Net / ZNet — on/off only
+
+The **TellStick Net / ZNet** firmware cannot perform variable-brightness
+dimming for arctech `selflearning-dimmer` devices. Dim commands fall back to
+full-brightness on — the brightness slider in HA has no effect on Net/ZNet.
+
+Use a **TellStick Duo** if you need real dimming. If you have both a Duo and a
+Net/ZNet, set the Duo as your **primary device** and add the Net/ZNet as a
+**mirror/range extender** — the Duo handles all dimming while the Net/ZNet
+extends coverage.
 
 ---
 
