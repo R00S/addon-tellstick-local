@@ -122,6 +122,86 @@ The practical approach is to pair the motor fresh with TellStick's generated cod
 
 ---
 
+## New Log Analysis (2026-04-27 — analyze_pulses capture)
+
+User recaptured with `protocol -1` + `analyze_pulses true` config and posted
+results in issue #100.  rtl_433 **auto-detected the modulation** in one clean
+single-frame burst and printed working decoder parameters.
+
+### Key capture: block 21 (41 pulses, 47.74 ms, 07:51:52)
+
+rtl_433 output:
+```
+Guessing modulation: Pulse Width Modulation with sync/delimiter
+pulse_slicer_pwm: Analyzer Device codes [{40}6c82050eaa]
+Attempting demodulation... short_width: 376, long_width: 776, reset_limit: 1532, sync_width: 1456
+Use a flex decoder with -X 'n=name,m=OOK_PWM,s=376,l=776,r=1532,g=0,t=0,y=1456'
+```
+
+**This confirms:**
+
+| Parameter | Value  | Meaning |
+|-----------|--------|---------|
+| `short`   | 376 µs | short pulse → bit "0" |
+| `long`    | 776 µs | long pulse → bit "1" |
+| `reset`   | 1532 µs | gap between frame repetitions within a burst |
+| `sync`    | 1456 µs | sync pulse before each frame |
+| Data bits | 40 | 40-bit payload per frame |
+
+### Decoded payload
+
+One 40-bit code was captured: **`6c82050eaa`**  
+Binary: `01101100 10000010 00000101 00001110 10101010`
+
+We don't yet know which button (UP/DOWN/STOP) produced this code.  The user
+needs to capture each button separately and share the results so we can map
+the command field within the 40-bit payload.
+
+### Frame structure
+
+One button press = 6 repetitions:
+- Each frame: 1456 µs sync + 40 data bits × 1124 µs period = ~46 ms
+- Between frames (within burst): 1532 µs gap
+- Between button presses: ~16 400 µs inter-burst reset
+
+### Session captures
+
+Four distinct button presses were recorded:
+
+| Time      | Pulses | Frames | Notes |
+|-----------|--------|--------|-------|
+| 07:51:41  | 317    | 5+     | Button press #1 |
+| 07:51:42  | 206    | 4+     | Button press #2 |
+| 07:51:45  | 355    | 6      | Button press #3 |
+| 07:51:48  | 370    | 6      | Button press #4 |
+| 07:51:52  | 41     | 1      | Single clean frame → decoded `6c82050eaa` |
+
+### Working rtl_433 decoder (added to docs/rtl_433.conf)
+
+```
+decoder { name=kjell_blind, modulation=OOK_PWM, short=376, long=776, reset=1532, gap=0, sync=1456, bits>=38, tolerance=50 }
+```
+
+### Next step: distinguish UP/DOWN/STOP commands
+
+Press each button separately while capturing.  Expected: the lower few bits of
+the 40-bit code differ per command; the upper bits are the remote's device
+address.  Suggested capture procedure:
+
+```
+protocol        -1
+analyze_pulses  true
+verbose         2
+output          log
+output          json
+```
+
+Press **UP** only → save log.  Repeat for **DOWN**, then **STOP**.  With three
+decoded codes the command field can be identified.  Post here and the decoder
+will be updated with per-command bit patterns.
+
+---
+
 ## Changes Made
 
 | File | Change |
