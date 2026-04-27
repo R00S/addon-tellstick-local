@@ -4,6 +4,12 @@ Handles protocols that use UP/DOWN/STOP commands instead of ON/OFF:
   - ``hasta``   — Hasta motorised blinds (selflearning and selflearningv2)
   - ``brateck`` — Brateck motorised projector screens and blinds
 
+Brands that use these protocols:
+  - Hasta (selflearning / selflearningv2)
+  - Rollertrol (selflearningv2)
+  - Roxcore projector screen (brateck)
+  - Kjell & Company blind motor (selflearningv2)
+
 Both protocols support three commands:
   - UP   → open/raise
   - DOWN → close/lower
