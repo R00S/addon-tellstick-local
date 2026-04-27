@@ -202,6 +202,97 @@ will be updated with per-command bit patterns.
 
 ---
 
+## Per-button Code Analysis (2026-04-27 — UP / STOP / DOWN captures)
+
+User provided three separate captures (one per button).
+
+### Results
+
+| Button | Decoded code (40 bits) | Last byte | Status |
+|--------|------------------------|-----------|--------|
+| STOP   | `6c82050eaa`           | `0xAA`    | ✅ Confirmed (5 clean frames) |
+| UP     | `6c82050eee`           | `0xEE`    | ✅ Confirmed (multiple clean frames) |
+| UP     | `6c82050ee1`           | `0xE1`    | ⚠️ Variant (see below) |
+| DOWN   | *(not decoded)*        | `??`      | ❌ Signal not cleanly captured |
+
+### STOP — `6c82050eaa`
+
+Clean decode. All 5 repetitions in the burst decoded identically to `6c82050eaa`.
+
+### UP — `6c82050eee` (primary) and `6c82050ee1` (variant)
+
+The UP session captured two separate bursts:
+- **Burst 1**: 3 × `6c82050eee` — primary UP code
+- **Burst 2**: 3 × `6c82050ee1` — same upper 39 bits, last bit differs
+
+The `ee1` variant (last byte = `0xE1` = `11100001`) vs `eee` (last byte = `0xEE` = `11101110`):
+lower nibble `1110` → `0001`.  The remote may implement a **1-bit rolling counter**
+in the lowest nibble to indicate "hold" vs "single press" — or this is simply
+a second button press captured in the same session window.
+
+For HA automation matching: match on **prefix `6c82050ee`** (mask the last nibble)
+to fire the UP action regardless of the rolling nibble.
+
+### DOWN — not cleanly captured
+
+The DOWN comment captured heavy RF interference (33 blocks of various signals).
+Only one motor-like block appeared (block 2, 37 pulses, RSSI −0.3 dB):
+- Timing matches: `short=372µs, long=776µs, reset=1524µs` ✓
+- BUT sync pulse = **4916 µs** instead of the expected 1456 µs
+- Only **34 data bits** decoded instead of the expected 40
+
+This block captured the motor's **preamble pulse** (~4896 µs) followed by 34 bits
+of the first frame — the remaining 6 bits and subsequent repetitions were merged
+into or destroyed by concurrent RF emissions from other devices in the environment.
+
+**The DOWN command code is therefore unknown.**  No 40-bit code with prefix
+`6c82050e` was produced in the DOWN session.
+
+### Payload structure (confirmed)
+
+```
+Bits  0–31  (bytes 1–4):  device address = 6c82050e  (fixed per remote)
+Bits 32–39  (byte 5):     command byte
+  0xAA = 10101010  → STOP    (both nibbles = A = 1010)
+  0xEE = 11101110  → UP      (both nibbles = E = 1110)
+  0x??            → DOWN     (unconfirmed; pattern suggests 0x66 = 01100110,
+                               i.e. both nibbles = 6 = 0110, but this is
+                               speculative — a confirmed capture is needed)
+```
+
+The "double-nibble" encoding is consistent with many 433 MHz RF motor remotes
+that send the command nibble twice for redundancy.  If DOWN = `0x66`, the
+nibble values are: UP=E(14), STOP=A(10), DOWN=6(6).
+
+### HA automation example (using confirmed codes)
+
+```yaml
+# Match UP or STOP button on this specific remote
+trigger:
+  platform: mqtt
+  topic: rtl_433/kjell_blind/+
+condition:
+  condition: template
+  value_template: >
+    {{ trigger.payload_json.id == '0x6c82050e' and
+       trigger.payload_json.data in ['0xee', '0xaa'] }}
+action:
+  service: cover.{{ 'open' if trigger.payload_json.data == '0xee' else 'stop' }}_cover
+  target:
+    entity_id: cover.blind_motor
+```
+
+### Next step for DOWN
+
+Capture DOWN in an environment with fewer 433 MHz devices active, or at a different
+time of day to avoid interference.  The expected clean decode would be:
+
+```
+{40}6c82050e??   ← DOWN code (? = unknown)
+```
+
+---
+
 ## Changes Made
 
 | File | Change |
