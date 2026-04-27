@@ -95,6 +95,33 @@ Since `hasta selflearningv2` is the closest known telldus-core protocol:
 
 ---
 
+## Widget 16 — House and Unit for selflearningv2
+
+Widget 16 is the parameter form for all `hasta` self-learning motors (Rollertrol, Hasta v2, and now Kjell & Company).  Its field definitions are:
+
+```python
+{"name": "house", "type": "int", "default": 1, "min": 1, "max": 65536, "random": True},
+{"name": "unit", "type": "int", "default": 1, "min": 1, "max": 15},
+```
+
+`"random": True` means the "Add device" flow auto-generates a **random house code** (1–65536) every time a device is added.  There is no fixed house/unit — `selflearningv2` is a self-learning protocol, so the motor stores whatever code TellStick sends during pairing.
+
+### Pairing procedure
+
+1. HA: Settings → Devices & Services → TellStick Local → Configure → Add device → By brand → "Kjell & Company — Blind motor"
+2. HA shows params form with a randomly generated house (e.g. `42573`) and unit `1`.
+3. Press-and-hold the **learn/pair button on the motor** until the LED blinks (learn mode).
+4. Click **Send learn signal** in HA → TellStick sends an RF LEARN frame with that house/unit.
+5. Motor stores the code; UP/DOWN/STOP commands from HA now control it.
+
+### Can we replicate the original remote's code?
+
+In theory, if we could decode the original remote's house/unit from the rtl_433 log, TellStick could be paired to the same code so both the original remote AND HA control the motor simultaneously.  **In practice this is not currently possible:** the rtl_433 log shows all decoded rows as empty (`"len" : 0`) because the custom "kjell_blind" flex decoder does not successfully extract payload bits.
+
+The practical approach is to pair the motor fresh with TellStick's generated code.
+
+---
+
 ## Changes Made
 
 | File | Change |
