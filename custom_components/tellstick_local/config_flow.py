@@ -2695,7 +2695,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 try:
                     import json as _json  # noqa: PLC0415
                     payload = _json.loads(msg.payload)
-                except (ValueError, TypeError, Exception):  # noqa: BLE001
+                except Exception:  # noqa: BLE001
                     return
                 if not isinstance(payload, dict):
                     return
@@ -2737,7 +2737,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             try:
                 self._generic_rf_listen_unsub()
             except Exception:  # noqa: BLE001
-                pass
+                _LOGGER.debug("Error unsubscribing from rtl_433 MQTT (non-fatal)", exc_info=True)
             self._generic_rf_listen_unsub = None
 
         if user_input is not None:
@@ -2792,7 +2792,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             try:
                 self._generic_rf_listen_unsub()
             except Exception:  # noqa: BLE001
-                pass
+                _LOGGER.debug("Error unsubscribing from rtl_433 MQTT (non-fatal)", exc_info=True)
             self._generic_rf_listen_unsub = None
 
         entry = self._get_entry()

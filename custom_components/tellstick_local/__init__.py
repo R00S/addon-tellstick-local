@@ -1108,7 +1108,7 @@ async def _async_setup_rtl433_mqtt(
         try:
             existing_unsub()
         except Exception:  # noqa: BLE001
-            pass
+            _LOGGER.debug("Error cancelling rtl_433 MQTT subscription (non-fatal)", exc_info=True)
 
     if not enabled:
         return
@@ -1193,7 +1193,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             try:
                 rtl433_unsub()
             except Exception:  # noqa: BLE001
-                pass
+                _LOGGER.debug("Error cancelling rtl_433 MQTT subscription on unload (non-fatal)", exc_info=True)
     return ok
 
 
