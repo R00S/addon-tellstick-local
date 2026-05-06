@@ -50,11 +50,13 @@ from .const import (
     CONF_EVENT_PORT,
     CONF_IGNORED_UIDS,
     CONF_MIRROR_OF,
+    CONF_RTL433_SENSORS,
     DEFAULT_AUTOMATIC_ADD,
     DEFAULT_COMMAND_PORT,
     DEFAULT_DETECT_SARTANO,
     DEFAULT_EVENT_PORT,
     DEFAULT_HOST,
+    DEFAULT_RTL433_SENSORS,
     DEVICE_CATALOG_LABELS,
     DEVICE_CATALOG_MAP,
     DOMAIN,
@@ -64,6 +66,7 @@ from .const import (
     ENTRY_DEVICE_ID_MAP,
     ENTRY_MIRRORS,
     ENTRY_TELLSTICK_CONTROLLER,
+    PROTOCOL_GENERIC_RF,
     PROTOCOL_MODEL_LABELS,
     PROTOCOL_MODEL_MAP,
     PROTOCOL_NATIVE_LABELS,
@@ -1358,6 +1361,7 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
             new_options = dict(self.config_entry.options)
             new_options[CONF_AUTOMATIC_ADD] = user_input[CONF_AUTOMATIC_ADD]
             new_options[CONF_DETECT_SARTANO] = user_input[CONF_DETECT_SARTANO]
+            new_options[CONF_RTL433_SENSORS] = user_input[CONF_RTL433_SENSORS]
             return self.async_create_entry(title="", data=new_options)
 
         current_auto = self.config_entry.options.get(
@@ -1366,12 +1370,16 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
         current_sartano = self.config_entry.options.get(
             CONF_DETECT_SARTANO, DEFAULT_DETECT_SARTANO
         )
+        current_rtl433 = self.config_entry.options.get(
+            CONF_RTL433_SENSORS, DEFAULT_RTL433_SENSORS
+        )
         return self.async_show_form(
             step_id="settings",
             data_schema=vol.Schema(
                 {
                     vol.Required(CONF_AUTOMATIC_ADD, default=current_auto): bool,
                     vol.Required(CONF_DETECT_SARTANO, default=current_sartano): bool,
+                    vol.Required(CONF_RTL433_SENSORS, default=current_rtl433): bool,
                 }
             ),
         )
@@ -2201,7 +2209,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             )
         return self.async_show_menu(
             step_id="user",
-            menu_options=["by_brand", "by_protocol"],
+            menu_options=["by_brand", "by_protocol", "generic_rf"],
         )
 
     async def async_step_by_brand(
@@ -2595,3 +2603,273 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             },
             errors=errors,
         )
+
+    # ------------------------------------------------------------------
+    # Generic RF record & replay flow
+    # ------------------------------------------------------------------
+
+    # Instance state for the generic RF recording flow
+    _generic_rf_name: str = ""
+    _generic_rf_timings_on: list[int] | None = None
+    _generic_rf_timings_off: list[int] | None = None
+    _generic_rf_listen_unsub: Any = None
+    _generic_rf_captured: dict | None = None
+    _generic_rf_repeat_count: int = 10
+
+    async def async_step_generic_rf(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Step: enter a name for the Generic RF device and repeat count."""
+        entry = self._get_entry()
+        backend = entry.data.get(CONF_BACKEND, BACKEND_DUO)
+
+        if user_input is not None:
+            self._generic_rf_name = user_input["name"]
+            self._generic_rf_repeat_count = int(user_input.get("repeat_count", 10))
+            # Start listening for ON signal
+            return await self.async_step_generic_rf_listen_on()
+
+        description = ""
+        if backend != BACKEND_DUO:
+            description = "warning_not_duo"
+
+        return self.async_show_form(
+            step_id="generic_rf",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("name"): str,
+                    vol.Optional("repeat_count", default=10): vol.All(
+                        int, vol.Range(min=1, max=50)
+                    ),
+                }
+            ),
+            description_placeholders={"note": description},
+        )
+
+    async def async_step_generic_rf_listen_on(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Step: listen for the ON signal from the remote.
+
+        Starts an MQTT subscription to rtl_433/# when first entered.
+        User presses their remote, then clicks "Check signal" to proceed.
+        """
+        # Start MQTT subscription on first entry (no user_input yet)
+        if self._generic_rf_listen_unsub is None:
+            self._generic_rf_captured = None
+            await self._start_generic_rf_listen()
+
+        if user_input is not None:
+            # User clicked submit — check if a signal was captured
+            if self._generic_rf_captured is not None:
+                self._generic_rf_timings_on = self._generic_rf_captured.get("timings")
+                return await self.async_step_generic_rf_confirm_on()
+            # No signal yet — re-show with error
+            return self.async_show_form(
+                step_id="generic_rf_listen_on",
+                errors={"base": "no_signal"},
+                data_schema=vol.Schema({}),
+                description_placeholders={"name": self._generic_rf_name},
+            )
+
+        return self.async_show_form(
+            step_id="generic_rf_listen_on",
+            data_schema=vol.Schema({}),
+            description_placeholders={"name": self._generic_rf_name},
+        )
+
+    async def _start_generic_rf_listen(self) -> None:
+        """Subscribe to rtl_433/# MQTT to capture the next RF signal."""
+        try:
+            from homeassistant.components import mqtt  # noqa: PLC0415
+
+            if not await mqtt.async_wait_for_mqtt_client(self.hass):
+                _LOGGER.warning("Generic RF listen: MQTT not available")
+                return
+
+            @callback
+            def _capture_callback(msg: Any) -> None:
+                """Capture the first RF signal received."""
+                if self._generic_rf_captured is not None:
+                    return  # already captured
+                try:
+                    import json as _json  # noqa: PLC0415
+                    payload = _json.loads(msg.payload)
+                except (ValueError, TypeError, Exception):  # noqa: BLE001
+                    return
+                if not isinstance(payload, dict):
+                    return
+                # Look for the codes field (raw pulse timings)
+                codes_str = payload.get("codes", "")
+                if codes_str:
+                    timings = _parse_rtl433_codes(codes_str)
+                    if timings:
+                        self._generic_rf_captured = {
+                            "timings": timings,
+                            "model": payload.get("model", "unknown"),
+                            "raw": str(codes_str)[:200],
+                        }
+                        return
+                # Also accept any decoded signal — store as empty timings
+                # (user can confirm the device was detected even if we
+                # can't replay it via raw pulse, for documentation purposes)
+                model = payload.get("model", "")
+                if model and model != "unknown":
+                    self._generic_rf_captured = {
+                        "timings": [],
+                        "model": model,
+                        "raw": "",
+                    }
+
+            self._generic_rf_listen_unsub = await mqtt.async_subscribe(
+                self.hass, "rtl_433/#", _capture_callback
+            )
+        except ImportError:
+            _LOGGER.warning("Generic RF listen: MQTT integration not available")
+        except Exception:  # noqa: BLE001
+            _LOGGER.warning("Generic RF listen: failed to subscribe to MQTT", exc_info=True)
+
+    async def async_step_generic_rf_confirm_on(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Step: confirm the captured ON signal and optionally record OFF."""
+        if self._generic_rf_listen_unsub is not None:
+            try:
+                self._generic_rf_listen_unsub()
+            except Exception:  # noqa: BLE001
+                pass
+            self._generic_rf_listen_unsub = None
+
+        if user_input is not None:
+            # User confirms — ask for OFF signal too?
+            if user_input.get("record_off"):
+                self._generic_rf_captured = None
+                return await self.async_step_generic_rf_listen_off()
+            return await self._async_save_generic_rf_device()
+
+        captured = self._generic_rf_captured or {}
+        timings_count = len(self._generic_rf_timings_on or [])
+        return self.async_show_form(
+            step_id="generic_rf_confirm_on",
+            data_schema=vol.Schema(
+                {vol.Optional("record_off", default=False): bool}
+            ),
+            description_placeholders={
+                "name": self._generic_rf_name,
+                "model": captured.get("model", "unknown"),
+                "timings_count": str(timings_count),
+            },
+        )
+
+    async def async_step_generic_rf_listen_off(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Step: listen for the OFF signal from the remote."""
+        if self._generic_rf_listen_unsub is None:
+            self._generic_rf_captured = None
+            await self._start_generic_rf_listen()
+
+        if user_input is not None:
+            if self._generic_rf_captured is not None:
+                self._generic_rf_timings_off = self._generic_rf_captured.get("timings")
+                return await self._async_save_generic_rf_device()
+            return self.async_show_form(
+                step_id="generic_rf_listen_off",
+                errors={"base": "no_signal"},
+                data_schema=vol.Schema({}),
+                description_placeholders={"name": self._generic_rf_name},
+            )
+
+        return self.async_show_form(
+            step_id="generic_rf_listen_off",
+            data_schema=vol.Schema({}),
+            description_placeholders={"name": self._generic_rf_name},
+        )
+
+    async def _async_save_generic_rf_device(self) -> SubentryFlowResult:
+        """Save the Generic RF device to entry options and dispatch signal."""
+        if self._generic_rf_listen_unsub is not None:
+            try:
+                self._generic_rf_listen_unsub()
+            except Exception:  # noqa: BLE001
+                pass
+            self._generic_rf_listen_unsub = None
+
+        entry = self._get_entry()
+        import secrets as _secrets  # noqa: PLC0415
+
+        # The device UID is built from protocol+model+house+unit by
+        # RawDeviceEvent.device_id.  For Generic RF devices, there are
+        # no meaningful house/unit codes, so we use a random token as the
+        # "house" field to create a unique UID: generic_rf_<token>.
+        uid_suffix = _secrets.token_hex(4)
+        device_uid = f"generic_rf_{uid_suffix}"
+
+        device_data = {
+            CONF_DEVICE_NAME: self._generic_rf_name,
+            CONF_DEVICE_PROTOCOL: PROTOCOL_GENERIC_RF,
+            CONF_DEVICE_MODEL: "",
+            CONF_DEVICE_HOUSE: uid_suffix,   # used as the UID discriminator
+            CONF_DEVICE_UNIT: "",
+            "timings_on": self._generic_rf_timings_on or [],
+            "timings_off": self._generic_rf_timings_off,
+            "repeat_count": self._generic_rf_repeat_count,
+        }
+
+        # Persist in entry.options[CONF_DEVICES]
+        existing_devices = dict(entry.options.get(CONF_DEVICES, {}))
+        existing_devices[device_uid] = device_data
+        new_options = dict(entry.options)
+        new_options[CONF_DEVICES] = existing_devices
+        self.hass.config_entries.async_update_entry(entry, options=new_options)
+
+        # Also update device_id_map so the entity can send commands immediately
+        entry_data = self.hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
+        device_id_map: dict = entry_data.get(ENTRY_DEVICE_ID_MAP, {})
+        device_id_map[device_uid] = {
+            CONF_DEVICE_PROTOCOL: PROTOCOL_GENERIC_RF,
+            CONF_DEVICE_MODEL: "",
+            CONF_DEVICE_HOUSE: uid_suffix,
+            CONF_DEVICE_UNIT: "",
+        }
+
+        # Mark as discovered to avoid double-processing phantom events
+        entry_data.setdefault("_discovered_uids", set()).add(device_uid)
+
+        # Dispatch synthetic RawDeviceEvent so switch.py creates the entity
+        # immediately.  We encode uid_suffix as "house" so device_id resolves
+        # to "generic_rf_<uid_suffix>" — matching the stored device_uid.
+        from .client import RawDeviceEvent  # noqa: PLC0415
+
+        synthetic = RawDeviceEvent(
+            raw=(
+                f"class:command;protocol:{PROTOCOL_GENERIC_RF};model:;"
+                f"house:{uid_suffix};unit:;method:turnon;"
+            ),
+            controller_id=0,
+        )
+        async_dispatcher_send(
+            self.hass,
+            SIGNAL_NEW_DEVICE.format(entry.entry_id),
+            synthetic,
+        )
+
+        return self.async_abort(reason="device_added")
+
+
+def _parse_rtl433_codes(codes_str: str) -> list[int]:
+    """Parse an rtl_433 codes field into a list of µs timings.
+
+    The codes field looks like: ``{392,-1108,392,-352,...}`` or
+    ``392,-1108,392,-352,...``  (alternating pulse/space in µs).
+
+    Returns an empty list if parsing fails.
+    """
+    try:
+        # Strip braces if present
+        codes_str = codes_str.strip().strip("{}")
+        if not codes_str:
+            return []
+        return [int(x.strip()) for x in codes_str.split(",") if x.strip()]
+    except (ValueError, AttributeError):
+        return []

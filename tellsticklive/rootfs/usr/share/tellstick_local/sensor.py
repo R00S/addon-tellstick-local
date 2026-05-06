@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -24,8 +25,10 @@ from .const import (
     CONF_DEVICE_PROTOCOL,
     CONF_DEVICES,
     DOMAIN,
+    RTL433_SENSOR_FIELDS,
     SIGNAL_EVENT,
     SIGNAL_NEW_DEVICE,
+    SIGNAL_RTL433_READING,
     TELLSTICK_HUMIDITY,
     TELLSTICK_RAINRATE,
     TELLSTICK_RAINTOTAL,
@@ -48,6 +51,34 @@ _SENSOR_META: dict[int, tuple[str, SensorDeviceClass | None, str]] = {
     TELLSTICK_WINDGUST: ("wind_gust", SensorDeviceClass.WIND_SPEED, UnitOfSpeed.METERS_PER_SECOND),
 }
 
+# Map RTL-433 device class strings to SensorDeviceClass enum values
+_RTL433_DEVICE_CLASS_MAP: dict[str | None, SensorDeviceClass | None] = {
+    "temperature": SensorDeviceClass.TEMPERATURE,
+    "humidity": SensorDeviceClass.HUMIDITY,
+    "precipitation": SensorDeviceClass.PRECIPITATION,
+    "precipitation_intensity": SensorDeviceClass.PRECIPITATION_INTENSITY,
+    "wind_speed": SensorDeviceClass.WIND_SPEED,
+    "atmospheric_pressure": SensorDeviceClass.ATMOSPHERIC_PRESSURE,
+    "moisture": SensorDeviceClass.MOISTURE,
+    "battery": SensorDeviceClass.BATTERY,
+    "voltage": SensorDeviceClass.VOLTAGE,
+    None: None,
+}
+
+# Sanitize RTL-433 model strings for use in UIDs
+_RTL433_UID_RE = re.compile(r"[^a-z0-9]+")
+
+
+def _rtl433_uid_safe(text: str) -> str:
+    """Convert a model/id string to a safe UID component."""
+    return _RTL433_UID_RE.sub("_", text.lower()).strip("_")
+
+
+def _rtl433_device_uid(model: str, sensor_id: str) -> str:
+    """Build the base UID for an RTL-433 sensor device."""
+    return f"rtl433_{_rtl433_uid_safe(model)}_{_rtl433_uid_safe(str(sensor_id))}"
+
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -61,7 +92,31 @@ async def async_setup_entry(
 
     # Pre-create entities for stored sensor devices (persisted auto-detections)
     stored_entities: list[TellStickSensor] = []
+    # Pre-create RTL-433 sensor entities from stored devices
+    stored_rtl433: list[Rtl433Sensor] = []
     for device_uid, device_cfg in entry.options.get(CONF_DEVICES, {}).items():
+        if device_uid.startswith("rtl433_"):
+            # RTL-433 sensor entity
+            rtl_model = device_cfg.get("rtl433_model", "")
+            rtl_id = device_cfg.get("rtl433_id", "")
+            field = device_cfg.get("rtl433_field", "")
+            if not (rtl_model and rtl_id is not None and field):
+                continue
+            field_meta = RTL433_SENSOR_FIELDS.get(field)
+            if field_meta is None:
+                continue
+            known.add(device_uid)
+            stored_rtl433.append(
+                Rtl433Sensor(
+                    entry_id=entry.entry_id,
+                    device_uid=device_uid,
+                    name=device_cfg.get(CONF_DEVICE_NAME, f"RTL-433 {rtl_model} {rtl_id} {field}"),
+                    rtl_model=rtl_model,
+                    rtl_id=str(rtl_id),
+                    field=field,
+                )
+            )
+            continue
         if not device_uid.startswith("sensor_"):
             continue
         sensor_id = device_cfg.get("sensor_id")
@@ -86,6 +141,8 @@ async def async_setup_entry(
         )
     if stored_entities:
         async_add_entities(stored_entities)
+    if stored_rtl433:
+        async_add_entities(stored_rtl433)
 
     @callback
     def _async_new_device(event: Any) -> None:
@@ -140,6 +197,70 @@ async def async_setup_entry(
     # they can be revived after a restart.
     entry.async_on_unload(
         async_dispatcher_connect(hass, new_device_signal, _async_new_device)
+    )
+
+    # Listen for RTL-433 readings dispatched from __init__.py MQTT handler
+    rtl433_signal = SIGNAL_RTL433_READING.format(entry.entry_id)
+
+    @callback
+    def _async_rtl433_reading(reading: dict) -> None:
+        """Handle an incoming RTL-433 MQTT reading."""
+        rtl_model: str = reading.get("model", "unknown")
+        rtl_id: str = str(reading.get("id", "0"))
+        base_uid = _rtl433_device_uid(rtl_model, rtl_id)
+
+        new_entities: list[Rtl433Sensor] = []
+        for field, (dc_str, unit, suffix) in RTL433_SENSOR_FIELDS.items():
+            if field not in reading:
+                continue
+            device_uid = f"{base_uid}_{suffix}"
+            if device_uid in known:
+                continue
+            # Check if already stored (e.g. after a restart)
+            stored_cfg = entry.options.get(CONF_DEVICES, {}).get(device_uid)
+            if stored_cfg is not None and device_uid not in known:
+                known.add(device_uid)
+                continue  # already pre-created above
+            known.add(device_uid)
+            name = f"RTL-433 {rtl_model} {rtl_id} {suffix}"
+            entity = Rtl433Sensor(
+                entry_id=entry.entry_id,
+                device_uid=device_uid,
+                name=name,
+                rtl_model=rtl_model,
+                rtl_id=rtl_id,
+                field=field,
+            )
+            # Set initial value from the reading
+            raw_val = reading[field]
+            if field == "battery_ok":
+                entity._attr_native_value = 100 if raw_val else 0
+            else:
+                try:
+                    entity._attr_native_value = float(raw_val)
+                except (ValueError, TypeError):
+                    entity._attr_native_value = raw_val
+            new_entities.append(entity)
+
+        if new_entities:
+            async_add_entities(new_entities)
+            # Persist new RTL-433 sensors in CONF_DEVICES so they survive restart
+            existing_devices = dict(entry.options.get(CONF_DEVICES, {}))
+            for ent in new_entities:
+                existing_devices[ent._device_uid] = {
+                    CONF_DEVICE_NAME: ent.name,
+                    CONF_DEVICE_PROTOCOL: "rtl433",
+                    CONF_DEVICE_MODEL: rtl_model,
+                    "rtl433_model": rtl_model,
+                    "rtl433_id": rtl_id,
+                    "rtl433_field": ent._field,
+                }
+            new_options = dict(entry.options)
+            new_options[CONF_DEVICES] = existing_devices
+            hass.config_entries.async_update_entry(entry, options=new_options)
+
+    entry.async_on_unload(
+        async_dispatcher_connect(hass, rtl433_signal, _async_rtl433_reading)
     )
 
 
@@ -254,4 +375,90 @@ class TellStickSensor(TellStickEntity, SensorEntity):
             self._attr_native_value = float(event.value) if event.value else None
         except ValueError:
             self._attr_native_value = event.value
+        self.async_write_ha_state()
+
+
+class Rtl433Sensor(SensorEntity):
+    """Representation of an RTL-433 MQTT sensor entity.
+
+    Created automatically when the rtl_433 add-on publishes sensor data to
+    MQTT and the "Listen for rtl_433 sensors via MQTT" option is enabled.
+    Each physical field (temperature, humidity, etc.) becomes a separate entity,
+    all grouped under one HA device per physical sensor (model + id).
+    """
+
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+
+    def __init__(
+        self,
+        entry_id: str,
+        device_uid: str,
+        name: str,
+        rtl_model: str,
+        rtl_id: str,
+        field: str,
+    ) -> None:
+        """Initialize an RTL-433 sensor entity."""
+        self._entry_id = entry_id
+        self._device_uid = device_uid
+        self._rtl_model = rtl_model
+        self._rtl_id = rtl_id
+        self._field = field
+
+        field_meta = RTL433_SENSOR_FIELDS.get(field)
+        dc_str, unit, suffix = field_meta if field_meta else (None, None, field)
+
+        # Entity name is the measurement type (e.g. "Temperature")
+        self._attr_name = suffix.replace("_", " ").capitalize() if suffix else field
+        self._attr_unique_id = f"{entry_id}_{device_uid}"
+        self._attr_native_unit_of_measurement = unit
+        self._attr_device_class = _RTL433_DEVICE_CLASS_MAP.get(dc_str)
+
+        # Battery and voltage are diagnostic entities
+        if dc_str in ("battery", "voltage"):
+            from homeassistant.components.sensor import EntityCategory  # noqa: PLC0415
+            self._attr_entity_category = EntityCategory.DIAGNOSTIC
+
+        # Group all fields from the same physical sensor under one HA device
+        base_uid = _rtl433_device_uid(rtl_model, rtl_id)
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, f"{entry_id}_{base_uid}")},
+            name=f"RTL-433 {rtl_model} {rtl_id}",
+            model=rtl_model,
+        )
+
+    async def async_added_to_hass(self) -> None:
+        """Restore state and subscribe to RTL-433 readings."""
+        if (last := await self.async_get_last_state()) is not None:
+            self._attr_native_value = last.state
+
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                SIGNAL_RTL433_READING.format(self._entry_id),
+                self._handle_rtl433_reading,
+            )
+        )
+
+    @callback
+    def _handle_rtl433_reading(self, reading: dict) -> None:
+        """Update state from an incoming RTL-433 MQTT reading."""
+        rtl_model = reading.get("model", "unknown")
+        rtl_id = str(reading.get("id", "0"))
+        if _rtl433_uid_safe(rtl_model) != _rtl433_uid_safe(self._rtl_model):
+            return
+        if _rtl433_uid_safe(rtl_id) != _rtl433_uid_safe(self._rtl_id):
+            return
+        if self._field not in reading:
+            return
+        raw_val = reading[self._field]
+        if self._field == "battery_ok":
+            self._attr_native_value = 100 if raw_val else 0
+        else:
+            try:
+                self._attr_native_value = float(raw_val)
+            except (ValueError, TypeError):
+                self._attr_native_value = raw_val
         self.async_write_ha_state()

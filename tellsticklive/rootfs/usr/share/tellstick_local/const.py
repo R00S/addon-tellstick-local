@@ -29,6 +29,11 @@ INTEGRATION_VERSION: str = _json.loads(
     (_pathlib.Path(__file__).parent / "manifest.json").read_text(encoding="utf-8")
 )["version"]
 
+# Repair issue IDs — defined here so repairs.py can import them without
+# creating a circular dependency on __init__.py.
+ISSUE_RESTART = "restart_required"
+ISSUE_DEV_CHANNEL = "dev_channel"
+
 
 # Backend type stored in config entry data
 CONF_BACKEND = "backend"
@@ -115,6 +120,43 @@ ENTRY_MIRRORS = "_mirrors"
 # Signal for new device discovery
 SIGNAL_NEW_DEVICE = DOMAIN + "_new_device_{}"
 SIGNAL_EVENT = DOMAIN + "_event_{}"
+
+# ---------------------------------------------------------------------------
+# RTL-433 MQTT integration
+# ---------------------------------------------------------------------------
+
+# Config option: listen for rtl_433 sensors via MQTT
+CONF_RTL433_SENSORS = "rtl433_sensors"
+DEFAULT_RTL433_SENSORS = False
+
+# MQTT topic for rtl_433 events
+RTL433_MQTT_TOPIC = "rtl_433/#"
+
+# Signal fired when a new RTL-433 sensor reading arrives (per entry_id)
+SIGNAL_RTL433_READING = DOMAIN + "_rtl433_{}"
+
+# RTL-433 protocol field → (device_class_string, unit, entity_suffix)
+# device_class_string maps to homeassistant.components.sensor.SensorDeviceClass
+RTL433_SENSOR_FIELDS: dict[str, tuple[str, str, str]] = {
+    "temperature_C": ("temperature", "°C", "temperature"),
+    "temperature_F": ("temperature", "°F", "temperature_f"),
+    "humidity": ("humidity", "%", "humidity"),
+    "rain_mm": ("precipitation", "mm", "rain_total"),
+    "rain_rate_mm_h": ("precipitation_intensity", "mm/h", "rain_rate"),
+    "wind_speed_km_h": ("wind_speed", "km/h", "wind_speed"),
+    "wind_dir_deg": (None, "°", "wind_dir"),
+    "pressure_hPa": ("atmospheric_pressure", "hPa", "pressure"),
+    "moisture": ("moisture", "%", "moisture"),
+    "battery_ok": ("battery", "%", "battery"),
+    "battery_V": ("voltage", "V", "battery_voltage"),
+}
+
+# ---------------------------------------------------------------------------
+# Generic RF record & replay
+# ---------------------------------------------------------------------------
+
+# Protocol name for Generic RF devices (record & replay via raw OOK pulses)
+PROTOCOL_GENERIC_RF = "generic_rf"
 
 # TX-capable protocols (can send commands and teach self-learning devices)
 # Source: telldus-core Protocol.cpp::getProtocolInstance() — only protocols
@@ -1295,4 +1337,51 @@ def normalize_rf_model(model: str) -> str:
     """
     base = model.split(":")[0] if ":" in model else model
     return _UID_MODEL_NORMALIZE.get(base, base)
+
+
+# ---------------------------------------------------------------------------
+# Generic RF record & replay — timing helpers
+# ---------------------------------------------------------------------------
+
+def timings_to_tellstick_bytes(timings: list[int]) -> bytes:
+    """Convert alternating µs pulse/space timings to TellStick firmware tick bytes.
+
+    The TellStick firmware uses ~10 µs per tick.  Each timing value is converted:
+      tick = min(255, max(1, round(abs(µs) / 10)))
+
+    The sign (positive=pulse, negative=space) is discarded because the
+    firmware infers polarity from the byte position within the S command
+    (alternating high/low starting with high=pulse).
+
+    Args:
+        timings: List of alternating µs values; positive=pulse, negative=space.
+
+    Returns:
+        bytes of firmware tick values, one byte per timing element.
+    """
+    out = bytearray()
+    for us in timings:
+        tick = min(255, max(1, round(abs(us) / 10)))
+        out.append(tick)
+    return bytes(out)
+
+
+def generic_rf_build_raw_command(timings: list[int], repeat_count: int = 10) -> bytes:
+    """Build a complete TellStick raw command from OOK pulse timings.
+
+    Uses the same ``P\\x02 R<n> S<data>+`` format as Luxorparts:
+      - ``P\\x02``: 2 ms pause between firmware repeats (avoids null bytes)
+      - ``R<n>``: firmware repeat count byte (1–255)
+      - ``S<tick_bytes>+``: pulse/space timing data
+
+    Args:
+        timings: Alternating µs pulse/space values (positive=pulse, negative=space)
+        repeat_count: Number of times the firmware transmits the signal (1–255)
+
+    Returns:
+        bytes ready for ``TellStickController.send_raw_command()``.
+    """
+    tick_bytes = timings_to_tellstick_bytes(timings)
+    repeat = min(255, max(1, repeat_count))
+    return bytes([ord("P"), 2, ord("R"), repeat]) + b"S" + tick_bytes + b"+"
 
