@@ -457,16 +457,59 @@ temperature/humidity sensors, rain gauges, soil moisture sensors, and more.
 
 Create a configuration file at `/config/rtl_433/rtl_433.conf.template`:
 
+#### Initial testing configuration (recommended)
+
+Start with this configuration to verify rtl_433 is detecting your devices in the log:
+
+```conf
+# rtl_433.conf - Initial testing configuration
+# 
+# This configuration outputs ALL detected devices to the app log first,
+# allowing you to verify RTL-433 is working before enabling MQTT integration.
+
+frequency     433920000
+sample_rate   250000
+
+# Enable ALL built-in decoders (recommended for initial testing)
+protocol      -1
+
+# Analyze pulse data for better unknown signal detection
+analyze_pulses  true
+
+# Verbose logging level (shows detailed decoding information)
+verbose       2
+
+# Output to rtl_433 add-on log (visible in Settings → Add-ons → rtl_433 → Log)
+output        json
+output        log
+```
+
+**Testing procedure:**
+1. Create the file with the configuration above
+2. Start the rtl_433 add-on
+3. Press a button on your 433 MHz sensor or wait for automatic transmission
+4. Check **Settings → Add-ons → rtl_433 → Log** — you should see JSON output like:
+   ```json
+   {"time":"2026-05-07 06:22:15","protocol":40,"model":"Acurite-592TXR",...}
+   ```
+5. Once you confirm devices are being detected, proceed to the MQTT configuration below
+
+#### Production configuration (after testing)
+
+Once you've verified devices appear in the log, switch to MQTT output:
+
 ```conf
 # rtl_433 configuration for TellStick Local integration
 
 # MQTT output - connect to local Mosquitto broker
-# Format: mqtt://HOST:PORT,user=USERNAME,pass=PASSWORD,retain=0,qos=0
-# For local Mosquitto with no auth, use (retain=0 prevents database growth):
+# (retain=0 prevents database growth)
 output mqtt://localhost:1883,retain=0,qos=0
 
 # Listen frequency (433.92 MHz is default for most sensors)
 frequency 433.92M
+
+# Enable ALL protocols (or specify only the ones you need)
+protocol -1
 
 # Convert all units to SI (Celsius, meters, etc.)
 convert si
@@ -479,14 +522,6 @@ report_meta protocol
 # Enable pulse detection optimizations
 pulse_detect autolevel
 pulse_detect squelch
-
-# Optional: Enable specific protocols only (improves performance)
-# Uncomment and adjust based on your sensors
-# Full list: https://github.com/merbanan/rtl_433/blob/master/README.md
-# protocol 40    # Acurite 592TXR
-# protocol 19    # Ambient Weather F007TH
-# protocol 74    # LaCrosse TX141
-# protocol 113   # Fineoffset WH1080
 ```
 
 > **Note:** If using MQTT authentication, replace the `output` line with:
@@ -496,6 +531,8 @@ pulse_detect squelch
 
 The add-on will automatically create `/config/rtl_433/` on first start if it doesn't exist.
 Any `.conf.template` files in that directory will be processed.
+
+> **Example configuration file:** See [`docs/rtl_433.conf`](docs/rtl_433.conf) in this repository for a complete annotated example.
 
 ### Preventing MQTT database growth
 
@@ -550,22 +587,54 @@ the latest value for each sensor topic on disk. This causes:
 
 Adding `retain=0` solves this without any downside for typical Home Assistant use.
 
-### Step 5: Start rtl_433 add-on
+### Step 5: Start rtl_433 add-on and verify device detection
 
 1. Plug in your RTL-SDR dongle
 2. Start the rtl_433 add-on
-3. Check the logs — you should see messages like:
+3. Go to **Settings → Add-ons → rtl_433 → Log**
+4. You should see startup messages like:
    ```
-   Registered 1 out of 259 device decoding protocols
+   Registered protocols [1-259]...
    Found Rafael Micro R820T tuner
-   rtl_433 version 23.11 listening...
+   rtl_433 version 23.11 listening at 433.920 MHz
    ```
-4. When a sensor transmits, you'll see JSON output:
+5. **Press a button on your sensor** or wait for an automatic transmission
+6. You should see output in the log like:
+   ```
+   [rtl_433] time      : 2026-05-07 08:22:15
+   [rtl_433] model     : Acurite-592TXR
+   [rtl_433] id        : 12345
+   [rtl_433] temperature_C : 22.5
+   [rtl_433] humidity  : 65
+   ```
+   or in JSON format:
    ```json
-   {"time":"2026-05-07 06:22:15","protocol":40,"model":"Acurite-592TXR",...}
+   {"time":"2026-05-07 08:22:15","protocol":40,"model":"Acurite-592TXR","id":12345,"temperature_C":22.5,"humidity":65}
    ```
 
-### Step 6: Enable in TellStick Local integration
+**If you see devices in the log:** ✅ RTL-433 is working! Proceed to Step 6 to enable MQTT integration.
+
+**If no devices appear:**
+- Make sure your sensor is transmitting (some sensors only transmit every 30-60 seconds)
+- Check that the RTL-SDR dongle is plugged in and recognized
+- Try different frequencies if your sensors don't use 433.92 MHz
+- Check rtl_433 add-on logs for error messages
+
+### Step 6: Enable MQTT output (after verifying log detection)
+
+Once you've confirmed devices appear in the rtl_433 log:
+
+1. Edit `/config/rtl_433/rtl_433.conf.template`
+2. Replace the `output json` and `output log` lines with:
+   ```conf
+   output mqtt://localhost:1883,retain=0,qos=0
+   ```
+3. Restart the rtl_433 add-on
+4. Devices will now be published to MQTT instead of just logs
+
+### Step 7: Enable in TellStick Local integration
+
+**Important:** Only do this after you've switched to MQTT output in Step 6.
 
 1. Go to **Settings → Devices & Services → TellStick Local**
 2. Click **Configure** (⚙ icon)
@@ -575,9 +644,9 @@ Adding `retain=0` solves this without any downside for typical Home Assistant us
 
 The integration subscribes to `rtl_433/#` and auto-creates sensor entities when signals arrive.
 
-### Verifying MQTT messages
+### Step 8: Verifying MQTT messages (optional)
 
-To verify rtl_433 is publishing to MQTT:
+To verify rtl_433 is publishing to MQTT after enabling it in Step 6:
 
 1. Go to **Settings → Developer Tools → Events**
 2. In the **"Listen to events"** section, enter event type: `mqtt_message`
@@ -613,8 +682,16 @@ See `RTL433_SENSOR_FIELDS` in `const.py` for the complete list.
 
 ### Troubleshooting
 
-**No sensors appear:**
-- Check rtl_433 add-on logs for received signals
+**No devices appear in rtl_433 log (Step 5):**
+- Make sure your sensor is transmitting (some sensors only transmit every 30-60 seconds)
+- Check that the RTL-SDR dongle is plugged in and recognized
+- Verify the frequency matches your devices (433.92 MHz is most common)
+- Try pressing buttons on 433 MHz remotes to trigger immediate transmission
+- Check rtl_433 add-on logs for USB device detection errors
+
+**No sensors appear in Home Assistant (Step 7):**
+- Did you complete Step 6? (Switch to MQTT output and restart rtl_433)
+- Check rtl_433 add-on logs to verify MQTT connection succeeded
 - Verify MQTT broker is running and connected
 - Use Developer Tools → Events to verify messages (listen to `mqtt_message` events)
 - Make sure "Listen for rtl_433 sensors" is enabled in TellStick Local settings
@@ -623,10 +700,12 @@ See `RTL433_SENSOR_FIELDS` in `const.py` for the complete list.
 - Check rtl_433 add-on is still running
 - Restart the MQTT broker if needed
 - Some sensors only transmit every 30-60 seconds
+- Check sensor battery levels
 
 **Too many unknown sensors:**
 - Edit `/config/rtl_433/rtl_433.conf.template` to enable only specific protocols
-- Use `protocol <number>` lines to filter (see [protocol list](https://github.com/merbanan/rtl_433/blob/master/README.md))
+- Replace `protocol -1` with specific protocol numbers (see [protocol list](https://github.com/merbanan/rtl_433/blob/master/README.md))
+- Example: `protocol 40` for Acurite sensors only
 - Restart rtl_433 add-on after config changes
 
 **Note:** rtl_433 sensors are **receive-only** — you cannot send commands to them.
