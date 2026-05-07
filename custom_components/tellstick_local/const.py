@@ -1410,14 +1410,17 @@ def generic_rf_build_raw_command(timings: list[int], repeat_count: int = 10) -> 
 def parse_rtl433_pulse_analysis(log_text: str) -> list[int] | None:
     """Parse RTL-433 verbose pulse analysis from log output.
 
-    Extracts alternating pulse/space values from lines like:
-        [rtl_433] Data:
-        [rtl_433]  [ 0] pulse  1472
-        [rtl_433]  [ 1] space   392
-        [rtl_433]  [ 2] pulse   784
+    Extracts alternating pulse/space values from the "Pulse timing distribution:" section.
+    Actual rtl_433 verbose output format:
+        [rtl_433] Pulse timing distribution:
+        [rtl_433]  [ 0] count:    1,  width:   84 us [84;84]    (  21 S)
+        [rtl_433]  [ 1] count:   26,  width:  496 us [492;584]  ( 124 S)
+        [rtl_433]  [ 2] count:   22,  width: 1468 us [1464;1480]   ( 367 S)
+
+    Values alternate: pulse, space, pulse, space, ...
 
     Args:
-        log_text: Raw log text from RTL-433 verbose output (-A or --analyze flag).
+        log_text: Raw log text from RTL-433 verbose output (analyze_pulses true, verbose 2).
 
     Returns:
         List of alternating µs pulse/space values (positive=pulse, negative=space),
@@ -1425,21 +1428,39 @@ def parse_rtl433_pulse_analysis(log_text: str) -> list[int] | None:
     """
     timings = []
     
-    # Pattern to match pulse/space lines:
-    # [ 0] pulse  1472  or  [ 0] space   392
-    pattern = re.compile(r'\[\s*\d+\]\s+(pulse|space)\s+(\d+)')
+    # Find the "Pulse timing distribution:" section
+    lines = log_text.split('\n')
+    in_timing_section = False
     
-    for line in log_text.split('\n'):
-        match = pattern.search(line)
-        if match:
-            pulse_type = match.group(1)
-            value = int(match.group(2))
-            
-            # Store pulse as positive, space as negative
-            if pulse_type == 'pulse':
-                timings.append(value)
-            else:  # space
-                timings.append(-value)
+    for line in lines:
+        # Check if we entered the timing distribution section
+        if 'Pulse timing distribution:' in line:
+            in_timing_section = True
+            continue
+        
+        # Exit section when we hit another header or blank line
+        if in_timing_section:
+            # Stop at next section or when line doesn't match expected format
+            if (line.strip() and 
+                not line.strip().startswith('[rtl_433]') and
+                'distribution:' not in line):
+                break
+            if ('Level estimates' in line or 
+                'RSSI:' in line or
+                not line.strip()):
+                break
+                
+            # Parse timing lines: [ N] count: X, width: YYY us [range] (samples)
+            # Pattern: [ 0] count:    1,  width:   84 us [84;84]    (  21 S)
+            match = re.search(r'\[\s*\d+\]\s+count:\s+\d+,\s+width:\s+(\d+)\s+us', line)
+            if match:
+                width = int(match.group(1))
+                # In timing distribution, values alternate: pulse, space, pulse, space...
+                # Store pulse as positive, space as negative
+                if len(timings) % 2 == 0:
+                    timings.append(width)  # pulse (even index)
+                else:
+                    timings.append(-width)  # space (odd index)
     
     return timings if timings else None
 
