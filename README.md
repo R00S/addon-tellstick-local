@@ -579,10 +579,16 @@ The integration subscribes to `rtl_433/#` and auto-creates sensor entities when 
 
 To verify rtl_433 is publishing to MQTT:
 
-1. Go to **Developer Tools → MQTT**
-2. Subscribe to topic: `rtl_433/#`
-3. Press a button on your sensor or wait for an automatic transmission
-4. You should see JSON messages appear
+1. Go to **Settings → Developer Tools → Events**
+2. In the **"Listen to events"** section, enter event type: `mqtt_message`
+3. Click **Start listening**
+4. Press a button on your sensor or wait for an automatic transmission
+5. You should see MQTT events appear with topic `rtl_433/...` and JSON payload
+
+> **Note (HAOS 2026.x.x):** The dedicated "MQTT" tab was removed from Developer Tools.
+> MQTT message monitoring is now done through the Events tab by listening to `mqtt_message` events.
+> Alternatively, you can verify by checking the integration — discovered sensors will appear
+> automatically in **Settings → Devices & Services → TellStick Local** when rtl_433 messages arrive.
 
 ### Supported sensor fields
 
@@ -610,7 +616,7 @@ See `RTL433_SENSOR_FIELDS` in `const.py` for the complete list.
 **No sensors appear:**
 - Check rtl_433 add-on logs for received signals
 - Verify MQTT broker is running and connected
-- Use Developer Tools → MQTT to verify messages on `rtl_433/#`
+- Use Developer Tools → Events to verify messages (listen to `mqtt_message` events)
 - Make sure "Listen for rtl_433 sensors" is enabled in TellStick Local settings
 
 **Sensors stop updating:**
