@@ -149,12 +149,10 @@
         "data": {
           "automatic_add": "Automatically add new devices (when off, new devices appear as 'Discovered' for manual confirmation)",
           "detect_sartano": "Detect sartano/codeswitch devices (off by default — arctech signals are often falsely decoded as sartano)",
-          "rtl433_sensors": "Listen for rtl_433 sensors via MQTT (requires MQTT integration and rtl_433 add-on)",
-          "rtl433_log_monitor": "Monitor rtl_433 logs for unknown signals (fires events with pulse data for unrecognized 433 MHz signals)"
+          "rtl433_sensors": "Listen for rtl_433 sensors via MQTT (requires MQTT integration and rtl_433 add-on)"
         },
         "data_description": {
-          "rtl433_sensors": "When enabled, sensor entities are auto-created for any 433 MHz sensor the rtl_433 add-on decodes. Requires the MQTT integration and the rtl_433 add-on configured with MQTT output.",
-          "rtl433_log_monitor": "When enabled, monitors rtl_433 add-on logs for unknown OOK packages. Fires tellstick_local_rtl433_unknown_signal events on the HA bus with pulse timing data, decoder suggestions, and visualization links. Useful for discovering unsupported protocols."
+          "rtl433_sensors": "When enabled, sensor entities are auto-created for any 433 MHz sensor the rtl_433 add-on decodes. Requires the MQTT integration and the rtl_433 add-on configured with MQTT output."
         }
       },
       "manage_device": {

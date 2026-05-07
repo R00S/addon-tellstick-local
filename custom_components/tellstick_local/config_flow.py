@@ -51,14 +51,12 @@ from .const import (
     CONF_EVENT_PORT,
     CONF_IGNORED_UIDS,
     CONF_MIRROR_OF,
-    CONF_RTL433_LOG_MONITOR,
     CONF_RTL433_SENSORS,
     DEFAULT_AUTOMATIC_ADD,
     DEFAULT_COMMAND_PORT,
     DEFAULT_DETECT_SARTANO,
     DEFAULT_EVENT_PORT,
     DEFAULT_HOST,
-    DEFAULT_RTL433_LOG_MONITOR,
     DEFAULT_RTL433_SENSORS,
     DEVICE_CATALOG_LABELS,
     DEVICE_CATALOG_MAP,
@@ -79,6 +77,7 @@ from .const import (
     PROTOCOL_NATIVE_MAP,
     PROTOCOL_RAW_LABELS,
     PROTOCOL_RAW_MAP,
+    RTL433_ADDON_SLUG,
     SENSOR_TYPE_NAMES,
     SIGNAL_NEW_DEVICE,
     WIDGET_PARAMS,
@@ -1368,7 +1367,6 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
             new_options[CONF_AUTOMATIC_ADD] = user_input[CONF_AUTOMATIC_ADD]
             new_options[CONF_DETECT_SARTANO] = user_input[CONF_DETECT_SARTANO]
             new_options[CONF_RTL433_SENSORS] = user_input[CONF_RTL433_SENSORS]
-            new_options[CONF_RTL433_LOG_MONITOR] = user_input[CONF_RTL433_LOG_MONITOR]
             return self.async_create_entry(title="", data=new_options)
 
         current_auto = self.config_entry.options.get(
@@ -1380,9 +1378,6 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
         current_rtl433 = self.config_entry.options.get(
             CONF_RTL433_SENSORS, DEFAULT_RTL433_SENSORS
         )
-        current_rtl433_log = self.config_entry.options.get(
-            CONF_RTL433_LOG_MONITOR, DEFAULT_RTL433_LOG_MONITOR
-        )
         return self.async_show_form(
             step_id="settings",
             data_schema=vol.Schema(
@@ -1390,7 +1385,6 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                     vol.Required(CONF_AUTOMATIC_ADD, default=current_auto): bool,
                     vol.Required(CONF_DETECT_SARTANO, default=current_sartano): bool,
                     vol.Required(CONF_RTL433_SENSORS, default=current_rtl433): bool,
-                    vol.Required(CONF_RTL433_LOG_MONITOR, default=current_rtl433_log): bool,
                 }
             ),
         )

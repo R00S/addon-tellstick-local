@@ -51,11 +51,9 @@ from .const import (
     CONF_EVENT_PORT,
     CONF_IGNORED_UIDS,
     CONF_MIRROR_OF,
-    CONF_RTL433_LOG_MONITOR,
     CONF_RTL433_SENSORS,
     DEFAULT_AUTOMATIC_ADD,
     DEFAULT_DETECT_SARTANO,
-    DEFAULT_RTL433_LOG_MONITOR,
     DEFAULT_RTL433_SENSORS,
     DOMAIN,
     ENTRY_DEVICE_ID_MAP,
@@ -66,12 +64,10 @@ from .const import (
     ISSUE_RESTART,
     PLATFORMS,
     PROTOCOL_GENERIC_RF,
-    RTL433_ADDON_SLUG,
     RTL433_MQTT_TOPIC,
     SIGNAL_EVENT,
     SIGNAL_NEW_DEVICE,
     SIGNAL_RTL433_READING,
-    SIGNAL_RTL433_UNKNOWN,
     build_device_uid,
 )
 
@@ -1088,9 +1084,6 @@ async def _async_options_updated(
 
     # Re-evaluate RTL-433 MQTT subscription when options change.
     await _async_setup_rtl433_mqtt(hass, entry)
-    
-    # Re-evaluate RTL-433 log monitoring when options change.
-    await _async_setup_rtl433_log_monitor(hass, entry)
 
 
 async def _async_setup_rtl433_mqtt(
@@ -1168,200 +1161,6 @@ async def _async_setup_rtl433_mqtt(
         _LOGGER.warning("RTL-433 MQTT subscription failed", exc_info=True)
 
 
-async def _async_setup_rtl433_log_monitor(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
-) -> None:
-    """Monitor rtl_433 add-on logs for unknown signals.
-    
-    Periodically fetches logs from the rtl_433 add-on via Supervisor API,
-    parses unknown signal detections, and fires events with parsed data.
-    Stores the monitoring task in entry_data["_rtl433_log_task"] for cleanup.
-    """
-    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
-    if entry_data is None:
-        return
-
-    enabled = entry.options.get(CONF_RTL433_LOG_MONITOR, DEFAULT_RTL433_LOG_MONITOR)
-
-    # Cancel existing monitoring task (toggle off or restart)
-    existing_task = entry_data.pop("_rtl433_log_task", None)
-    if existing_task is not None and not existing_task.done():
-        existing_task.cancel()
-        try:
-            await existing_task
-        except asyncio.CancelledError:
-            pass
-
-    if not enabled:
-        return
-
-    # Start log monitoring task
-    task = hass.async_create_task(_rtl433_log_monitor_loop(hass, entry))
-    entry_data["_rtl433_log_task"] = task
-    _LOGGER.info(
-        "Started RTL-433 log monitoring for entry %s",
-        entry.entry_id,
-    )
-
-
-async def _rtl433_log_monitor_loop(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
-) -> None:
-    """Background task to monitor rtl_433 add-on logs for unknown signals."""
-    import re  # noqa: PLC0415
-    
-    session = hass.helpers.aiohttp_client.async_get_clientsession()
-    last_position = 0  # Track where we left off in the logs
-    
-    # Patterns to detect unknown signal blocks
-    pattern_detected = re.compile(r"\[rtl_433\] Detected OOK package\s+(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
-    pattern_modulation = re.compile(r"\[rtl_433\] Guessing modulation: (.+)")
-    pattern_decoder = re.compile(r"\[rtl_433\] Use a flex decoder with -X '(.+)'")
-    pattern_view_url = re.compile(r"\[rtl_433\] view at (https://triq\.org/pdv/#[^\s]+)")
-    pattern_rssi = re.compile(r"\[rtl_433\] RSSI: ([+-]?\d+\.?\d*) dB SNR: ([+-]?\d+\.?\d*) dB")
-    
-    try:
-        while True:
-            try:
-                # Fetch logs from Supervisor API
-                url = f"/api/hassio/addons/{RTL433_ADDON_SLUG}/logs"
-                async with session.get(url) as resp:
-                    if resp.status != 200:
-                        _LOGGER.debug(
-                            "RTL-433 log fetch failed: HTTP %s (add-on may not be installed)",
-                            resp.status,
-                        )
-                        await asyncio.sleep(60)  # Retry after 1 minute
-                        continue
-                    
-                    result = await resp.json()
-                    logs = result.get("data", "")
-                    
-                    # Only process new log content
-                    if len(logs) > last_position:
-                        new_logs = logs[last_position:]
-                        last_position = len(logs)
-                        
-                        # Parse log blocks for unknown signals
-                        _parse_rtl433_unknown_signals(
-                            hass,
-                            entry,
-                            new_logs,
-                            pattern_detected,
-                            pattern_modulation,
-                            pattern_decoder,
-                            pattern_view_url,
-                            pattern_rssi,
-                        )
-                
-            except asyncio.CancelledError:
-                raise
-            except Exception:  # noqa: BLE001
-                _LOGGER.debug("RTL-433 log monitoring error (non-fatal)", exc_info=True)
-            
-            # Poll every 10 seconds
-            await asyncio.sleep(10)
-    
-    except asyncio.CancelledError:
-        _LOGGER.info("RTL-433 log monitoring stopped for entry %s", entry.entry_id)
-
-
-def _parse_rtl433_unknown_signals(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
-    logs: str,
-    pattern_detected: re.Pattern,
-    pattern_modulation: re.Pattern,
-    pattern_decoder: re.Pattern,
-    pattern_view_url: re.Pattern,
-    pattern_rssi: re.Pattern,
-) -> None:
-    """Parse rtl_433 logs for unknown signal blocks and fire events."""
-    lines = logs.split("\n")
-    current_block: dict[str, Any] = {}
-    in_unknown_block = False
-    
-    for line in lines:
-        # Start of a new OOK detection
-        match_detected = pattern_detected.search(line)
-        if match_detected:
-            # Fire event for previous block if it was unknown
-            if in_unknown_block and current_block:
-                _fire_rtl433_unknown_event(hass, entry, current_block)
-            
-            # Start new block
-            current_block = {"timestamp": match_detected.group(1)}
-            in_unknown_block = False
-            continue
-        
-        if not current_block:
-            continue
-        
-        # Check for modulation guess
-        match_modulation = pattern_modulation.search(line)
-        if match_modulation:
-            modulation = match_modulation.group(1)
-            current_block["modulation"] = modulation
-            # Mark as unknown if modulation guess is "No clue..."
-            if "No clue" in modulation or "unknown" in modulation.lower():
-                in_unknown_block = True
-            continue
-        
-        # Extract decoder suggestion
-        match_decoder = pattern_decoder.search(line)
-        if match_decoder:
-            current_block["decoder"] = match_decoder.group(1)
-            in_unknown_block = True  # Decoder suggestions mean unknown protocol
-            continue
-        
-        # Extract visualization URL
-        match_view = pattern_view_url.search(line)
-        if match_view:
-            current_block["view_url"] = match_view.group(1)
-            continue
-        
-        # Extract RSSI/SNR
-        match_rssi = pattern_rssi.search(line)
-        if match_rssi:
-            current_block["rssi_db"] = float(match_rssi.group(1))
-            current_block["snr_db"] = float(match_rssi.group(2))
-            continue
-    
-    # Fire event for final block if unknown
-    if in_unknown_block and current_block:
-        _fire_rtl433_unknown_event(hass, entry, current_block)
-
-
-def _fire_rtl433_unknown_event(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
-    signal_data: dict[str, Any],
-) -> None:
-    """Fire an event for an unknown RTL-433 signal detection."""
-    _LOGGER.info(
-        "RTL-433 unknown signal detected: modulation=%s, decoder=%s",
-        signal_data.get("modulation", "unknown"),
-        signal_data.get("decoder", "N/A"),
-    )
-    
-    # Fire dispatcher signal for UI components to consume
-    async_dispatcher_send(
-        hass,
-        SIGNAL_RTL433_UNKNOWN.format(entry.entry_id),
-        signal_data,
-    )
-    
-    # Also fire HA bus event for automations
-    hass.bus.async_fire(
-        f"{DOMAIN}_rtl433_unknown_signal",
-        {
-            "entry_id": entry.entry_id,
-            **signal_data,
-        },
-    )
-
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -1397,17 +1196,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 rtl433_unsub()
             except Exception:  # noqa: BLE001
                 _LOGGER.debug("Error cancelling rtl_433 MQTT subscription on unload (non-fatal)", exc_info=True)
-        
-        # Clean up RTL-433 log monitoring task
-        rtl433_log_task = entry_data.get("_rtl433_log_task")
-        if rtl433_log_task is not None and not rtl433_log_task.done():
-            rtl433_log_task.cancel()
-            try:
-                await rtl433_log_task
-            except asyncio.CancelledError:
-                pass
-            except Exception:  # noqa: BLE001
-                _LOGGER.debug("Error cancelling rtl_433 log monitoring on unload (non-fatal)", exc_info=True)
     return ok
 
 
