@@ -461,9 +461,9 @@ Create a configuration file at `/config/rtl_433/rtl_433.conf.template`:
 # rtl_433 configuration for TellStick Local integration
 
 # MQTT output - connect to local Mosquitto broker
-# Format: mqtt://HOST:PORT,user=USERNAME,pass=PASSWORD
-# For local Mosquitto with no auth, use:
-output mqtt://localhost:1883
+# Format: mqtt://HOST:PORT,user=USERNAME,pass=PASSWORD,retain=0,qos=0
+# For local Mosquitto with no auth, use (retain=0 prevents database growth):
+output mqtt://localhost:1883,retain=0,qos=0
 
 # Listen frequency (433.92 MHz is default for most sensors)
 frequency 433.92M
@@ -491,11 +491,64 @@ pulse_detect squelch
 
 > **Note:** If using MQTT authentication, replace the `output` line with:
 > ```conf
-> output mqtt://localhost:1883,user=YOUR_USERNAME,pass=YOUR_PASSWORD
+> output mqtt://localhost:1883,user=YOUR_USERNAME,pass=YOUR_PASSWORD,retain=0,qos=0
 > ```
 
 The add-on will automatically create `/config/rtl_433/` on first start if it doesn't exist.
 Any `.conf.template` files in that directory will be processed.
+
+### Preventing MQTT database growth
+
+RTL-433 sensors transmit frequently (every 30-60 seconds), which can quickly fill your MQTT
+broker's database and consume disk space. To prevent this, configure rtl_433 to publish
+messages **without retention** and optionally disable Mosquitto persistence for sensor data.
+
+#### Option 1: Non-retained messages (recommended)
+
+Add `retain=0` to the rtl_433 MQTT output line to prevent messages from being stored by the broker:
+
+```conf
+output mqtt://localhost:1883,retain=0,qos=0
+```
+
+**Explanation:**
+- `retain=0` — Messages are delivered to active subscribers but NOT stored on disk
+- `qos=0` — Fire-and-forget delivery (no acknowledgment, no queuing)
+
+This is the **recommended approach** — it prevents disk growth while allowing Home Assistant
+to receive real-time sensor updates.
+
+#### Option 2: Disable persistence entirely (optional)
+
+If you want to completely prevent the MQTT broker from writing to disk, edit the Mosquitto
+add-on configuration:
+
+1. Go to **Settings → Add-ons → Mosquitto broker → Configuration**
+2. Add these options under the **customize** section:
+   ```yaml
+   customize:
+     active: true
+     folder: mosquitto
+   ```
+3. Create `/config/mosquitto/mosquitto.conf` with:
+   ```conf
+   persistence false
+   ```
+4. Restart the Mosquitto add-on
+
+> **Note:** Disabling persistence means all MQTT data is lost on broker restart. Only use this
+> if you're comfortable with sensors briefly showing "unavailable" after a restart until they
+> transmit again.
+
+#### Default behavior
+
+By default (without `retain=0`), rtl_433 messages **are retained** — the MQTT broker stores
+the latest value for each sensor topic on disk. This causes:
+- `/data/mosquitto/mosquitto.db` to grow continuously
+- Potential disk space exhaustion on systems with many sensors
+- Slower broker startup as retained messages are reloaded
+
+Adding `retain=0` solves this without any downside for typical Home Assistant use.
 
 ### Step 5: Start rtl_433 add-on
 
