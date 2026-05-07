@@ -1,11 +1,12 @@
 # Home Assistant: TellStick Local
 
 > [!NOTE]
-> **✅ v3.1 — TellStick Duo + Net/ZNet + Mirror/Range Extender + Device Grouping**
-> This release adds full **TellStick Net / ZNet** support, the
-> **Mirror / Range Extender** feature, **manual device grouping** (group any
-> switches, lights, or covers under a shared HA device), and an improved
-> TellStick Duo experience.
+> **✅ v3.2 — RTL-433 Sensor Auto-discovery + Generic RF Record & Replay**
+> This release adds **RTL-433 sensor auto-discovery** (integrate any 433 MHz sensor
+> via the rtl_433 add-on) and **Generic RF record & replay** (capture and replay
+> ANY 433 MHz signal, even from unsupported protocols). Also includes full
+> **TellStick Net / ZNet** support, **Mirror / Range Extender**, and **manual
+> device grouping**.
 > If you hit any problem, please [open an issue][issue].
 
 > [!WARNING]
@@ -29,7 +30,7 @@
 
 Local-only TellStick Duo and TellStick Net/ZNet support for Home Assistant – no cloud, no YAML, full GUI.
 
-**v3.1 highlights:** TellStick Net / ZNet support · Mirror / range extender · full GUI device management · all 433 MHz protocols · manual device grouping
+**v3.2 highlights:** RTL-433 sensor auto-discovery · Generic RF record & replay · TellStick Net / ZNet support · Mirror / range extender · full GUI device management
 
 📊 **Project presentation:** [English][presentation-en] · [Svenska][presentation-sv]
 
@@ -87,6 +88,8 @@ Live account, and no YAML file editing.
 | **Automations**              | Device triggers on any 433 MHz button press, usable directly in HA automations                                      |
 | **HA bus events**            | Every RF signal fires a `tellstick_local_event` on the HA bus — use in automations or Developer Tools               |
 | **Mirror / range extender**  | Use a second TellStick as a mirror to extend RF coverage — all commands are replicated automatically                |
+| **RTL-433 sensors**          | Auto-discover ANY 433 MHz sensor via rtl_433 add-on + MQTT (temperature, humidity, rain, wind, etc.)                |
+| **Generic RF record/replay** | Record ANY 433 MHz signal and replay it as a switch — works even for unsupported protocols                          |
 | **Debug connection**         | Service action `tellstick_local.debug_connection` logs connection state and last events                             |
 | **Companion app**            | Identical UX in the HA Android/iOS app                                                                              |
 | **No Telldus Live required** | Zero cloud, zero account, zero internet dependency                                                                  |
@@ -97,6 +100,9 @@ Live account, and no YAML file editing.
 
 - **Hardware:** TellStick Duo (USB), TellStick Net, or TellStick ZNet connected or reachable
 - **Software:** Home Assistant OS with **HA Core 2025.2 or later**
+- **Optional (for RTL-433 sensors):**
+  - [rtl_433 add-on](https://github.com/pbkhrv/rtl_433-hass-addons) installed and running
+  - MQTT integration configured in HA
 
 > **Why 2025.2?** The "Add device" button on the integration card uses the
 > ConfigSubentryFlow API introduced in HA 2025.2. Older HA versions still work
@@ -409,6 +415,65 @@ These devices must be added via **Method B** (Add device → Add by brand or Add
 | `silvanchip` | Switch      | Ecosavers, KingPin KP100           |
 | `upm`        | Switch      | UPM                                |
 | `yidong`     | Switch      | Goobay                             |
+
+---
+
+## RTL-433 sensor auto-discovery
+
+If you have an **RTL-SDR USB dongle**, you can use the
+[rtl_433 add-on](https://github.com/pbkhrv/rtl_433-hass-addons) to receive
+signals from ANY 433 MHz sensor — not just TellStick-compatible ones. This
+opens up support for hundreds of additional sensor models: weather stations,
+temperature/humidity sensors, rain gauges, soil moisture sensors, and more.
+
+**How it works:**
+
+1. Install the **rtl_433 add-on** and configure it to publish to MQTT
+2. Install the **MQTT integration** in HA (Settings → Devices & Services → Add → MQTT)
+3. In **TellStick Local** integration, go to **Configure → Settings**
+4. Enable **"Listen for rtl_433 sensors via MQTT"** and click **Submit**
+5. The integration subscribes to `rtl_433/#` and auto-creates sensor entities
+   for any received signals
+
+**Supported sensor fields:** temperature, humidity, rain, wind speed,
+wind direction, UV index, pressure, battery level, and many more (see
+`RTL433_SENSOR_FIELDS` in `const.py` for the full list).
+
+**Note:** rtl_433 sensors are **receive-only** — you cannot send commands to them.
+They appear as sensor entities in HA and update automatically when signals arrive.
+
+---
+
+## Generic RF record & replay
+
+**Generic RF** lets you record ANY 433 MHz signal (even from unsupported protocols)
+and replay it as a switch in Home Assistant. This works for:
+
+- Devices from protocols not implemented in `telldusd`
+- Proprietary remotes with unknown encoding
+- Any On-Off-Keying (OOK) 433 MHz device
+
+**How it works:**
+
+1. Go to **Settings → Devices & Services → TellStick Local**
+2. Click **Add device** and select **"Record Generic RF"**
+3. Choose whether to use **rtl_433** (RTL-SDR dongle) or **TellStick** hardware
+   - rtl_433 (recommended): cleaner captures, more protocols, works with any RTL-SDR
+   - TellStick: works if you don't have an RTL-SDR
+4. Press the button you want to record — HA captures the signal
+5. Test the replay — HA sends the signal back
+6. If it works, confirm — a new switch entity is created
+7. Repeat for the Off signal if needed
+
+**Requirements:**
+
+- For rtl_433 capture: rtl_433 add-on + MQTT integration must be running
+- For TellStick capture: TellStick Duo or TellStick Net/ZNet
+- For replay: TellStick Duo or TellStick Net/ZNet (any model can replay)
+
+**Note:** The recorded signal is a raw RF waveform — it bypasses protocol decoding
+entirely. This means it works for ANY 433 MHz device, but each button press must
+be recorded separately (On and Off are two different captures).
 
 ---
 

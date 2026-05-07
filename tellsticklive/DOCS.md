@@ -1,7 +1,7 @@
 # TellStick Local
 
 Local TellStick Duo service for Home Assistant — no cloud, no Telldus Live.
-**v3.1:** TellStick Net / ZNet support, Mirror / Range Extender, and manual device grouping added to the companion integration.
+**v3.2:** RTL-433 sensor auto-discovery and Generic RF record & replay added to the companion integration.
 
 ## About
 
@@ -80,6 +80,12 @@ All device management happens in the integration under **Settings → Devices & 
   **Configure** (⚙) → **Remove multiple devices**
 - **Manage ignored** — un-ignore devices from **Configure** (⚙) → **Manage ignored
   devices**
+- **RTL-433 sensors** (optional) — if you have an RTL-SDR dongle + the
+  [rtl_433 add-on](https://github.com/pbkhrv/rtl_433-hass-addons), enable
+  **"Listen for rtl_433 sensors via MQTT"** in **Configure → Settings** to
+  auto-discover ANY 433 MHz sensor
+- **Generic RF record & replay** — click **Add device** → **"Record Generic RF"** to
+  capture and replay signals from ANY 433 MHz device (even unsupported protocols)
 
 See the [project README](https://github.com/R00S/addon-tellstick-local) for
 full pairing instructions and supported devices.
