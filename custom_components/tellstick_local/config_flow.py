@@ -82,7 +82,10 @@ from .const import (
     SIGNAL_NEW_DEVICE,
     WIDGET_PARAMS,
     build_device_uid,
+    convert_flex_decoder_params,
+    decode_triq_url,
     luxorparts_build_raw_command,
+    parse_rtl433_pulse_analysis,
     luxorparts_generate_codes,
     normalize_rf_model,
 )
@@ -2826,8 +2829,11 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                             key, val = param.split("=", 1)
                             params[key] = val
                     
+                    # Convert flex decoder params to timings
+                    timings = convert_flex_decoder_params(decoder_cmd) or []
+                    
                     return {
-                        "timings": [],  # Will be populated from params if needed
+                        "timings": timings,
                         "model": params.get("n", "unknown"),
                         "decoder": decoder_cmd,
                         "raw": decoder_cmd,
@@ -2837,11 +2843,25 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 # Look for visualization URL
                 match_view = pattern_view_url.search(new_logs)
                 if match_view:
+                    url = match_view.group(1)
+                    # Decode triq.org URL to extract timings
+                    timings = decode_triq_url(url) or []
+                    
                     return {
-                        "timings": [],
+                        "timings": timings,
                         "model": "unknown",
-                        "raw": match_view.group(1),
+                        "raw": url,
                         "source": "log_view_url",
+                    }
+                
+                # Look for pulse analysis data
+                timings = parse_rtl433_pulse_analysis(new_logs)
+                if timings:
+                    return {
+                        "timings": timings,
+                        "model": "unknown",
+                        "raw": "pulse_analysis",
+                        "source": "log_pulse_analysis",
                     }
         
         except Exception:  # noqa: BLE001
