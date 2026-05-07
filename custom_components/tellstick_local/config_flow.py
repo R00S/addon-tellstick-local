@@ -51,12 +51,14 @@ from .const import (
     CONF_EVENT_PORT,
     CONF_IGNORED_UIDS,
     CONF_MIRROR_OF,
+    CONF_RTL433_LOG_MONITOR,
     CONF_RTL433_SENSORS,
     DEFAULT_AUTOMATIC_ADD,
     DEFAULT_COMMAND_PORT,
     DEFAULT_DETECT_SARTANO,
     DEFAULT_EVENT_PORT,
     DEFAULT_HOST,
+    DEFAULT_RTL433_LOG_MONITOR,
     DEFAULT_RTL433_SENSORS,
     DEVICE_CATALOG_LABELS,
     DEVICE_CATALOG_MAP,
@@ -1366,6 +1368,7 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
             new_options[CONF_AUTOMATIC_ADD] = user_input[CONF_AUTOMATIC_ADD]
             new_options[CONF_DETECT_SARTANO] = user_input[CONF_DETECT_SARTANO]
             new_options[CONF_RTL433_SENSORS] = user_input[CONF_RTL433_SENSORS]
+            new_options[CONF_RTL433_LOG_MONITOR] = user_input[CONF_RTL433_LOG_MONITOR]
             return self.async_create_entry(title="", data=new_options)
 
         current_auto = self.config_entry.options.get(
@@ -1377,6 +1380,9 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
         current_rtl433 = self.config_entry.options.get(
             CONF_RTL433_SENSORS, DEFAULT_RTL433_SENSORS
         )
+        current_rtl433_log = self.config_entry.options.get(
+            CONF_RTL433_LOG_MONITOR, DEFAULT_RTL433_LOG_MONITOR
+        )
         return self.async_show_form(
             step_id="settings",
             data_schema=vol.Schema(
@@ -1384,6 +1390,7 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                     vol.Required(CONF_AUTOMATIC_ADD, default=current_auto): bool,
                     vol.Required(CONF_DETECT_SARTANO, default=current_sartano): bool,
                     vol.Required(CONF_RTL433_SENSORS, default=current_rtl433): bool,
+                    vol.Required(CONF_RTL433_LOG_MONITOR, default=current_rtl433_log): bool,
                 }
             ),
         )
@@ -2683,6 +2690,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         """Step: listen for the ON signal from the remote.
 
         Starts an MQTT subscription to rtl_433/# when first entered.
+        Also monitors rtl_433 add-on logs for unknown signals.
         User presses their remote, then clicks "Check signal" to proceed.
         """
         # Start MQTT subscription on first entry (no user_input yet)
@@ -2691,11 +2699,19 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             await self._start_generic_rf_listen()
 
         if user_input is not None:
-            # User clicked submit — check if a signal was captured
+            # User clicked submit — check if a signal was captured via MQTT
             if self._generic_rf_captured is not None:
                 self._generic_rf_timings_on = self._generic_rf_captured.get("timings")
                 return await self.async_step_generic_rf_confirm_on()
-            # No signal yet — re-show with error
+            
+            # No MQTT signal yet — check logs for unknown signals
+            log_signal = await self._check_rtl433_logs_for_signal()
+            if log_signal is not None:
+                self._generic_rf_captured = log_signal
+                self._generic_rf_timings_on = log_signal.get("timings")
+                return await self.async_step_generic_rf_confirm_on()
+            
+            # No signal yet (neither MQTT nor logs) — re-show with error
             return self.async_show_form(
                 step_id="generic_rf_listen_on",
                 errors={"base": "no_signal"},
@@ -2710,7 +2726,10 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         )
 
     async def _start_generic_rf_listen(self) -> None:
-        """Subscribe to rtl_433/# MQTT to capture the next RF signal."""
+        """Subscribe to rtl_433/# MQTT and monitor logs to capture the next RF signal."""
+        # Store the initial log position before starting capture
+        self._generic_rf_log_position = await self._get_rtl433_log_position()
+        
         try:
             from homeassistant.components import mqtt  # noqa: PLC0415
 
@@ -2739,6 +2758,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                             "timings": timings,
                             "model": payload.get("model", "unknown"),
                             "raw": str(codes_str)[:200],
+                            "source": "mqtt",
                         }
                         return
                 # Also accept any decoded signal — store as empty timings
@@ -2750,6 +2770,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                         "timings": [],
                         "model": model,
                         "raw": "",
+                        "source": "mqtt",
                     }
 
             self._generic_rf_listen_unsub = await mqtt.async_subscribe(
@@ -2759,6 +2780,80 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             _LOGGER.warning("Generic RF listen: MQTT integration not available")
         except Exception:  # noqa: BLE001
             _LOGGER.warning("Generic RF listen: failed to subscribe to MQTT", exc_info=True)
+    
+    async def _get_rtl433_log_position(self) -> int:
+        """Get the current position in rtl_433 logs."""
+        try:
+            session = self.hass.helpers.aiohttp_client.async_get_clientsession()
+            url = f"/api/hassio/addons/{RTL433_ADDON_SLUG}/logs"
+            async with session.get(url) as resp:
+                if resp.status == 200:
+                    result = await resp.json()
+                    logs = result.get("data", "")
+                    return len(logs)
+        except Exception:  # noqa: BLE001
+            _LOGGER.debug("Failed to get rtl_433 log position (non-fatal)", exc_info=True)
+        return 0
+    
+    async def _check_rtl433_logs_for_signal(self) -> dict[str, Any] | None:
+        """Check rtl_433 logs for new unknown signals since capture started."""
+        import re  # noqa: PLC0415
+        
+        try:
+            session = self.hass.helpers.aiohttp_client.async_get_clientsession()
+            url = f"/api/hassio/addons/{RTL433_ADDON_SLUG}/logs"
+            async with session.get(url) as resp:
+                if resp.status != 200:
+                    return None
+                
+                result = await resp.json()
+                logs = result.get("data", "")
+                
+                # Only check new log content
+                start_pos = getattr(self, "_generic_rf_log_position", 0)
+                if len(logs) <= start_pos:
+                    return None
+                
+                new_logs = logs[start_pos:]
+                
+                # Parse for decoder suggestions or pulse data
+                pattern_decoder = re.compile(r"Use a flex decoder with -X '([^']+)'")
+                pattern_view_url = re.compile(r"view at (https://triq\.org/pdv/#[^\s]+)")
+                
+                # Look for decoder suggestion (most useful)
+                match_decoder = pattern_decoder.search(new_logs)
+                if match_decoder:
+                    decoder_cmd = match_decoder.group(1)
+                    # Extract pulse parameters from decoder suggestion
+                    # Example: n=name,m=OOK_PWM,s=376,l=776,r=1520,g=0,t=0,y=1472
+                    params = {}
+                    for param in decoder_cmd.split(","):
+                        if "=" in param:
+                            key, val = param.split("=", 1)
+                            params[key] = val
+                    
+                    return {
+                        "timings": [],  # Will be populated from params if needed
+                        "model": params.get("n", "unknown"),
+                        "decoder": decoder_cmd,
+                        "raw": decoder_cmd,
+                        "source": "log_decoder",
+                    }
+                
+                # Look for visualization URL
+                match_view = pattern_view_url.search(new_logs)
+                if match_view:
+                    return {
+                        "timings": [],
+                        "model": "unknown",
+                        "raw": match_view.group(1),
+                        "source": "log_view_url",
+                    }
+        
+        except Exception:  # noqa: BLE001
+            _LOGGER.debug("Failed to check rtl_433 logs (non-fatal)", exc_info=True)
+        
+        return None
 
     async def async_step_generic_rf_confirm_on(
         self, user_input: dict[str, Any] | None = None
