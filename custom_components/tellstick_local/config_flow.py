@@ -2628,6 +2628,8 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
     _generic_rf_listen_unsub: Any = None
     _generic_rf_captured: dict | None = None
     _generic_rf_repeat_count: int = 10
+    _generic_rf_log_position: int = 0
+    _rtl433_addon_slug_cache: str | None = None
 
     async def async_step_generic_rf(
         self, user_input: dict[str, Any] | None = None
@@ -2778,11 +2780,58 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         except Exception:  # noqa: BLE001
             _LOGGER.warning("Generic RF listen: failed to subscribe to MQTT", exc_info=True)
     
+    async def _discover_rtl433_addon_slug(self) -> str | None:
+        """Discover the actual RTL_433 addon slug.
+        
+        The slug may have a prefix when installed from custom repositories
+        (e.g., 'e9305338-rtl_433' instead of 'rtl_433').
+        
+        Returns the discovered slug or None if addon is not found/installed.
+        """
+        # Return cached value if already discovered
+        if self._rtl433_addon_slug_cache is not None:
+            return self._rtl433_addon_slug_cache
+        
+        try:
+            session = self.hass.helpers.aiohttp_client.async_get_clientsession()
+            # Query supervisor for list of installed addons
+            url = "/api/hassio/addons"
+            async with session.get(url) as resp:
+                if resp.status != 200:
+                    _LOGGER.debug(f"Failed to query addon list: HTTP {resp.status}")
+                    return None
+                
+                result = await resp.json()
+                addons = result.get("data", {}).get("addons", [])
+                
+                # Search for rtl_433 addon by name or slug
+                for addon in addons:
+                    slug = addon.get("slug", "")
+                    name = addon.get("name", "").lower()
+                    
+                    # Match if slug ends with 'rtl_433' (handles prefix) or name contains 'rtl'
+                    if slug.endswith("rtl_433") or "rtl" in name:
+                        _LOGGER.debug(f"Discovered RTL_433 addon with slug: {slug}")
+                        self._rtl433_addon_slug_cache = slug
+                        return slug
+                
+                _LOGGER.debug("RTL_433 addon not found in installed addons")
+                return None
+        except Exception:  # noqa: BLE001
+            _LOGGER.debug("Failed to discover RTL_433 addon slug", exc_info=True)
+            return None
+    
     async def _get_rtl433_log_position(self) -> int:
         """Get the current position in rtl_433 logs."""
         try:
+            # Discover the actual addon slug (may have prefix from custom repo)
+            slug = await self._discover_rtl433_addon_slug()
+            if slug is None:
+                _LOGGER.debug("RTL_433 addon not found, cannot get log position")
+                return 0
+            
             session = self.hass.helpers.aiohttp_client.async_get_clientsession()
-            url = f"/api/hassio/addons/{RTL433_ADDON_SLUG}/logs"
+            url = f"/api/hassio/addons/{slug}/logs"
             async with session.get(url) as resp:
                 if resp.status == 200:
                     result = await resp.json()
@@ -2797,8 +2846,14 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         import re  # noqa: PLC0415
         
         try:
+            # Discover the actual addon slug (may have prefix from custom repo)
+            slug = await self._discover_rtl433_addon_slug()
+            if slug is None:
+                _LOGGER.debug("RTL_433 addon not found, cannot check logs")
+                return None
+            
             session = self.hass.helpers.aiohttp_client.async_get_clientsession()
-            url = f"/api/hassio/addons/{RTL433_ADDON_SLUG}/logs"
+            url = f"/api/hassio/addons/{slug}/logs"
             async with session.get(url) as resp:
                 if resp.status != 200:
                     return None
