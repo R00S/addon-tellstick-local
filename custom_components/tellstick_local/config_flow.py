@@ -2821,6 +2821,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 match_decoder = pattern_decoder.search(new_logs)
                 if match_decoder:
                     decoder_cmd = match_decoder.group(1)
+                    _LOGGER.debug(f"Found flex decoder suggestion in rtl_433 logs: {decoder_cmd}")
                     # Extract pulse parameters from decoder suggestion
                     # Example: n=name,m=OOK_PWM,s=376,l=776,r=1520,g=0,t=0,y=1472
                     params = {}
@@ -2831,6 +2832,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                     
                     # Convert flex decoder params to timings
                     timings = convert_flex_decoder_params(decoder_cmd) or []
+                    _LOGGER.debug(f"Converted flex decoder to {len(timings)} timings")
                     
                     return {
                         "timings": timings,
@@ -2844,8 +2846,10 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 match_view = pattern_view_url.search(new_logs)
                 if match_view:
                     url = match_view.group(1)
+                    _LOGGER.debug(f"Found triq.org visualization URL in rtl_433 logs")
                     # Decode triq.org URL to extract timings
                     timings = decode_triq_url(url) or []
+                    _LOGGER.debug(f"Decoded triq.org URL to {len(timings)} timings")
                     
                     return {
                         "timings": timings,
@@ -2857,16 +2861,23 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 # Look for pulse analysis data
                 timings = parse_rtl433_pulse_analysis(new_logs)
                 if timings:
+                    _LOGGER.debug(f"Parsed pulse/gap distribution from rtl_433 logs: {len(timings)} timings")
                     return {
                         "timings": timings,
                         "model": "unknown",
                         "raw": "pulse_analysis",
                         "source": "log_pulse_analysis",
                     }
+                else:
+                    _LOGGER.debug("No pulse/gap width distribution found in rtl_433 logs")
+                    # Log a sample of the new logs for debugging (first 500 chars)
+                    sample = new_logs[:500] if len(new_logs) > 500 else new_logs
+                    _LOGGER.debug(f"New rtl_433 log sample: {sample}")
         
         except Exception:  # noqa: BLE001
             _LOGGER.debug("Failed to check rtl_433 logs (non-fatal)", exc_info=True)
         
+        _LOGGER.debug("No RF signal found in rtl_433 logs (no decoder suggestions, URLs, or pulse distributions)")
         return None
 
     async def async_step_generic_rf_confirm_on(

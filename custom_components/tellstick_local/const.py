@@ -1408,59 +1408,76 @@ def generic_rf_build_raw_command(timings: list[int], repeat_count: int = 10) -> 
 
 
 def parse_rtl433_pulse_analysis(log_text: str) -> list[int] | None:
-    """Parse RTL-433 verbose pulse analysis from log output.
+    """Parse RTL-433 verbose pulse and gap analysis from log output.
 
-    Extracts alternating pulse/space values from the "Pulse timing distribution:" section.
-    Actual rtl_433 verbose output format:
-        [rtl_433] Pulse timing distribution:
-        [rtl_433]  [ 0] count:    1,  width:   84 us [84;84]    (  21 S)
-        [rtl_433]  [ 1] count:   26,  width:  496 us [492;584]  ( 124 S)
-        [rtl_433]  [ 2] count:   22,  width: 1468 us [1464;1480]   ( 367 S)
+    Extracts pulse/gap values from TWO SEPARATE sections in rtl_433 output.
+    Actual rtl_433 verbose output format (analyze_pulses=true, verbose=2):
+        [rtl_433] Pulse width distribution:
+        [rtl_433]  [ 0] count:  140,  width:  392 us [384;412]   (  98 S)
+        [rtl_433]  [ 1] count:  110,  width: 1148 us [1144;1156] ( 287 S)
+        [rtl_433] Gap width distribution:
+        [rtl_433]  [ 0] count:   10,  width: 2244 us [2240;2252] ( 561 S)
+        [rtl_433]  [ 1] count:  129,  width: 1108 us [1104;1124] ( 277 S)
 
-    Values alternate: pulse, space, pulse, space, ...
+    Note: Sections are separate - pulses first, then gaps. We combine them alternating.
 
     Args:
         log_text: Raw log text from RTL-433 verbose output (analyze_pulses true, verbose 2).
 
     Returns:
-        List of alternating µs pulse/space values (positive=pulse, negative=space),
+        List of alternating µs pulse/gap values (positive=pulse, negative=gap),
         or None if no valid pulse data found.
     """
-    timings = []
+    pulses = []
+    gaps = []
     
-    # Find the "Pulse timing distribution:" section
+    # Find both "Pulse width distribution:" and "Gap width distribution:" sections
     lines = log_text.split('\n')
-    in_timing_section = False
+    section = None
     
     for line in lines:
-        # Check if we entered the timing distribution section
-        if 'Pulse timing distribution:' in line:
-            in_timing_section = True
+        # Check section headers
+        if 'Pulse width distribution:' in line:
+            section = 'pulses'
+            continue
+        elif 'Gap width distribution:' in line:
+            section = 'gaps'
             continue
         
-        # Exit section when we hit another header or blank line
-        if in_timing_section:
-            # Stop at next section or when line doesn't match expected format
-            if (line.strip() and 
-                not line.strip().startswith('[rtl_433]') and
-                'distribution:' not in line):
-                break
-            if ('Level estimates' in line or 
-                'RSSI:' in line or
-                not line.strip()):
-                break
+        # Exit section when we hit a new section or non-rtl_433 line
+        if section:
+            # Stop at next major section or when line doesn't match expected format
+            if line.strip() and not line.strip().startswith('[rtl_433]'):
+                # Only break if it's not just whitespace and not an rtl_433 line
+                if 'distribution:' not in line and 'Level estimates' not in line:
+                    section = None
+                continue
+            if 'Level estimates' in line or 'RSSI:' in line:
+                section = None
+                continue
                 
-            # Parse timing lines: [ N] count: X, width: YYY us [range] (samples)
-            # Pattern: [ 0] count:    1,  width:   84 us [84;84]    (  21 S)
+            # Parse width lines: [ N] count: X, width: YYY us [range] (samples)
+            # Pattern: [ 0] count:  140,  width:  392 us [384;412]   (  98 S)
             match = re.search(r'\[\s*\d+\]\s+count:\s+\d+,\s+width:\s+(\d+)\s+us', line)
             if match:
                 width = int(match.group(1))
-                # In timing distribution, values alternate: pulse, space, pulse, space...
-                # Store pulse as positive, space as negative
-                if len(timings) % 2 == 0:
-                    timings.append(width)  # pulse (even index)
-                else:
-                    timings.append(-width)  # space (odd index)
+                if section == 'pulses':
+                    pulses.append(width)
+                elif section == 'gaps':
+                    gaps.append(width)
+    
+    # Must have at least one pulse and one gap
+    if not pulses or not gaps:
+        return None
+    
+    # Combine pulses and gaps alternating: pulse, gap, pulse, gap, ...
+    # Use the most common gap (first in distribution = highest count)
+    timings = []
+    common_gap = gaps[0]  # Most common gap is listed first
+    
+    for pulse in pulses:
+        timings.append(pulse)  # Pulse (positive)
+        timings.append(-common_gap)  # Gap (negative)
     
     return timings if timings else None
 
