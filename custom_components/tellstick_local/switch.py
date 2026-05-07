@@ -19,11 +19,13 @@ from .const import (
     CONF_DEVICE_MODEL,
     CONF_DEVICE_NAME,
     CONF_DEVICE_PROTOCOL,
+    CONF_DEVICE_TYPE,
     CONF_DEVICE_UNIT,
     CONF_DEVICES,
     DOMAIN,
     ENTRY_DEVICE_ID_MAP,
     ENTRY_TELLSTICK_CONTROLLER,
+    GENERIC_RF_TYPE_SWITCH,
     PROTOCOL_GENERIC_RF,
     SIGNAL_EVENT,
     SIGNAL_NEW_DEVICE,
@@ -53,11 +55,17 @@ _SWITCH_MODELS = {
 _COVER_PROTOCOLS = {"hasta", "brateck"}
 
 
-def _is_switch(protocol: str, model: str) -> bool:
+def _is_switch(protocol: str, model: str, device_cfg: dict | None = None) -> bool:
+    """Check if a device should be a switch entity."""
     if protocol.lower() in _COVER_PROTOCOLS:
         return False
     if protocol.lower() == PROTOCOL_GENERIC_RF:
-        return True
+        # For Generic RF devices, check device_type
+        # Default to switch for backward compatibility with existing devices
+        if device_cfg:
+            device_type = device_cfg.get(CONF_DEVICE_TYPE, GENERIC_RF_TYPE_SWITCH)
+            return device_type == GENERIC_RF_TYPE_SWITCH
+        return True  # Backward compat: assume switch if no device_cfg
     base = model.split(":")[0].lower() if ":" in model else model.lower()
     return base in _SWITCH_MODELS
 
@@ -110,7 +118,7 @@ async def async_setup_entry(
     for device_uid, device_cfg in entry.options.get(CONF_DEVICES, {}).items():
         protocol = device_cfg.get(CONF_DEVICE_PROTOCOL, "")
         model = device_cfg.get(CONF_DEVICE_MODEL, "")
-        if not _is_switch(protocol, model):
+        if not _is_switch(protocol, model, device_cfg):
             # If the stored model is a dimmer, clean up any stale switch
             # entity from before the model was changed.
             if _is_dimmer_model(model):
@@ -169,7 +177,7 @@ async def async_setup_entry(
             or stored.get(CONF_DEVICE_MODEL, "")
             or model
         )
-        if not _is_switch(protocol, check_model):
+        if not _is_switch(protocol, check_model, stored):
             # Catalog/stored model says dimmer — clean up any stale switch.
             if _is_dimmer_model(check_model):
                 _remove_stale_switch(ent_reg, entry.entry_id, uid)
