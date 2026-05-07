@@ -81,9 +81,21 @@ All device management happens in the integration under **Settings → Devices & 
 - **Manage ignored** — un-ignore devices from **Configure** (⚙) → **Manage ignored
   devices**
 - **RTL-433 sensors** (optional) — if you have an RTL-SDR dongle + the
-  [rtl_433 add-on](https://github.com/pbkhrv/rtl_433-hass-addons), enable
-  **"Listen for rtl_433 sensors via MQTT"** in **Configure → Settings** to
-  auto-discover ANY 433 MHz sensor
+  [rtl_433 add-on](https://github.com/pbkhrv/rtl_433-hass-addons), you can
+  auto-discover ANY 433 MHz sensor:
+  1. Install Mosquitto broker add-on + MQTT integration
+  2. Install rtl_433 add-on from `https://github.com/pbkhrv/rtl_433-hass-addons`
+  3. Create `/config/rtl_433/rtl_433.conf.template` with:
+     ```
+     output mqtt://localhost:1883
+     frequency 433.92M
+     convert si
+     ```
+  4. Start rtl_433 add-on, then enable **"Listen for rtl_433 sensors via MQTT"**
+     in **TellStick Local → Configure → Settings**
+  
+  See the [README](https://github.com/R00S/addon-tellstick-local#rtl-433-sensor-auto-discovery)
+  for detailed setup instructions and MQTT configuration examples.
 - **Generic RF record & replay** — click **Add device** → **"Record Generic RF"** to
   capture and replay signals from ANY 433 MHz device (even unsupported protocols)
 

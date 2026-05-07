@@ -426,18 +426,149 @@ signals from ANY 433 MHz sensor — not just TellStick-compatible ones. This
 opens up support for hundreds of additional sensor models: weather stations,
 temperature/humidity sensors, rain gauges, soil moisture sensors, and more.
 
-**How it works:**
+### Prerequisites
 
-1. Install the **rtl_433 add-on** and configure it to publish to MQTT
-2. Install the **MQTT integration** in HA (Settings → Devices & Services → Add → MQTT)
-3. In **TellStick Local** integration, go to **Configure → Settings**
-4. Enable **"Listen for rtl_433 sensors via MQTT"** and click **Submit**
-5. The integration subscribes to `rtl_433/#` and auto-creates sensor entities
-   for any received signals
+1. **RTL-SDR USB dongle** — [supported models](https://triq.org/rtl_433/HARDWARE.html)
+2. **MQTT broker** — Install the [Mosquitto broker](https://github.com/home-assistant/addons/blob/master/mosquitto/DOCS.md) add-on (recommended)
+3. **rtl_433 add-on** — From the [pbkhrv repository](https://github.com/pbkhrv/rtl_433-hass-addons)
 
-**Supported sensor fields:** temperature, humidity, rain, wind speed,
-wind direction, UV index, pressure, battery level, and many more (see
-`RTL433_SENSOR_FIELDS` in `const.py` for the full list).
+### Step 1: Install and configure Mosquitto broker
+
+1. Go to **Settings → Add-ons → Add-on Store**
+2. Search for **Mosquitto broker** and click **Install**
+3. Start the add-on — no configuration needed for basic setup
+4. The broker runs on `localhost:1883` by default
+
+### Step 2: Install MQTT integration
+
+1. Go to **Settings → Devices & Services → Add Integration**
+2. Search for **MQTT** and select it
+3. If Mosquitto is running, HA will auto-discover it — just click **Submit**
+4. Verify connection: the MQTT integration should show as "Connected"
+
+### Step 3: Install rtl_433 add-on
+
+1. Go to **Settings → Add-ons → ⋮ → Repositories**
+2. Add: `https://github.com/pbkhrv/rtl_433-hass-addons`
+3. Find **rtl_433** in the store and click **Install**
+4. **Do not start yet** — configure it first
+
+### Step 4: Configure rtl_433 add-on
+
+Create a configuration file at `/config/rtl_433/rtl_433.conf.template`:
+
+```conf
+# rtl_433 configuration for TellStick Local integration
+
+# MQTT output - connect to local Mosquitto broker
+# Format: mqtt://HOST:PORT,user=USERNAME,pass=PASSWORD
+# For local Mosquitto with no auth, use:
+output mqtt://localhost:1883
+
+# Listen frequency (433.92 MHz is default for most sensors)
+frequency 433.92M
+
+# Convert all units to SI (Celsius, meters, etc.)
+convert si
+
+# Report metadata for better debugging
+report_meta level
+report_meta time:usec
+report_meta protocol
+
+# Enable pulse detection optimizations
+pulse_detect autolevel
+pulse_detect squelch
+
+# Optional: Enable specific protocols only (improves performance)
+# Uncomment and adjust based on your sensors
+# Full list: https://github.com/merbanan/rtl_433/blob/master/README.md
+# protocol 40    # Acurite 592TXR
+# protocol 19    # Ambient Weather F007TH
+# protocol 74    # LaCrosse TX141
+# protocol 113   # Fineoffset WH1080
+```
+
+> **Note:** If using MQTT authentication, replace the `output` line with:
+> ```conf
+> output mqtt://localhost:1883,user=YOUR_USERNAME,pass=YOUR_PASSWORD
+> ```
+
+The add-on will automatically create `/config/rtl_433/` on first start if it doesn't exist.
+Any `.conf.template` files in that directory will be processed.
+
+### Step 5: Start rtl_433 add-on
+
+1. Plug in your RTL-SDR dongle
+2. Start the rtl_433 add-on
+3. Check the logs — you should see messages like:
+   ```
+   Registered 1 out of 259 device decoding protocols
+   Found Rafael Micro R820T tuner
+   rtl_433 version 23.11 listening...
+   ```
+4. When a sensor transmits, you'll see JSON output:
+   ```json
+   {"time":"2026-05-07 06:22:15","protocol":40,"model":"Acurite-592TXR",...}
+   ```
+
+### Step 6: Enable in TellStick Local integration
+
+1. Go to **Settings → Devices & Services → TellStick Local**
+2. Click **Configure** (⚙ icon)
+3. Select **Settings** from the menu
+4. Enable **"Listen for rtl_433 sensors via MQTT"**
+5. Click **Submit**
+
+The integration subscribes to `rtl_433/#` and auto-creates sensor entities when signals arrive.
+
+### Verifying MQTT messages
+
+To verify rtl_433 is publishing to MQTT:
+
+1. Go to **Developer Tools → MQTT**
+2. Subscribe to topic: `rtl_433/#`
+3. Press a button on your sensor or wait for an automatic transmission
+4. You should see JSON messages appear
+
+### Supported sensor fields
+
+The integration auto-creates sensors for these fields:
+
+| Field                | Device class     | Unit  | Example sensors                    |
+| -------------------- | ---------------- | ----- | ---------------------------------- |
+| `temperature_C`      | temperature      | °C    | Weather stations, thermometers     |
+| `temperature_F`      | temperature      | °F    | (auto-converted to °C if needed)   |
+| `humidity`           | humidity         | %     | Humidity sensors                   |
+| `rain_mm`            | precipitation    | mm    | Rain gauges (total)                |
+| `rain_rate_mm_h`     | precipitation    | mm/h  | Rain rate                          |
+| `wind_avg_m_s`       | wind_speed       | m/s   | Wind sensors                       |
+| `wind_max_m_s`       | wind_speed       | m/s   | Wind gusts                         |
+| `wind_dir_deg`       | —                | °     | Wind direction                     |
+| `uv`                 | —                | index | UV sensors                         |
+| `pressure_hPa`       | atmospheric_pressure | hPa | Barometers                     |
+| `battery_ok`         | battery          | —     | Battery status (0=low, 1=ok)       |
+| `moisture`           | moisture         | %     | Soil moisture sensors              |
+
+See `RTL433_SENSOR_FIELDS` in `const.py` for the complete list.
+
+### Troubleshooting
+
+**No sensors appear:**
+- Check rtl_433 add-on logs for received signals
+- Verify MQTT broker is running and connected
+- Use Developer Tools → MQTT to verify messages on `rtl_433/#`
+- Make sure "Listen for rtl_433 sensors" is enabled in TellStick Local settings
+
+**Sensors stop updating:**
+- Check rtl_433 add-on is still running
+- Restart the MQTT broker if needed
+- Some sensors only transmit every 30-60 seconds
+
+**Too many unknown sensors:**
+- Edit `/config/rtl_433/rtl_433.conf.template` to enable only specific protocols
+- Use `protocol <number>` lines to filter (see [protocol list](https://github.com/merbanan/rtl_433/blob/master/README.md))
+- Restart rtl_433 add-on after config changes
 
 **Note:** rtl_433 sensors are **receive-only** — you cannot send commands to them.
 They appear as sensor entities in HA and update automatically when signals arrive.
