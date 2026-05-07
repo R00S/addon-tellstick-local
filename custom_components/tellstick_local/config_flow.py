@@ -45,6 +45,7 @@ from .const import (
     CONF_DEVICE_MODEL,
     CONF_DEVICE_NAME,
     CONF_DEVICE_PROTOCOL,
+    CONF_DEVICE_TYPE,
     CONF_DEVICE_UNIT,
     CONF_DEVICES,
     CONF_EVENT_PORT,
@@ -66,6 +67,9 @@ from .const import (
     ENTRY_DEVICE_ID_MAP,
     ENTRY_MIRRORS,
     ENTRY_TELLSTICK_CONTROLLER,
+    GENERIC_RF_TYPE_COVER,
+    GENERIC_RF_TYPE_LIGHT,
+    GENERIC_RF_TYPE_SWITCH,
     PROTOCOL_GENERIC_RF,
     PROTOCOL_MODEL_LABELS,
     PROTOCOL_MODEL_MAP,
@@ -2610,8 +2614,13 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
 
     # Instance state for the generic RF recording flow
     _generic_rf_name: str = ""
+    _generic_rf_device_type: str = GENERIC_RF_TYPE_SWITCH
     _generic_rf_timings_on: list[int] | None = None
     _generic_rf_timings_off: list[int] | None = None
+    _generic_rf_timings_up: list[int] | None = None
+    _generic_rf_timings_down: list[int] | None = None
+    _generic_rf_timings_stop: list[int] | None = None
+    _generic_rf_timings_dim_levels: dict[int, list[int]] = {}
     _generic_rf_listen_unsub: Any = None
     _generic_rf_captured: dict | None = None
     _generic_rf_repeat_count: int = 10
@@ -2619,14 +2628,29 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
     async def async_step_generic_rf(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
-        """Step: enter a name for the Generic RF device and repeat count."""
+        """Step: enter a name for the Generic RF device, device type, and repeat count."""
         entry = self._get_entry()
         backend = entry.data.get(CONF_BACKEND, BACKEND_DUO)
 
         if user_input is not None:
             self._generic_rf_name = user_input["name"]
+            self._generic_rf_device_type = user_input.get("device_type", GENERIC_RF_TYPE_SWITCH)
             self._generic_rf_repeat_count = int(user_input.get("repeat_count", 10))
-            # Start listening for ON signal
+            # Reset timings for new recording
+            self._generic_rf_timings_on = None
+            self._generic_rf_timings_off = None
+            self._generic_rf_timings_up = None
+            self._generic_rf_timings_down = None
+            self._generic_rf_timings_stop = None
+            self._generic_rf_timings_dim_levels = {}
+            
+            # Route to appropriate capture flow based on device type
+            if self._generic_rf_device_type == GENERIC_RF_TYPE_SWITCH:
+                return await self.async_step_generic_rf_listen_on()
+            elif self._generic_rf_device_type == GENERIC_RF_TYPE_LIGHT:
+                return await self.async_step_generic_rf_listen_on()
+            elif self._generic_rf_device_type == GENERIC_RF_TYPE_COVER:
+                return await self.async_step_generic_rf_listen_up()
             return await self.async_step_generic_rf_listen_on()
 
         description = ""
@@ -2638,6 +2662,13 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             data_schema=vol.Schema(
                 {
                     vol.Required("name"): str,
+                    vol.Required("device_type", default=GENERIC_RF_TYPE_SWITCH): vol.In(
+                        {
+                            GENERIC_RF_TYPE_SWITCH: "Switch (ON/OFF)",
+                            GENERIC_RF_TYPE_LIGHT: "Dimmer/Light (ON/OFF/DIM)",
+                            GENERIC_RF_TYPE_COVER: "Cover/Blind (UP/DOWN/STOP)",
+                        }
+                    ),
                     vol.Optional("repeat_count", default=10): vol.All(
                         int, vol.Range(min=1, max=50)
                     ),
@@ -2732,7 +2763,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
     async def async_step_generic_rf_confirm_on(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
-        """Step: confirm the captured ON signal and optionally record OFF."""
+        """Step: confirm the captured ON signal and optionally record OFF or DIM levels."""
         if self._generic_rf_listen_unsub is not None:
             try:
                 self._generic_rf_listen_unsub()
@@ -2741,16 +2772,32 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             self._generic_rf_listen_unsub = None
 
         if user_input is not None:
-            # User confirms — ask for OFF signal too?
-            if user_input.get("record_off"):
-                self._generic_rf_captured = None
-                return await self.async_step_generic_rf_listen_off()
-            return await self._async_save_generic_rf_device()
+            # User confirms — next step depends on device type
+            if self._generic_rf_device_type == GENERIC_RF_TYPE_LIGHT:
+                # For lights, ask about OFF and DIM levels
+                if user_input.get("record_off"):
+                    self._generic_rf_captured = None
+                    return await self.async_step_generic_rf_listen_off()
+                # Skip to dim level capture
+                return await self.async_step_generic_rf_dim_choice()
+            else:
+                # For switches, just ask about OFF
+                if user_input.get("record_off"):
+                    self._generic_rf_captured = None
+                    return await self.async_step_generic_rf_listen_off()
+                return await self._async_save_generic_rf_device()
 
         captured = self._generic_rf_captured or {}
         timings_count = len(self._generic_rf_timings_on or [])
+        
+        # Different prompts based on device type
+        if self._generic_rf_device_type == GENERIC_RF_TYPE_LIGHT:
+            description_key = "generic_rf_confirm_on_light"
+        else:
+            description_key = "generic_rf_confirm_on"
+            
         return self.async_show_form(
-            step_id="generic_rf_confirm_on",
+            step_id=description_key,
             data_schema=vol.Schema(
                 {vol.Optional("record_off", default=False): bool}
             ),
@@ -2772,6 +2819,10 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         if user_input is not None:
             if self._generic_rf_captured is not None:
                 self._generic_rf_timings_off = self._generic_rf_captured.get("timings")
+                # For lights, continue to dim level capture
+                if self._generic_rf_device_type == GENERIC_RF_TYPE_LIGHT:
+                    return await self.async_step_generic_rf_dim_choice()
+                # For switches, save now
                 return await self._async_save_generic_rf_device()
             return self.async_show_form(
                 step_id="generic_rf_listen_off",
@@ -2782,6 +2833,232 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
 
         return self.async_show_form(
             step_id="generic_rf_listen_off",
+            data_schema=vol.Schema({}),
+            description_placeholders={"name": self._generic_rf_name},
+        )
+
+    async def async_step_generic_rf_dim_choice(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Step: ask if user wants to record dim levels for a light."""
+        if user_input is not None:
+            if user_input.get("record_dim"):
+                # Ask which dim level to record
+                return await self.async_step_generic_rf_dim_level_select()
+            # Skip dim levels - save device
+            return await self._async_save_generic_rf_device()
+
+        return self.async_show_form(
+            step_id="generic_rf_dim_choice",
+            data_schema=vol.Schema(
+                {vol.Optional("record_dim", default=False): bool}
+            ),
+            description_placeholders={"name": self._generic_rf_name},
+        )
+
+    async def async_step_generic_rf_dim_level_select(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Step: select which dim level to record (e.g., 25%, 50%, 75%)."""
+        if user_input is not None:
+            dim_level = int(user_input["dim_level"])
+            self._generic_rf_current_dim_level = dim_level
+            self._generic_rf_captured = None
+            return await self.async_step_generic_rf_listen_dim()
+
+        # Offer common dim levels that haven't been recorded yet
+        available_levels = [25, 50, 75, 100]
+        recorded_levels = list(self._generic_rf_timings_dim_levels.keys())
+        remaining_levels = [lvl for lvl in available_levels if lvl not in recorded_levels]
+        
+        if not remaining_levels:
+            # All common levels recorded, allow saving
+            return await self._async_save_generic_rf_device()
+
+        return self.async_show_form(
+            step_id="generic_rf_dim_level_select",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("dim_level"): vol.In(
+                        {lvl: f"{lvl}%" for lvl in remaining_levels}
+                    )
+                }
+            ),
+            description_placeholders={
+                "name": self._generic_rf_name,
+                "recorded": ", ".join(f"{lvl}%" for lvl in recorded_levels) if recorded_levels else "none",
+            },
+        )
+
+    async def async_step_generic_rf_listen_dim(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Step: listen for a DIM level signal from the remote."""
+        if self._generic_rf_listen_unsub is None:
+            self._generic_rf_captured = None
+            await self._start_generic_rf_listen()
+
+        if user_input is not None:
+            if self._generic_rf_captured is not None:
+                timings = self._generic_rf_captured.get("timings")
+                if timings:
+                    # Store this dim level
+                    dim_level = getattr(self, "_generic_rf_current_dim_level", 50)
+                    self._generic_rf_timings_dim_levels[dim_level] = timings
+                
+                # Ask if they want to record another level
+                return await self.async_step_generic_rf_dim_choice()
+            
+            return self.async_show_form(
+                step_id="generic_rf_listen_dim",
+                errors={"base": "no_signal"},
+                data_schema=vol.Schema({}),
+                description_placeholders={
+                    "name": self._generic_rf_name,
+                    "dim_level": str(getattr(self, "_generic_rf_current_dim_level", 50)),
+                },
+            )
+
+        return self.async_show_form(
+            step_id="generic_rf_listen_dim",
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "name": self._generic_rf_name,
+                "dim_level": str(getattr(self, "_generic_rf_current_dim_level", 50)),
+            },
+        )
+
+    async def async_step_generic_rf_listen_up(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Step: listen for the UP signal from a cover/blind remote."""
+        if self._generic_rf_listen_unsub is None:
+            self._generic_rf_captured = None
+            await self._start_generic_rf_listen()
+
+        if user_input is not None:
+            if self._generic_rf_captured is not None:
+                self._generic_rf_timings_up = self._generic_rf_captured.get("timings")
+                return await self.async_step_generic_rf_confirm_up()
+            return self.async_show_form(
+                step_id="generic_rf_listen_up",
+                errors={"base": "no_signal"},
+                data_schema=vol.Schema({}),
+                description_placeholders={"name": self._generic_rf_name},
+            )
+
+        return self.async_show_form(
+            step_id="generic_rf_listen_up",
+            data_schema=vol.Schema({}),
+            description_placeholders={"name": self._generic_rf_name},
+        )
+
+    async def async_step_generic_rf_confirm_up(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Step: confirm UP signal and ask about DOWN."""
+        if self._generic_rf_listen_unsub is not None:
+            try:
+                self._generic_rf_listen_unsub()
+            except Exception:  # noqa: BLE001
+                _LOGGER.debug("Error unsubscribing from rtl_433 MQTT (non-fatal)", exc_info=True)
+            self._generic_rf_listen_unsub = None
+
+        if user_input is not None:
+            # Always record DOWN for covers
+            self._generic_rf_captured = None
+            return await self.async_step_generic_rf_listen_down()
+
+        captured = self._generic_rf_captured or {}
+        timings_count = len(self._generic_rf_timings_up or [])
+        return self.async_show_form(
+            step_id="generic_rf_confirm_up",
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "name": self._generic_rf_name,
+                "model": captured.get("model", "unknown"),
+                "timings_count": str(timings_count),
+            },
+        )
+
+    async def async_step_generic_rf_listen_down(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Step: listen for the DOWN signal from a cover/blind remote."""
+        if self._generic_rf_listen_unsub is None:
+            self._generic_rf_captured = None
+            await self._start_generic_rf_listen()
+
+        if user_input is not None:
+            if self._generic_rf_captured is not None:
+                self._generic_rf_timings_down = self._generic_rf_captured.get("timings")
+                return await self.async_step_generic_rf_confirm_down()
+            return self.async_show_form(
+                step_id="generic_rf_listen_down",
+                errors={"base": "no_signal"},
+                data_schema=vol.Schema({}),
+                description_placeholders={"name": self._generic_rf_name},
+            )
+
+        return self.async_show_form(
+            step_id="generic_rf_listen_down",
+            data_schema=vol.Schema({}),
+            description_placeholders={"name": self._generic_rf_name},
+        )
+
+    async def async_step_generic_rf_confirm_down(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Step: confirm DOWN signal and ask about STOP."""
+        if self._generic_rf_listen_unsub is not None:
+            try:
+                self._generic_rf_listen_unsub()
+            except Exception:  # noqa: BLE001
+                _LOGGER.debug("Error unsubscribing from rtl_433 MQTT (non-fatal)", exc_info=True)
+            self._generic_rf_listen_unsub = None
+
+        if user_input is not None:
+            if user_input.get("record_stop"):
+                self._generic_rf_captured = None
+                return await self.async_step_generic_rf_listen_stop()
+            # Skip STOP - save device
+            return await self._async_save_generic_rf_device()
+
+        captured = self._generic_rf_captured or {}
+        timings_count = len(self._generic_rf_timings_down or [])
+        return self.async_show_form(
+            step_id="generic_rf_confirm_down",
+            data_schema=vol.Schema(
+                {vol.Optional("record_stop", default=False): bool}
+            ),
+            description_placeholders={
+                "name": self._generic_rf_name,
+                "model": captured.get("model", "unknown"),
+                "timings_count": str(timings_count),
+            },
+        )
+
+    async def async_step_generic_rf_listen_stop(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Step: listen for the STOP signal from a cover/blind remote."""
+        if self._generic_rf_listen_unsub is None:
+            self._generic_rf_captured = None
+            await self._start_generic_rf_listen()
+
+        if user_input is not None:
+            if self._generic_rf_captured is not None:
+                self._generic_rf_timings_stop = self._generic_rf_captured.get("timings")
+                return await self._async_save_generic_rf_device()
+            return self.async_show_form(
+                step_id="generic_rf_listen_stop",
+                errors={"base": "no_signal"},
+                data_schema=vol.Schema({}),
+                description_placeholders={"name": self._generic_rf_name},
+            )
+
+        return self.async_show_form(
+            step_id="generic_rf_listen_stop",
             data_schema=vol.Schema({}),
             description_placeholders={"name": self._generic_rf_name},
         )
@@ -2811,10 +3088,22 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             CONF_DEVICE_MODEL: "",
             CONF_DEVICE_HOUSE: uid_suffix,   # used as the UID discriminator
             CONF_DEVICE_UNIT: "",
-            "timings_on": self._generic_rf_timings_on or [],
-            "timings_off": self._generic_rf_timings_off,
+            CONF_DEVICE_TYPE: self._generic_rf_device_type,
             "repeat_count": self._generic_rf_repeat_count,
         }
+        
+        # Store timings based on device type
+        if self._generic_rf_device_type == GENERIC_RF_TYPE_SWITCH:
+            device_data["timings_on"] = self._generic_rf_timings_on or []
+            device_data["timings_off"] = self._generic_rf_timings_off
+        elif self._generic_rf_device_type == GENERIC_RF_TYPE_LIGHT:
+            device_data["timings_on"] = self._generic_rf_timings_on or []
+            device_data["timings_off"] = self._generic_rf_timings_off
+            device_data["timings_dim_levels"] = self._generic_rf_timings_dim_levels
+        elif self._generic_rf_device_type == GENERIC_RF_TYPE_COVER:
+            device_data["timings_up"] = self._generic_rf_timings_up or []
+            device_data["timings_down"] = self._generic_rf_timings_down or []
+            device_data["timings_stop"] = self._generic_rf_timings_stop
 
         # Persist in entry.options[CONF_DEVICES]
         existing_devices = dict(entry.options.get(CONF_DEVICES, {}))

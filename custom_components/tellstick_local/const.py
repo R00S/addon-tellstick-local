@@ -158,6 +158,14 @@ RTL433_SENSOR_FIELDS: dict[str, tuple[str, str, str]] = {
 # Protocol name for Generic RF devices (record & replay via raw OOK pulses)
 PROTOCOL_GENERIC_RF = "generic_rf"
 
+# Generic RF device types
+GENERIC_RF_TYPE_SWITCH = "switch"
+GENERIC_RF_TYPE_LIGHT = "light"
+GENERIC_RF_TYPE_COVER = "cover"
+
+# Config key for storing device type
+CONF_DEVICE_TYPE = "device_type"
+
 # TX-capable protocols (can send commands and teach self-learning devices)
 # Source: telldus-core Protocol.cpp::getProtocolInstance() — only protocols
 # listed there can be instantiated to send RF commands.
