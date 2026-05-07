@@ -129,11 +129,21 @@ SIGNAL_EVENT = DOMAIN + "_event_{}"
 CONF_RTL433_SENSORS = "rtl433_sensors"
 DEFAULT_RTL433_SENSORS = False
 
+# Config option: monitor rtl_433 add-on logs for unknown signals
+CONF_RTL433_LOG_MONITOR = "rtl433_log_monitor"
+DEFAULT_RTL433_LOG_MONITOR = False
+
+# RTL-433 add-on slug (pbkhrv/rtl_433-hass-addons)
+RTL433_ADDON_SLUG = "rtl_433"
+
 # MQTT topic for rtl_433 events
 RTL433_MQTT_TOPIC = "rtl_433/#"
 
 # Signal fired when a new RTL-433 sensor reading arrives (per entry_id)
 SIGNAL_RTL433_READING = DOMAIN + "_rtl433_{}"
+
+# Signal fired when an unknown signal is detected in logs (per entry_id)
+SIGNAL_RTL433_UNKNOWN = DOMAIN + "_rtl433_unknown_{}"
 
 # RTL-433 protocol field → (device_class_string, unit, entity_suffix)
 # device_class_string maps to homeassistant.components.sensor.SensorDeviceClass
