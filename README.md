@@ -480,9 +480,6 @@ report_meta protocol
 pulse_detect autolevel
 pulse_detect squelch
 
-# Capture unknown signals for Generic RF support
-signal_grabber unknown
-
 # Optional: Enable specific protocols only (improves performance)
 # Uncomment and adjust based on your sensors
 # Full list: https://github.com/merbanan/rtl_433/blob/master/README.md
@@ -661,6 +658,11 @@ and replay it as a switch in Home Assistant. This works for:
 **Note:** The recorded signal is a raw RF waveform — it bypasses protocol decoding
 entirely. This means it works for ANY 433 MHz device, but each button press must
 be recorded separately (On and Off are two different captures).
+
+**About rtl_433 signal capture:** Generic RF uses **on-demand** capture when you
+click "Record" in the UI. The rtl_433.conf file doesn't need `signal_grabber`
+(which saves ALL unknown signals to disk continuously and can consume significant
+storage). Signal capture is triggered programmatically only when needed.
 
 ---
 
