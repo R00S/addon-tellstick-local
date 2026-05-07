@@ -1,8 +1,11 @@
 """Constants for TellStick Local integration."""
 from __future__ import annotations
 
+import base64
 import json as _json
 import pathlib as _pathlib
+import re
+import urllib.parse
 
 DOMAIN = "tellstick_local"
 
@@ -1402,4 +1405,167 @@ def generic_rf_build_raw_command(timings: list[int], repeat_count: int = 10) -> 
     tick_bytes = timings_to_tellstick_bytes(timings)
     repeat = min(255, max(1, repeat_count))
     return bytes([ord("P"), 2, ord("R"), repeat]) + b"S" + tick_bytes + b"+"
+
+
+def parse_rtl433_pulse_analysis(log_text: str) -> list[int] | None:
+    """Parse RTL-433 verbose pulse analysis from log output.
+
+    Extracts alternating pulse/space values from lines like:
+        [rtl_433] Data:
+        [rtl_433]  [ 0] pulse  1472
+        [rtl_433]  [ 1] space   392
+        [rtl_433]  [ 2] pulse   784
+
+    Args:
+        log_text: Raw log text from RTL-433 verbose output (-A or --analyze flag).
+
+    Returns:
+        List of alternating µs pulse/space values (positive=pulse, negative=space),
+        or None if no valid pulse data found.
+    """
+    timings = []
+    
+    # Pattern to match pulse/space lines:
+    # [ 0] pulse  1472  or  [ 0] space   392
+    pattern = re.compile(r'\[\s*\d+\]\s+(pulse|space)\s+(\d+)')
+    
+    for line in log_text.split('\n'):
+        match = pattern.search(line)
+        if match:
+            pulse_type = match.group(1)
+            value = int(match.group(2))
+            
+            # Store pulse as positive, space as negative
+            if pulse_type == 'pulse':
+                timings.append(value)
+            else:  # space
+                timings.append(-value)
+    
+    return timings if timings else None
+
+
+def convert_flex_decoder_params(decoder_params: str) -> list[int] | None:
+    """Convert RTL-433 flex decoder parameters to pulse/space timings.
+
+    Converts parameters like 's=376,l=776,r=1520,y=1472' into the alternating
+    pulse/space format expected by generic_rf_build_raw_command().
+
+    Flex decoder parameters (OOK_PWM encoding):
+        s = short pulse width (µs)
+        l = long pulse width (µs)
+        r = reset/sync pulse width (µs)
+        g = gap width (µs) - defaults to long gap if not specified
+        y = sync/preamble pulse width (µs)
+        t = tolerance (not used for timing generation)
+
+    Args:
+        decoder_params: Flex decoder parameter string (e.g., 
+                       's=376,l=776,r=1520,g=0,t=0,y=1472' or
+                       'n=name,m=OOK_PWM,s=376,l=776,r=1520,y=1472')
+
+    Returns:
+        List of alternating µs pulse/space values representing a typical signal
+        pattern (preamble + data bits), or None if required parameters missing.
+    """
+    params = {}
+    for param in decoder_params.split(','):
+        if '=' in param:
+            key, val = param.split('=', 1)
+            params[key.strip()] = val.strip()
+    
+    # Extract timing parameters
+    try:
+        s = int(params.get('s', 0))  # short pulse
+        l = int(params.get('l', 0))  # long pulse
+        r = int(params.get('r', 0))  # reset/sync
+        g = int(params.get('g', l))  # gap (default to long if not specified)
+        y = int(params.get('y', 0))  # preamble/sync pulse
+    except (ValueError, TypeError):
+        return None
+    
+    # Need at least short and long pulse widths
+    if not s or not l:
+        return None
+    
+    timings = []
+    
+    # Add preamble/sync if present
+    if y > 0:
+        timings.extend([y, -g])  # preamble pulse + gap
+    
+    # Add reset/sync pulse if present
+    if r > 0:
+        timings.extend([r, -g])  # reset pulse + gap
+    
+    # Generate a typical data pattern (alternating short/long for demonstration)
+    # In OOK_PWM: bit 0 = short pulse + long gap, bit 1 = long pulse + short gap
+    # Generate an 8-bit pattern: 10101010
+    for i in range(8):
+        if i % 2 == 0:  # bit 1
+            timings.extend([l, -s])  # long pulse, short gap
+        else:  # bit 0
+            timings.extend([s, -l])  # short pulse, long gap
+    
+    # Add final reset if present
+    if r > 0:
+        timings.append(r)
+    
+    return timings if timings else None
+
+
+def decode_triq_url(url: str) -> list[int] | None:
+    """Decode triq.org pulse data viewer URL to extract pulse timings.
+
+    Parses URLs in the format:
+        https://triq.org/pdv/#<base64-encoded-pulse-data>
+        https://triq.org/pdv/?pulses=<base64-encoded-pulse-data>
+
+    The base64-encoded data decodes to comma-separated integers representing
+    alternating pulse/space values in microseconds.
+
+    Args:
+        url: triq.org pulse data viewer URL.
+
+    Returns:
+        List of alternating µs pulse/space values (positive=pulse, negative=space),
+        or None if URL cannot be parsed or decoded.
+    """
+    try:
+        # Extract the base64 part from URL
+        base64_data = None
+        
+        # Try fragment format: https://triq.org/pdv/#<base64>
+        if '#' in url:
+            base64_data = url.split('#', 1)[1]
+        # Try query parameter format: https://triq.org/pdv/?pulses=<base64>
+        elif '?pulses=' in url:
+            parsed = urllib.parse.urlparse(url)
+            params = urllib.parse.parse_qs(parsed.query)
+            if 'pulses' in params:
+                base64_data = params['pulses'][0]
+        
+        if not base64_data:
+            return None
+        
+        # Decode base64
+        decoded = base64.b64decode(base64_data).decode('utf-8')
+        
+        # Parse comma-separated integers
+        values = [int(v.strip()) for v in decoded.split(',') if v.strip()]
+        
+        if not values:
+            return None
+        
+        # Convert to alternating positive (pulse) / negative (space) format
+        timings = []
+        for i, val in enumerate(values):
+            if i % 2 == 0:  # even index = pulse (positive)
+                timings.append(abs(val))
+            else:  # odd index = space (negative)
+                timings.append(-abs(val))
+        
+        return timings
+        
+    except (ValueError, TypeError, base64.binascii.Error):
+        return None
 
