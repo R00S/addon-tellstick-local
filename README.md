@@ -622,15 +622,23 @@ Adding `retain=0` solves this without any downside for typical Home Assistant us
 
 ### Step 6: Enable MQTT output (after verifying log detection)
 
-Once you've confirmed devices appear in the rtl_433 log:
+Once you've confirmed devices appear in the rtl_433 log (Step 5):
 
 1. Edit `/config/rtl_433/rtl_433.conf.template`
 2. Replace the `output json` and `output log` lines with:
    ```conf
-   output mqtt://localhost:1883,retain=0,qos=0
+   output mqtt://localhost:1883/rtl_433[/model][/id],retain=0,qos=0
    ```
-3. Restart the rtl_433 add-on
-4. Devices will now be published to MQTT instead of just logs
+   
+   **Important:** Use the full topic pattern `/rtl_433[/model][/id]` — this creates structured topics like:
+   - `rtl_433/Acurite-592TXR/12345` for a temperature sensor
+   - `rtl_433/LaCrosse-TX141/67890` for a humidity sensor
+   
+   This topic structure enables the TellStick Local integration to auto-discover sensors.
+
+3. **Optional:** Remove the `analyze_pulses true` and `verbose 2` lines to reduce log clutter (keep only the MQTT output)
+4. Restart the rtl_433 add-on
+5. Devices will now be published to MQTT instead of just logs
 
 ### Step 7: Enable in TellStick Local integration
 
