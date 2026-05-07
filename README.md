@@ -480,6 +480,9 @@ report_meta protocol
 pulse_detect autolevel
 pulse_detect squelch
 
+# Capture unknown signals for Generic RF support
+signal_grabber unknown
+
 # Optional: Enable specific protocols only (improves performance)
 # Uncomment and adjust based on your sensors
 # Full list: https://github.com/merbanan/rtl_433/blob/master/README.md
