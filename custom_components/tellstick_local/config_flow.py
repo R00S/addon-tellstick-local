@@ -2860,7 +2860,20 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             # Discover the actual addon slug (may have prefix from custom repo)
             slug = await self._discover_rtl433_addon_slug()
             if slug is None:
-                return "RTL_433 addon not found - check Home Assistant logs for addon discovery details"
+                # Enhanced error message with addon list for debugging
+                try:
+                    session = self.hass.helpers.aiohttp_client.async_get_clientsession()
+                    url = "/api/hassio/addons"
+                    async with session.get(url) as resp:
+                        if resp.status == 200:
+                            result = await resp.json()
+                            addons = result.get("data", {}).get("addons", [])
+                            addon_names = [f"{a.get('name', 'Unknown')} ({a.get('slug', 'no-slug')})" for a in addons]
+                            return f"RTL_433 addon not found. Installed addons: {', '.join(addon_names)}"
+                        return f"RTL_433 addon not found (API returned HTTP {resp.status})"
+                except Exception:  # noqa: BLE001
+                    pass
+                return "RTL_433 addon not found - check Home Assistant logs"
             
             session = self.hass.helpers.aiohttp_client.async_get_clientsession()
             url = f"/api/hassio/addons/{slug}/logs"
