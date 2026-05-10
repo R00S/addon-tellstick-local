@@ -2871,9 +2871,9 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                             addon_names = [f"{a.get('name', 'Unknown')} ({a.get('slug', 'no-slug')})" for a in addons]
                             return f"RTL_433 addon not found. Installed addons: {', '.join(addon_names)}"
                         return f"RTL_433 addon not found (API returned HTTP {resp.status})"
-                except Exception:  # noqa: BLE001
-                    pass
-                return "RTL_433 addon not found - check Home Assistant logs"
+                except Exception as e:  # noqa: BLE001
+                    _LOGGER.warning(f"Failed to get addon list for error message: {e}", exc_info=True)
+                    return f"RTL_433 addon not found - check Home Assistant logs (failed to get addon list: {e})"
             
             session = self.hass.helpers.aiohttp_client.async_get_clientsession()
             url = f"/api/hassio/addons/{slug}/logs"
