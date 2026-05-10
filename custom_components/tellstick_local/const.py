@@ -1516,7 +1516,13 @@ def convert_flex_decoder_params(decoder_params: str) -> list[int] | None:
         s = int(params.get('s', 0))  # short pulse
         l = int(params.get('l', 0))  # long pulse
         r = int(params.get('r', 0))  # reset/sync
-        g = int(params.get('g', l))  # gap (default to long if not specified)
+        # Gap: default to long if not specified OR if specified as 0
+        # rtl_433 uses g=0 to mean "auto-detect gap", which we treat as "use long pulse"
+        g_raw = params.get('g', None)
+        if g_raw is None or g_raw == '0':
+            g = l
+        else:
+            g = int(g_raw)
         y = int(params.get('y', 0))  # preamble/sync pulse
     except (ValueError, TypeError):
         return None
