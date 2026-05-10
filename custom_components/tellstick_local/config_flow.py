@@ -24,6 +24,7 @@ from homeassistant.helpers import (
     device_registry as dr,
     entity_registry as er,
 )
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 if TYPE_CHECKING:
@@ -2800,7 +2801,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             return self._rtl433_addon_slug_cache
         
         try:
-            session = self.hass.helpers.aiohttp_client.async_get_clientsession()
+            session = async_get_clientsession(self.hass)
             # Query supervisor for list of installed addons
             url = "/api/hassio/addons"
             async with session.get(url) as resp:
@@ -2843,7 +2844,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 _LOGGER.debug("RTL_433 addon not found, cannot get log position")
                 return 0
             
-            session = self.hass.helpers.aiohttp_client.async_get_clientsession()
+            session = async_get_clientsession(self.hass)
             url = f"/api/hassio/addons/{slug}/logs"
             async with session.get(url) as resp:
                 if resp.status == 200:
@@ -2862,7 +2863,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             if slug is None:
                 # Enhanced error message with addon list for debugging
                 try:
-                    session = self.hass.helpers.aiohttp_client.async_get_clientsession()
+                    session = async_get_clientsession(self.hass)
                     url = "/api/hassio/addons"
                     async with session.get(url) as resp:
                         if resp.status == 200:
@@ -2875,7 +2876,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                     _LOGGER.warning(f"Failed to get addon list for error message: {e}", exc_info=True)
                     return f"RTL_433 addon not found - check Home Assistant logs (failed to get addon list: {e})"
             
-            session = self.hass.helpers.aiohttp_client.async_get_clientsession()
+            session = async_get_clientsession(self.hass)
             url = f"/api/hassio/addons/{slug}/logs"
             async with session.get(url) as resp:
                 if resp.status == 200:
@@ -2902,7 +2903,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 _LOGGER.debug("RTL_433 addon not found, cannot check logs")
                 return None
             
-            session = self.hass.helpers.aiohttp_client.async_get_clientsession()
+            session = async_get_clientsession(self.hass)
             url = f"/api/hassio/addons/{slug}/logs"
             async with session.get(url) as resp:
                 if resp.status != 200:
