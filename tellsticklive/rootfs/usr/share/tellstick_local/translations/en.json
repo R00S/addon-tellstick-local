@@ -347,7 +347,7 @@
       "error": {
         "invalid_code": "Parameter values must not be empty.",
         "teach_failed": "Failed to send pairing signal. Check that the TellStick app is running.",
-        "no_signal": "No signal captured — make sure rtl_433 add-on is running and press the remote button again."
+        "no_signal": "No signal captured — make sure rtl_433 add-on is running and press the remote button again.\n\n**Last rtl_433 log line:** `{last_rtl433_log}`"
       },
       "abort": {
         "device_added": "Device paired successfully! It will appear in your device list shortly.",

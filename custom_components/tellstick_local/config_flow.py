@@ -2711,11 +2711,15 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 return await self.async_step_generic_rf_confirm_on()
             
             # No signal yet (neither MQTT nor logs) — re-show with error
+            last_log_line = await self._get_rtl433_last_log_line()
             return self.async_show_form(
                 step_id="generic_rf_listen_on",
                 errors={"base": "no_signal"},
                 data_schema=vol.Schema({}),
-                description_placeholders={"name": self._generic_rf_name},
+                description_placeholders={
+                    "name": self._generic_rf_name,
+                    "last_rtl433_log": last_log_line,
+                },
             )
 
         return self.async_show_form(
@@ -2840,6 +2844,30 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         except Exception:  # noqa: BLE001
             _LOGGER.debug("Failed to get rtl_433 log position (non-fatal)", exc_info=True)
         return 0
+    
+    async def _get_rtl433_last_log_line(self) -> str:
+        """Get the last non-empty line from rtl_433 logs for debug purposes."""
+        try:
+            # Discover the actual addon slug (may have prefix from custom repo)
+            slug = await self._discover_rtl433_addon_slug()
+            if slug is None:
+                return "RTL_433 addon not found"
+            
+            session = self.hass.helpers.aiohttp_client.async_get_clientsession()
+            url = f"/api/hassio/addons/{slug}/logs"
+            async with session.get(url) as resp:
+                if resp.status == 200:
+                    result = await resp.json()
+                    logs = result.get("data", "")
+                    # Get the last non-empty line
+                    lines = [line.strip() for line in logs.strip().split('\n') if line.strip()]
+                    if lines:
+                        return lines[-1]
+                    return "No logs available"
+                return f"Failed to fetch logs (HTTP {resp.status})"
+        except Exception as e:  # noqa: BLE001
+            _LOGGER.debug("Failed to get rtl_433 last log line", exc_info=True)
+            return f"Error: {str(e)}"
     
     async def _check_rtl433_logs_for_signal(self) -> dict[str, Any] | None:
         """Check rtl_433 logs for new unknown signals since capture started."""
@@ -3002,11 +3030,15 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                     return await self.async_step_generic_rf_dim_choice()
                 # For switches, save now
                 return await self._async_save_generic_rf_device()
+            last_log_line = await self._get_rtl433_last_log_line()
             return self.async_show_form(
                 step_id="generic_rf_listen_off",
                 errors={"base": "no_signal"},
                 data_schema=vol.Schema({}),
-                description_placeholders={"name": self._generic_rf_name},
+                description_placeholders={
+                    "name": self._generic_rf_name,
+                    "last_rtl433_log": last_log_line,
+                },
             )
 
         return self.async_show_form(
@@ -3087,6 +3119,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 # Ask if they want to record another level
                 return await self.async_step_generic_rf_dim_choice()
             
+            last_log_line = await self._get_rtl433_last_log_line()
             return self.async_show_form(
                 step_id="generic_rf_listen_dim",
                 errors={"base": "no_signal"},
@@ -3094,6 +3127,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 description_placeholders={
                     "name": self._generic_rf_name,
                     "dim_level": str(getattr(self, "_generic_rf_current_dim_level", 50)),
+                    "last_rtl433_log": last_log_line,
                 },
             )
 
@@ -3118,11 +3152,15 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             if self._generic_rf_captured is not None:
                 self._generic_rf_timings_up = self._generic_rf_captured.get("timings")
                 return await self.async_step_generic_rf_confirm_up()
+            last_log_line = await self._get_rtl433_last_log_line()
             return self.async_show_form(
                 step_id="generic_rf_listen_up",
                 errors={"base": "no_signal"},
                 data_schema=vol.Schema({}),
-                description_placeholders={"name": self._generic_rf_name},
+                description_placeholders={
+                    "name": self._generic_rf_name,
+                    "last_rtl433_log": last_log_line,
+                },
             )
 
         return self.async_show_form(
@@ -3171,11 +3209,15 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             if self._generic_rf_captured is not None:
                 self._generic_rf_timings_down = self._generic_rf_captured.get("timings")
                 return await self.async_step_generic_rf_confirm_down()
+            last_log_line = await self._get_rtl433_last_log_line()
             return self.async_show_form(
                 step_id="generic_rf_listen_down",
                 errors={"base": "no_signal"},
                 data_schema=vol.Schema({}),
-                description_placeholders={"name": self._generic_rf_name},
+                description_placeholders={
+                    "name": self._generic_rf_name,
+                    "last_rtl433_log": last_log_line,
+                },
             )
 
         return self.async_show_form(
@@ -3228,11 +3270,15 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             if self._generic_rf_captured is not None:
                 self._generic_rf_timings_stop = self._generic_rf_captured.get("timings")
                 return await self._async_save_generic_rf_device()
+            last_log_line = await self._get_rtl433_last_log_line()
             return self.async_show_form(
                 step_id="generic_rf_listen_stop",
                 errors={"base": "no_signal"},
                 data_schema=vol.Schema({}),
-                description_placeholders={"name": self._generic_rf_name},
+                description_placeholders={
+                    "name": self._generic_rf_name,
+                    "last_rtl433_log": last_log_line,
+                },
             )
 
         return self.async_show_form(
