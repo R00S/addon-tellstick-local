@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import secrets
 from typing import TYPE_CHECKING, Any
 
@@ -2788,6 +2789,11 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         except Exception:  # noqa: BLE001
             _LOGGER.warning("Generic RF listen: failed to subscribe to MQTT", exc_info=True)
     
+    def _supervisor_headers(self) -> dict[str, str]:
+        """Return HTTP headers for Supervisor API requests."""
+        token = os.environ.get("SUPERVISOR_TOKEN", "")
+        return {"Authorization": f"Bearer {token}"}
+
     async def _discover_rtl433_addon_slug(self) -> str | None:
         """Discover the actual RTL_433 addon slug.
         
@@ -2802,9 +2808,9 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         
         try:
             session = async_get_clientsession(self.hass)
-            # Query supervisor for list of installed addons
-            url = "/api/hassio/addons"
-            async with session.get(url) as resp:
+            # Query supervisor for list of installed addons using absolute URL + auth token
+            url = "http://supervisor/addons"
+            async with session.get(url, headers=self._supervisor_headers()) as resp:
                 if resp.status != 200:
                     _LOGGER.warning(f"Failed to query addon list: HTTP {resp.status}")
                     return None
@@ -2845,11 +2851,11 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 return 0
             
             session = async_get_clientsession(self.hass)
-            url = f"/api/hassio/addons/{slug}/logs"
-            async with session.get(url) as resp:
+            # Supervisor logs endpoint returns plain text, not JSON
+            url = f"http://supervisor/addons/{slug}/logs"
+            async with session.get(url, headers=self._supervisor_headers()) as resp:
                 if resp.status == 200:
-                    result = await resp.json()
-                    logs = result.get("data", "")
+                    logs = await resp.text()
                     return len(logs)
         except Exception:  # noqa: BLE001
             _LOGGER.debug("Failed to get rtl_433 log position (non-fatal)", exc_info=True)
@@ -2861,27 +2867,14 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             # Discover the actual addon slug (may have prefix from custom repo)
             slug = await self._discover_rtl433_addon_slug()
             if slug is None:
-                # Enhanced error message with addon list for debugging
-                try:
-                    session = async_get_clientsession(self.hass)
-                    url = "/api/hassio/addons"
-                    async with session.get(url) as resp:
-                        if resp.status == 200:
-                            result = await resp.json()
-                            addons = result.get("data", {}).get("addons", [])
-                            addon_names = [f"{a.get('name', 'Unknown')} ({a.get('slug', 'no-slug')})" for a in addons]
-                            return f"RTL_433 addon not found. Installed addons: {', '.join(addon_names)}"
-                        return f"RTL_433 addon not found (API returned HTTP {resp.status})"
-                except Exception as e:  # noqa: BLE001
-                    _LOGGER.warning(f"Failed to get addon list for error message: {e}", exc_info=True)
-                    return f"RTL_433 addon not found - check Home Assistant logs (failed to get addon list: {e})"
+                return "RTL_433 addon not found - check Home Assistant logs"
             
             session = async_get_clientsession(self.hass)
-            url = f"/api/hassio/addons/{slug}/logs"
-            async with session.get(url) as resp:
+            # Supervisor logs endpoint returns plain text, not JSON
+            url = f"http://supervisor/addons/{slug}/logs"
+            async with session.get(url, headers=self._supervisor_headers()) as resp:
                 if resp.status == 200:
-                    result = await resp.json()
-                    logs = result.get("data", "")
+                    logs = await resp.text()
                     # Get the last non-empty line
                     lines = [line.strip() for line in logs.strip().split('\n') if line.strip()]
                     if lines:
@@ -2904,13 +2897,13 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 return None
             
             session = async_get_clientsession(self.hass)
-            url = f"/api/hassio/addons/{slug}/logs"
-            async with session.get(url) as resp:
+            # Supervisor logs endpoint returns plain text, not JSON
+            url = f"http://supervisor/addons/{slug}/logs"
+            async with session.get(url, headers=self._supervisor_headers()) as resp:
                 if resp.status != 200:
                     return None
                 
-                result = await resp.json()
-                logs = result.get("data", "")
+                logs = await resp.text()
                 
                 # Only check new log content
                 start_pos = getattr(self, "_generic_rf_log_position", 0)

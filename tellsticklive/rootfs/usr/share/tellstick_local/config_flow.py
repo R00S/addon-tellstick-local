@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import secrets
 from typing import TYPE_CHECKING, Any
 
@@ -78,7 +79,6 @@ from .const import (
     PROTOCOL_NATIVE_MAP,
     PROTOCOL_RAW_LABELS,
     PROTOCOL_RAW_MAP,
-    RTL433_ADDON_SLUG,
     SENSOR_TYPE_NAMES,
     SIGNAL_NEW_DEVICE,
     WIDGET_PARAMS,
@@ -2629,6 +2629,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
     _generic_rf_listen_unsub: Any = None
     _generic_rf_captured: dict | None = None
     _generic_rf_repeat_count: int = 10
+    _rtl433_addon_slug_cache: str | None = None
 
     async def async_step_generic_rf(
         self, user_input: dict[str, Any] | None = None
@@ -2709,18 +2710,25 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 self._generic_rf_timings_on = log_signal.get("timings")
                 return await self.async_step_generic_rf_confirm_on()
             
-            # No signal yet (neither MQTT nor logs) — re-show with error
+            # No signal yet (neither MQTT nor logs) — re-show with error and debug info
+            last_log_line = await self._get_rtl433_last_log_line()
             return self.async_show_form(
                 step_id="generic_rf_listen_on",
                 errors={"base": "no_signal"},
                 data_schema=vol.Schema({}),
-                description_placeholders={"name": self._generic_rf_name},
+                description_placeholders={
+                    "name": self._generic_rf_name,
+                    "debug_info": f"**Debug:** Last rtl_433 log line: `{last_log_line}`",
+                },
             )
 
         return self.async_show_form(
             step_id="generic_rf_listen_on",
             data_schema=vol.Schema({}),
-            description_placeholders={"name": self._generic_rf_name},
+            description_placeholders={
+                "name": self._generic_rf_name,
+                "debug_info": "",
+            },
         )
 
     async def _start_generic_rf_listen(self) -> None:
@@ -2779,33 +2787,109 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         except Exception:  # noqa: BLE001
             _LOGGER.warning("Generic RF listen: failed to subscribe to MQTT", exc_info=True)
     
+    def _supervisor_headers(self) -> dict[str, str]:
+        """Return HTTP headers for Supervisor API requests."""
+        token = os.environ.get("SUPERVISOR_TOKEN", "")
+        return {"Authorization": f"Bearer {token}"}
+
+    async def _discover_rtl433_addon_slug(self) -> str | None:
+        """Discover the actual RTL_433 addon slug.
+
+        The slug may have a prefix when installed from custom repositories
+        (e.g., 'e9305338-rtl_433' instead of 'rtl_433').
+
+        Returns the discovered slug or None if addon is not found/installed.
+        """
+        if self._rtl433_addon_slug_cache is not None:
+            return self._rtl433_addon_slug_cache
+
+        try:
+            session = async_get_clientsession(self.hass)
+            url = "http://supervisor/addons"
+            async with session.get(url, headers=self._supervisor_headers()) as resp:
+                if resp.status != 200:
+                    _LOGGER.warning(f"Failed to query addon list: HTTP {resp.status}")
+                    return None
+
+                result = await resp.json()
+                addons = result.get("data", {}).get("addons", [])
+
+                addon_list = [(a.get("slug", ""), a.get("name", "")) for a in addons]
+                _LOGGER.debug(f"Installed addons: {addon_list}")
+
+                for addon in addons:
+                    slug = addon.get("slug", "")
+                    name = addon.get("name", "").lower()
+                    if slug.endswith("rtl_433") or "rtl" in name:
+                        _LOGGER.info(f"Discovered RTL_433 addon with slug: {slug}, name: {addon.get('name')}")
+                        self._rtl433_addon_slug_cache = slug
+                        return slug
+
+                _LOGGER.warning(f"RTL_433 addon not found in {len(addons)} installed addons. Installed: {addon_list}")
+                return None
+        except Exception:  # noqa: BLE001
+            _LOGGER.warning("Failed to discover RTL_433 addon slug", exc_info=True)
+            return None
+
     async def _get_rtl433_log_position(self) -> int:
         """Get the current position in rtl_433 logs."""
         try:
+            slug = await self._discover_rtl433_addon_slug()
+            if slug is None:
+                _LOGGER.debug("RTL_433 addon not found, cannot get log position")
+                return 0
+
             session = async_get_clientsession(self.hass)
-            url = f"/api/hassio/addons/{RTL433_ADDON_SLUG}/logs"
-            async with session.get(url) as resp:
+            # Supervisor logs endpoint returns plain text, not JSON
+            url = f"http://supervisor/addons/{slug}/logs"
+            async with session.get(url, headers=self._supervisor_headers()) as resp:
                 if resp.status == 200:
-                    result = await resp.json()
-                    logs = result.get("data", "")
+                    logs = await resp.text()
                     return len(logs)
         except Exception:  # noqa: BLE001
             _LOGGER.debug("Failed to get rtl_433 log position (non-fatal)", exc_info=True)
         return 0
-    
+
+    async def _get_rtl433_last_log_line(self) -> str:
+        """Get the last non-empty line from rtl_433 logs for debug purposes."""
+        try:
+            slug = await self._discover_rtl433_addon_slug()
+            if slug is None:
+                return "RTL_433 addon not found - check Home Assistant logs"
+
+            session = async_get_clientsession(self.hass)
+            # Supervisor logs endpoint returns plain text, not JSON
+            url = f"http://supervisor/addons/{slug}/logs"
+            async with session.get(url, headers=self._supervisor_headers()) as resp:
+                if resp.status == 200:
+                    logs = await resp.text()
+                    lines = [line.strip() for line in logs.strip().split('\n') if line.strip()]
+                    if lines:
+                        return lines[-1]
+                    return "No logs available"
+                return f"Failed to fetch logs (HTTP {resp.status})"
+        except Exception as e:  # noqa: BLE001
+            _LOGGER.warning("Failed to get rtl_433 last log line", exc_info=True)
+            return f"Error: {str(e)}"
+
     async def _check_rtl433_logs_for_signal(self) -> dict[str, Any] | None:
         """Check rtl_433 logs for new unknown signals since capture started."""
         import re  # noqa: PLC0415
-        
+
         try:
+            slug = await self._discover_rtl433_addon_slug()
+            if slug is None:
+                _LOGGER.debug("RTL_433 addon not found, cannot check logs")
+                return None
+
             session = async_get_clientsession(self.hass)
-            url = f"/api/hassio/addons/{RTL433_ADDON_SLUG}/logs"
-            async with session.get(url) as resp:
+            # Supervisor logs endpoint returns plain text, not JSON
+            url = f"http://supervisor/addons/{slug}/logs"
+            async with session.get(url, headers=self._supervisor_headers()) as resp:
                 if resp.status != 200:
                     return None
-                
-                result = await resp.json()
-                logs = result.get("data", "")
+
+                logs = await resp.text()
                 
                 # Only check new log content
                 start_pos = getattr(self, "_generic_rf_log_position", 0)
@@ -2813,7 +2897,13 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                     return None
                 
                 new_logs = logs[start_pos:]
-                
+
+                # Log what we're examining for debugging (before pattern matching)
+                sample = new_logs[:500] if len(new_logs) > 500 else new_logs
+                _LOGGER.debug(f"New rtl_433 log sample: {sample}")
+                last_row = new_logs.strip().split('\n')[-1] if new_logs.strip() else ""
+                _LOGGER.debug(f"Last row of rtl_433 logs: {last_row}")
+
                 # Parse for decoder suggestions or pulse data
                 pattern_decoder = re.compile(r"Use a flex decoder with -X '([^']+)'")
                 pattern_view_url = re.compile(r"view at (https://triq\.org/pdv/#[^\s]+)")
@@ -2871,9 +2961,6 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                     }
                 else:
                     _LOGGER.debug("No pulse/gap width distribution found in rtl_433 logs")
-                    # Log a sample of the new logs for debugging (first 500 chars)
-                    sample = new_logs[:500] if len(new_logs) > 500 else new_logs
-                    _LOGGER.debug(f"New rtl_433 log sample: {sample}")
         
         except Exception:  # noqa: BLE001
             _LOGGER.debug("Failed to check rtl_433 logs (non-fatal)", exc_info=True)
