@@ -328,7 +328,7 @@
         },
         "generic_rf_listen_on": {
           "title": "Record ON signal",
-          "description": "Press the **ON button** on your remote now.\n\nThe rtl_433 add-on will capture the raw pulse timings. Click **Check** after pressing the button.",
+          "description": "Press the **ON button** on your remote now.\n\nThe rtl_433 add-on will capture the raw pulse timings. Click **Check** after pressing the button.\n\n{debug_info}",
           "data": {}
         },
         "generic_rf_confirm_on": {
@@ -340,14 +340,14 @@
         },
         "generic_rf_listen_off": {
           "title": "Record OFF signal",
-          "description": "Press the **OFF button** on your remote now.\n\nClick **Check** after pressing the button.",
+          "description": "Press the **OFF button** on your remote now.\n\nClick **Check** after pressing the button.\n\n{debug_info}",
           "data": {}
         }
       },
       "error": {
         "invalid_code": "Parameter values must not be empty.",
         "teach_failed": "Failed to send pairing signal. Check that the TellStick app is running.",
-        "no_signal": "No signal captured — make sure rtl_433 add-on is running and press the remote button again.\n\n**Last rtl_433 log line:** `{last_rtl433_log}`"
+        "no_signal": "No signal captured — make sure rtl_433 add-on is running and press the remote button again."
       },
       "abort": {
         "device_added": "Device paired successfully! It will appear in your device list shortly.",

@@ -2710,7 +2710,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 self._generic_rf_timings_on = log_signal.get("timings")
                 return await self.async_step_generic_rf_confirm_on()
             
-            # No signal yet (neither MQTT nor logs) — re-show with error
+            # No signal yet (neither MQTT nor logs) — re-show with error and debug info
             last_log_line = await self._get_rtl433_last_log_line()
             return self.async_show_form(
                 step_id="generic_rf_listen_on",
@@ -2718,14 +2718,17 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 data_schema=vol.Schema({}),
                 description_placeholders={
                     "name": self._generic_rf_name,
-                    "last_rtl433_log": last_log_line,
+                    "debug_info": f"**Debug:** Last rtl_433 log line: `{last_log_line}`",
                 },
             )
 
         return self.async_show_form(
             step_id="generic_rf_listen_on",
             data_schema=vol.Schema({}),
-            description_placeholders={"name": self._generic_rf_name},
+            description_placeholders={
+                "name": self._generic_rf_name,
+                "debug_info": "",
+            },
         )
 
     async def _start_generic_rf_listen(self) -> None:
@@ -3037,14 +3040,17 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 data_schema=vol.Schema({}),
                 description_placeholders={
                     "name": self._generic_rf_name,
-                    "last_rtl433_log": last_log_line,
+                    "debug_info": f"**Debug:** Last rtl_433 log line: `{last_log_line}`",
                 },
             )
 
         return self.async_show_form(
             step_id="generic_rf_listen_off",
             data_schema=vol.Schema({}),
-            description_placeholders={"name": self._generic_rf_name},
+            description_placeholders={
+                "name": self._generic_rf_name,
+                "debug_info": "",
+            },
         )
 
     async def async_step_generic_rf_dim_choice(
@@ -3159,14 +3165,17 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 data_schema=vol.Schema({}),
                 description_placeholders={
                     "name": self._generic_rf_name,
-                    "last_rtl433_log": last_log_line,
+                    "debug_info": f"**Debug:** Last rtl_433 log line: `{last_log_line}`",
                 },
             )
 
         return self.async_show_form(
             step_id="generic_rf_listen_up",
             data_schema=vol.Schema({}),
-            description_placeholders={"name": self._generic_rf_name},
+            description_placeholders={
+                "name": self._generic_rf_name,
+                "debug_info": "",
+            },
         )
 
     async def async_step_generic_rf_confirm_up(
@@ -3216,14 +3225,17 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 data_schema=vol.Schema({}),
                 description_placeholders={
                     "name": self._generic_rf_name,
-                    "last_rtl433_log": last_log_line,
+                    "debug_info": f"**Debug:** Last rtl_433 log line: `{last_log_line}`",
                 },
             )
 
         return self.async_show_form(
             step_id="generic_rf_listen_down",
             data_schema=vol.Schema({}),
-            description_placeholders={"name": self._generic_rf_name},
+            description_placeholders={
+                "name": self._generic_rf_name,
+                "debug_info": "",
+            },
         )
 
     async def async_step_generic_rf_confirm_down(
@@ -3277,14 +3289,17 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 data_schema=vol.Schema({}),
                 description_placeholders={
                     "name": self._generic_rf_name,
-                    "last_rtl433_log": last_log_line,
+                    "debug_info": f"**Debug:** Last rtl_433 log line: `{last_log_line}`",
                 },
             )
 
         return self.async_show_form(
             step_id="generic_rf_listen_stop",
             data_schema=vol.Schema({}),
-            description_placeholders={"name": self._generic_rf_name},
+            description_placeholders={
+                "name": self._generic_rf_name,
+                "debug_info": "",
+            },
         )
 
     async def _async_save_generic_rf_device(self) -> SubentryFlowResult:
