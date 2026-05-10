@@ -2805,27 +2805,33 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             url = "/api/hassio/addons"
             async with session.get(url) as resp:
                 if resp.status != 200:
-                    _LOGGER.debug(f"Failed to query addon list: HTTP {resp.status}")
+                    _LOGGER.warning(f"Failed to query addon list: HTTP {resp.status}")
                     return None
                 
                 result = await resp.json()
                 addons = result.get("data", {}).get("addons", [])
+                
+                # Log all installed addons for debugging
+                addon_list = [(a.get("slug", ""), a.get("name", "")) for a in addons]
+                _LOGGER.debug(f"Installed addons: {addon_list}")
                 
                 # Search for rtl_433 addon by name or slug
                 for addon in addons:
                     slug = addon.get("slug", "")
                     name = addon.get("name", "").lower()
                     
+                    _LOGGER.debug(f"Checking addon: slug={slug}, name={name}")
+                    
                     # Match if slug ends with 'rtl_433' (handles prefix) or name contains 'rtl'
                     if slug.endswith("rtl_433") or "rtl" in name:
-                        _LOGGER.debug(f"Discovered RTL_433 addon with slug: {slug}")
+                        _LOGGER.info(f"Discovered RTL_433 addon with slug: {slug}, name: {addon.get('name')}")
                         self._rtl433_addon_slug_cache = slug
                         return slug
                 
-                _LOGGER.debug("RTL_433 addon not found in installed addons")
+                _LOGGER.warning(f"RTL_433 addon not found in {len(addons)} installed addons. Installed addons: {addon_list}")
                 return None
         except Exception:  # noqa: BLE001
-            _LOGGER.debug("Failed to discover RTL_433 addon slug", exc_info=True)
+            _LOGGER.warning("Failed to discover RTL_433 addon slug", exc_info=True)
             return None
     
     async def _get_rtl433_log_position(self) -> int:
@@ -2854,7 +2860,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             # Discover the actual addon slug (may have prefix from custom repo)
             slug = await self._discover_rtl433_addon_slug()
             if slug is None:
-                return "RTL_433 addon not found"
+                return "RTL_433 addon not found - check Home Assistant logs for addon discovery details"
             
             session = self.hass.helpers.aiohttp_client.async_get_clientsession()
             url = f"/api/hassio/addons/{slug}/logs"
@@ -2869,7 +2875,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                     return "No logs available"
                 return f"Failed to fetch logs (HTTP {resp.status})"
         except Exception as e:  # noqa: BLE001
-            _LOGGER.debug("Failed to get rtl_433 last log line", exc_info=True)
+            _LOGGER.warning("Failed to get rtl_433 last log line", exc_info=True)
             return f"Error: {str(e)}"
     
     async def _check_rtl433_logs_for_signal(self) -> dict[str, Any] | None:
