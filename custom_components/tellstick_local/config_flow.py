@@ -2825,7 +2825,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             url = "http://supervisor/addons"
             async with session.get(url, headers=self._supervisor_headers()) as resp:
                 if resp.status != 200:
-                    _LOGGER.warning(f"Failed to query addon list: HTTP {resp.status}")
+                    _LOGGER.warning("Failed to query addon list: HTTP %s", resp.status)
                     return None
                 
                 result = await resp.json()
