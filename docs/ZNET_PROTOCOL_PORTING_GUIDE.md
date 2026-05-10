@@ -113,9 +113,8 @@ The only reliable approach for each version is:
 | Protocol       | Net/ZNet TX Status | Method Used                                    | Source                                         |
 | -------------- | ----------------- | ---------------------------------------------- | ---------------------------------------------- |
 | `arctech`      | ✅ Working        | Native dict (on/off/learn); DIM→full brightness via TURNON+selflearning-dimmer model. **Confirmed:** raw S-only packets (no `protocol` key) silently dropped — `handleSend()` raises `KeyError('protocol')` before RF chip is reached. | `tellstick-server/ProtocolArctech.py` |
+| `comen`        | ✅ Working        | Native dict via arctech with house shift transformation: `(house << 2) + 2` | `tellstick-server/ProtocolComen.py`¹           |
 | `everflourish` | 🔬 Testing²       | Native dict variants (ef_n*); raw S-only variants have no proven success | `tellstick-server/ProtocolEverflourish.py` |
-| `brateck`      | ❌ **Needs port** | Falls through to generic dict (BROKEN) | `tellstick-server/ProtocolBrateck.py`          |
-| `comen`        | ❌ **Needs port** | Falls through to generic dict (BROKEN) | `tellstick-server/ProtocolComen.py`¹           |
 | `fuhaote`      | ❌ **Needs port** | Falls through to generic dict (BROKEN) | `tellstick-server/ProtocolFuhaote.py`          |
 | `hasta`        | ❌ **Needs port** | Falls through to generic dict (BROKEN) | `tellstick-server/ProtocolHasta.py`            |
 | `ikea`         | ❌ **Needs port** | Falls through to generic dict (BROKEN) | `tellstick-server/ProtocolIkea.py`             |
