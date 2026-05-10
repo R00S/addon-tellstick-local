@@ -79,7 +79,6 @@ from .const import (
     PROTOCOL_NATIVE_MAP,
     PROTOCOL_RAW_LABELS,
     PROTOCOL_RAW_MAP,
-    RTL433_ADDON_SLUG,
     SENSOR_TYPE_NAMES,
     SIGNAL_NEW_DEVICE,
     WIDGET_PARAMS,
@@ -2694,10 +2693,9 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         Also monitors rtl_433 add-on logs for unknown signals.
         User presses their remote, then clicks "Check signal" to proceed.
         """
-        # Start MQTT subscription on first entry (no user_input yet)
-        if self._generic_rf_listen_unsub is None:
-            self._generic_rf_captured = None
-            await self._start_generic_rf_listen()
+        # Start a fresh capture session whenever this listen step is entered.
+        if user_input is None:
+            await self._restart_generic_rf_listen()
 
         if user_input is not None:
             # User clicked submit — check if a signal was captured via MQTT
@@ -2788,6 +2786,21 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             _LOGGER.warning("Generic RF listen: MQTT integration not available")
         except Exception:  # noqa: BLE001
             _LOGGER.warning("Generic RF listen: failed to subscribe to MQTT", exc_info=True)
+
+    async def _restart_generic_rf_listen(self) -> None:
+        """Start a fresh Generic RF capture session for a new listen step."""
+        if self._generic_rf_listen_unsub is not None:
+            try:
+                self._generic_rf_listen_unsub()
+            except Exception:  # noqa: BLE001
+                _LOGGER.debug(
+                    "Error unsubscribing from previous rtl_433 MQTT listener (non-fatal)",
+                    exc_info=True,
+                )
+            self._generic_rf_listen_unsub = None
+
+        self._generic_rf_captured = None
+        await self._start_generic_rf_listen()
     
     def _supervisor_headers(self) -> dict[str, str]:
         """Return HTTP headers for Supervisor API requests."""
@@ -2951,7 +2964,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 match_view = pattern_view_url.search(new_logs)
                 if match_view:
                     url = match_view.group(1)
-                    _LOGGER.debug(f"Found triq.org visualization URL in rtl_433 logs")
+                    _LOGGER.debug("Found triq.org visualization URL in rtl_433 logs")
                     # Decode triq.org URL to extract timings
                     timings = decode_triq_url(url) or []
                     _LOGGER.debug(f"Decoded triq.org URL to {len(timings)} timings")
@@ -3034,9 +3047,8 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
         """Step: listen for the OFF signal from the remote."""
-        if self._generic_rf_listen_unsub is None:
-            self._generic_rf_captured = None
-            await self._start_generic_rf_listen()
+        if user_input is None:
+            await self._restart_generic_rf_listen()
 
         if user_input is not None:
             if self._generic_rf_captured is not None:
@@ -3131,9 +3143,8 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
         """Step: listen for a DIM level signal from the remote."""
-        if self._generic_rf_listen_unsub is None:
-            self._generic_rf_captured = None
-            await self._start_generic_rf_listen()
+        if user_input is None:
+            await self._restart_generic_rf_listen()
 
         if user_input is not None:
             if self._generic_rf_captured is not None:
@@ -3182,9 +3193,8 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
         """Step: listen for the UP signal from a cover/blind remote."""
-        if self._generic_rf_listen_unsub is None:
-            self._generic_rf_captured = None
-            await self._start_generic_rf_listen()
+        if user_input is None:
+            await self._restart_generic_rf_listen()
 
         if user_input is not None:
             if self._generic_rf_captured is not None:
@@ -3248,9 +3258,8 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
         """Step: listen for the DOWN signal from a cover/blind remote."""
-        if self._generic_rf_listen_unsub is None:
-            self._generic_rf_captured = None
-            await self._start_generic_rf_listen()
+        if user_input is None:
+            await self._restart_generic_rf_listen()
 
         if user_input is not None:
             if self._generic_rf_captured is not None:
@@ -3318,9 +3327,8 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
         """Step: listen for the STOP signal from a cover/blind remote."""
-        if self._generic_rf_listen_unsub is None:
-            self._generic_rf_captured = None
-            await self._start_generic_rf_listen()
+        if user_input is None:
+            await self._restart_generic_rf_listen()
 
         if user_input is not None:
             if self._generic_rf_captured is not None:
