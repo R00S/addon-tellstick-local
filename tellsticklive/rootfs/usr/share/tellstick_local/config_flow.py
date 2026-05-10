@@ -24,6 +24,7 @@ from homeassistant.helpers import (
     device_registry as dr,
     entity_registry as er,
 )
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 if TYPE_CHECKING:
@@ -2781,7 +2782,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
     async def _get_rtl433_log_position(self) -> int:
         """Get the current position in rtl_433 logs."""
         try:
-            session = self.hass.helpers.aiohttp_client.async_get_clientsession()
+            session = async_get_clientsession(self.hass)
             url = f"/api/hassio/addons/{RTL433_ADDON_SLUG}/logs"
             async with session.get(url) as resp:
                 if resp.status == 200:
@@ -2797,7 +2798,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         import re  # noqa: PLC0415
         
         try:
-            session = self.hass.helpers.aiohttp_client.async_get_clientsession()
+            session = async_get_clientsession(self.hass)
             url = f"/api/hassio/addons/{RTL433_ADDON_SLUG}/logs"
             async with session.get(url) as resp:
                 if resp.status != 200:
