@@ -328,7 +328,7 @@
         },
         "generic_rf_listen_on": {
           "title": "Record ON signal",
-          "description": "Press the **ON button** on your remote now.\n\nThe rtl_433 add-on will capture the raw pulse timings. Click **Check** after pressing the button.",
+          "description": "Press the **ON button** on your remote now.\n\nThe rtl_433 add-on will capture the raw pulse timings. Click **Check** after pressing the button.\n\n{debug_info}",
           "data": {}
         },
         "generic_rf_confirm_on": {
@@ -340,14 +340,67 @@
         },
         "generic_rf_listen_off": {
           "title": "Record OFF signal",
-          "description": "Press the **OFF button** on your remote now.\n\nClick **Check** after pressing the button.",
+          "description": "Press the **OFF button** on your remote now.\n\nClick **Check** after pressing the button.\n\n{debug_info}",
+          "data": {}
+        },
+        "generic_rf_confirm_on_light": {
+          "title": "ON signal captured",
+          "description": "Signal captured from **{model}** ({timings_count} timings).\n\nDo you want to record a separate OFF signal and/or dim levels? If not, the ON signal will be used for all states.",
+          "data": {
+            "record_off": "Record a separate OFF signal"
+          }
+        },
+        "generic_rf_dim_choice": {
+          "title": "Dim levels",
+          "description": "Do you want to record specific dim level signals for **{name}**?\n\nThis lets you dim the device to preset levels.",
+          "data": {
+            "record_dim": "Record dim level signals"
+          }
+        },
+        "generic_rf_dim_level_select": {
+          "title": "Select dim level",
+          "description": "Which dim level do you want to record next for **{name}**?\n\nAlready recorded: {recorded}",
+          "data": {
+            "dim_level": "Dim level"
+          }
+        },
+        "generic_rf_listen_dim": {
+          "title": "Record {dim_level}% dim signal",
+          "description": "Set your device to {dim_level}% brightness and press the remote button now.\n\nClick **Check** after pressing the button.\n\n{debug_info}",
+          "data": {}
+        },
+        "generic_rf_listen_up": {
+          "title": "Record UP signal",
+          "description": "Press the **UP button** on your cover/blind remote now.\n\nThe rtl_433 add-on will capture the raw pulse timings. Click **Check** after pressing the button.\n\n{debug_info}",
+          "data": {}
+        },
+        "generic_rf_confirm_up": {
+          "title": "UP signal captured",
+          "description": "UP signal captured from **{model}** ({timings_count} timings).\n\nNow record the DOWN signal.",
+          "data": {}
+        },
+        "generic_rf_listen_down": {
+          "title": "Record DOWN signal",
+          "description": "Press the **DOWN button** on your cover/blind remote now.\n\nClick **Check** after pressing the button.\n\n{debug_info}",
+          "data": {}
+        },
+        "generic_rf_confirm_down": {
+          "title": "DOWN signal captured",
+          "description": "DOWN signal captured from **{model}** ({timings_count} timings).\n\nOptionally record a STOP signal.",
+          "data": {
+            "record_stop": "Record a STOP signal"
+          }
+        },
+        "generic_rf_listen_stop": {
+          "title": "Record STOP signal",
+          "description": "Press the **STOP button** on your cover/blind remote now.\n\nClick **Check** after pressing the button.\n\n{debug_info}",
           "data": {}
         }
       },
       "error": {
         "invalid_code": "Parameter values must not be empty.",
         "teach_failed": "Failed to send pairing signal. Check that the TellStick app is running.",
-        "no_signal": "No signal captured — make sure rtl_433 add-on is running and press the remote button again.\n\n**Last rtl_433 log line:** `{last_rtl433_log}`"
+        "no_signal": "No signal captured — make sure rtl_433 add-on is running and press the remote button again."
       },
       "abort": {
         "device_added": "Device paired successfully! It will appear in your device list shortly.",

@@ -3046,6 +3046,14 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                     return await self.async_step_generic_rf_dim_choice()
                 # For switches, save now
                 return await self._async_save_generic_rf_device()
+            # No MQTT signal — check logs for unknown signals (same fallback as ON)
+            log_signal = await self._check_rtl433_logs_for_signal()
+            if log_signal is not None:
+                self._generic_rf_captured = log_signal
+                self._generic_rf_timings_off = log_signal.get("timings")
+                if self._generic_rf_device_type == GENERIC_RF_TYPE_LIGHT:
+                    return await self.async_step_generic_rf_dim_choice()
+                return await self._async_save_generic_rf_device()
             last_log_line = await self._get_rtl433_last_log_line()
             return self.async_show_form(
                 step_id="generic_rf_listen_off",
@@ -3134,10 +3142,20 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                     # Store this dim level
                     dim_level = getattr(self, "_generic_rf_current_dim_level", 50)
                     self._generic_rf_timings_dim_levels[dim_level] = timings
-                
+
                 # Ask if they want to record another level
                 return await self.async_step_generic_rf_dim_choice()
-            
+
+            # No MQTT signal — check logs for unknown signals
+            log_signal = await self._check_rtl433_logs_for_signal()
+            if log_signal is not None:
+                self._generic_rf_captured = log_signal
+                timings = log_signal.get("timings")
+                if timings:
+                    dim_level = getattr(self, "_generic_rf_current_dim_level", 50)
+                    self._generic_rf_timings_dim_levels[dim_level] = timings
+                return await self.async_step_generic_rf_dim_choice()
+
             last_log_line = await self._get_rtl433_last_log_line()
             return self.async_show_form(
                 step_id="generic_rf_listen_dim",
@@ -3146,7 +3164,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 description_placeholders={
                     "name": self._generic_rf_name,
                     "dim_level": str(getattr(self, "_generic_rf_current_dim_level", 50)),
-                    "last_rtl433_log": last_log_line,
+                    "debug_info": f"**Debug:** Last rtl_433 log line: `{last_log_line}`",
                 },
             )
 
@@ -3156,6 +3174,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             description_placeholders={
                 "name": self._generic_rf_name,
                 "dim_level": str(getattr(self, "_generic_rf_current_dim_level", 50)),
+                "debug_info": "",
             },
         )
 
@@ -3170,6 +3189,12 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         if user_input is not None:
             if self._generic_rf_captured is not None:
                 self._generic_rf_timings_up = self._generic_rf_captured.get("timings")
+                return await self.async_step_generic_rf_confirm_up()
+            # No MQTT signal — check logs for unknown signals
+            log_signal = await self._check_rtl433_logs_for_signal()
+            if log_signal is not None:
+                self._generic_rf_captured = log_signal
+                self._generic_rf_timings_up = log_signal.get("timings")
                 return await self.async_step_generic_rf_confirm_up()
             last_log_line = await self._get_rtl433_last_log_line()
             return self.async_show_form(
@@ -3230,6 +3255,12 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         if user_input is not None:
             if self._generic_rf_captured is not None:
                 self._generic_rf_timings_down = self._generic_rf_captured.get("timings")
+                return await self.async_step_generic_rf_confirm_down()
+            # No MQTT signal — check logs for unknown signals
+            log_signal = await self._check_rtl433_logs_for_signal()
+            if log_signal is not None:
+                self._generic_rf_captured = log_signal
+                self._generic_rf_timings_down = log_signal.get("timings")
                 return await self.async_step_generic_rf_confirm_down()
             last_log_line = await self._get_rtl433_last_log_line()
             return self.async_show_form(
@@ -3294,6 +3325,12 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         if user_input is not None:
             if self._generic_rf_captured is not None:
                 self._generic_rf_timings_stop = self._generic_rf_captured.get("timings")
+                return await self._async_save_generic_rf_device()
+            # No MQTT signal — check logs for unknown signals
+            log_signal = await self._check_rtl433_logs_for_signal()
+            if log_signal is not None:
+                self._generic_rf_captured = log_signal
+                self._generic_rf_timings_stop = log_signal.get("timings")
                 return await self._async_save_generic_rf_device()
             last_log_line = await self._get_rtl433_last_log_line()
             return self.async_show_form(

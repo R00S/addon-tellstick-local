@@ -79,6 +79,7 @@ from .const import (
     PROTOCOL_NATIVE_MAP,
     PROTOCOL_RAW_LABELS,
     PROTOCOL_RAW_MAP,
+    RTL433_ADDON_SLUG,
     SENSOR_TYPE_NAMES,
     SIGNAL_NEW_DEVICE,
     WIDGET_PARAMS,
@@ -2629,6 +2630,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
     _generic_rf_listen_unsub: Any = None
     _generic_rf_captured: dict | None = None
     _generic_rf_repeat_count: int = 10
+    _generic_rf_log_position: int = 0
     _rtl433_addon_slug_cache: str | None = None
 
     async def async_step_generic_rf(
@@ -2794,51 +2796,60 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
 
     async def _discover_rtl433_addon_slug(self) -> str | None:
         """Discover the actual RTL_433 addon slug.
-
+        
         The slug may have a prefix when installed from custom repositories
         (e.g., 'e9305338-rtl_433' instead of 'rtl_433').
-
+        
         Returns the discovered slug or None if addon is not found/installed.
         """
+        # Return cached value if already discovered
         if self._rtl433_addon_slug_cache is not None:
             return self._rtl433_addon_slug_cache
-
+        
         try:
             session = async_get_clientsession(self.hass)
+            # Query supervisor for list of installed addons using absolute URL + auth token
             url = "http://supervisor/addons"
             async with session.get(url, headers=self._supervisor_headers()) as resp:
                 if resp.status != 200:
                     _LOGGER.warning(f"Failed to query addon list: HTTP {resp.status}")
                     return None
-
+                
                 result = await resp.json()
                 addons = result.get("data", {}).get("addons", [])
-
+                
+                # Log all installed addons for debugging
                 addon_list = [(a.get("slug", ""), a.get("name", "")) for a in addons]
                 _LOGGER.debug(f"Installed addons: {addon_list}")
-
+                
+                # Search for rtl_433 addon by name or slug
                 for addon in addons:
                     slug = addon.get("slug", "")
                     name = addon.get("name", "").lower()
+                    
+                    _LOGGER.debug(f"Checking addon: slug={slug}, name={name}")
+                    
+                    # Match if slug ends with 'rtl_433' (handles prefix) or name contains 'rtl'
                     if slug.endswith("rtl_433") or "rtl" in name:
                         _LOGGER.info(f"Discovered RTL_433 addon with slug: {slug}, name: {addon.get('name')}")
                         self._rtl433_addon_slug_cache = slug
                         return slug
-
-                _LOGGER.warning(f"RTL_433 addon not found in {len(addons)} installed addons. Installed: {addon_list}")
+                
+                _LOGGER.warning(f"RTL_433 addon not found in {len(addons)} installed addons. Installed addons: {addon_list}")
                 return None
         except Exception:  # noqa: BLE001
             _LOGGER.warning("Failed to discover RTL_433 addon slug", exc_info=True)
             return None
-
+    
     async def _get_rtl433_log_position(self) -> int:
         """Get the current position in rtl_433 logs."""
         try:
+            # Discover the actual addon slug (may have prefix from custom repo)
             slug = await self._discover_rtl433_addon_slug()
             if slug is None:
                 _LOGGER.debug("RTL_433 addon not found, cannot get log position")
                 return 0
-
+            
             session = async_get_clientsession(self.hass)
             # Supervisor logs endpoint returns plain text, not JSON
             url = f"http://supervisor/addons/{slug}/logs"
@@ -2849,20 +2860,22 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         except Exception:  # noqa: BLE001
             _LOGGER.debug("Failed to get rtl_433 log position (non-fatal)", exc_info=True)
         return 0
-
+    
     async def _get_rtl433_last_log_line(self) -> str:
         """Get the last non-empty line from rtl_433 logs for debug purposes."""
         try:
+            # Discover the actual addon slug (may have prefix from custom repo)
             slug = await self._discover_rtl433_addon_slug()
             if slug is None:
                 return "RTL_433 addon not found - check Home Assistant logs"
-
+            
             session = async_get_clientsession(self.hass)
             # Supervisor logs endpoint returns plain text, not JSON
             url = f"http://supervisor/addons/{slug}/logs"
             async with session.get(url, headers=self._supervisor_headers()) as resp:
                 if resp.status == 200:
                     logs = await resp.text()
+                    # Get the last non-empty line
                     lines = [line.strip() for line in logs.strip().split('\n') if line.strip()]
                     if lines:
                         return lines[-1]
@@ -2871,24 +2884,25 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         except Exception as e:  # noqa: BLE001
             _LOGGER.warning("Failed to get rtl_433 last log line", exc_info=True)
             return f"Error: {str(e)}"
-
+    
     async def _check_rtl433_logs_for_signal(self) -> dict[str, Any] | None:
         """Check rtl_433 logs for new unknown signals since capture started."""
         import re  # noqa: PLC0415
-
+        
         try:
+            # Discover the actual addon slug (may have prefix from custom repo)
             slug = await self._discover_rtl433_addon_slug()
             if slug is None:
                 _LOGGER.debug("RTL_433 addon not found, cannot check logs")
                 return None
-
+            
             session = async_get_clientsession(self.hass)
             # Supervisor logs endpoint returns plain text, not JSON
             url = f"http://supervisor/addons/{slug}/logs"
             async with session.get(url, headers=self._supervisor_headers()) as resp:
                 if resp.status != 200:
                     return None
-
+                
                 logs = await resp.text()
                 
                 # Only check new log content
@@ -2897,13 +2911,13 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                     return None
                 
                 new_logs = logs[start_pos:]
-
-                # Log what we're examining for debugging (before pattern matching)
+                
+                # Log what we're examining for debugging
                 sample = new_logs[:500] if len(new_logs) > 500 else new_logs
                 _LOGGER.debug(f"New rtl_433 log sample: {sample}")
                 last_row = new_logs.strip().split('\n')[-1] if new_logs.strip() else ""
                 _LOGGER.debug(f"Last row of rtl_433 logs: {last_row}")
-
+                
                 # Parse for decoder suggestions or pulse data
                 pattern_decoder = re.compile(r"Use a flex decoder with -X '([^']+)'")
                 pattern_view_url = re.compile(r"view at (https://triq\.org/pdv/#[^\s]+)")
@@ -3032,17 +3046,32 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                     return await self.async_step_generic_rf_dim_choice()
                 # For switches, save now
                 return await self._async_save_generic_rf_device()
+            # No MQTT signal — check logs for unknown signals (same fallback as ON)
+            log_signal = await self._check_rtl433_logs_for_signal()
+            if log_signal is not None:
+                self._generic_rf_captured = log_signal
+                self._generic_rf_timings_off = log_signal.get("timings")
+                if self._generic_rf_device_type == GENERIC_RF_TYPE_LIGHT:
+                    return await self.async_step_generic_rf_dim_choice()
+                return await self._async_save_generic_rf_device()
+            last_log_line = await self._get_rtl433_last_log_line()
             return self.async_show_form(
                 step_id="generic_rf_listen_off",
                 errors={"base": "no_signal"},
                 data_schema=vol.Schema({}),
-                description_placeholders={"name": self._generic_rf_name},
+                description_placeholders={
+                    "name": self._generic_rf_name,
+                    "debug_info": f"**Debug:** Last rtl_433 log line: `{last_log_line}`",
+                },
             )
 
         return self.async_show_form(
             step_id="generic_rf_listen_off",
             data_schema=vol.Schema({}),
-            description_placeholders={"name": self._generic_rf_name},
+            description_placeholders={
+                "name": self._generic_rf_name,
+                "debug_info": "",
+            },
         )
 
     async def async_step_generic_rf_dim_choice(
@@ -3113,10 +3142,21 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                     # Store this dim level
                     dim_level = getattr(self, "_generic_rf_current_dim_level", 50)
                     self._generic_rf_timings_dim_levels[dim_level] = timings
-                
+
                 # Ask if they want to record another level
                 return await self.async_step_generic_rf_dim_choice()
-            
+
+            # No MQTT signal — check logs for unknown signals
+            log_signal = await self._check_rtl433_logs_for_signal()
+            if log_signal is not None:
+                self._generic_rf_captured = log_signal
+                timings = log_signal.get("timings")
+                if timings:
+                    dim_level = getattr(self, "_generic_rf_current_dim_level", 50)
+                    self._generic_rf_timings_dim_levels[dim_level] = timings
+                return await self.async_step_generic_rf_dim_choice()
+
+            last_log_line = await self._get_rtl433_last_log_line()
             return self.async_show_form(
                 step_id="generic_rf_listen_dim",
                 errors={"base": "no_signal"},
@@ -3124,6 +3164,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 description_placeholders={
                     "name": self._generic_rf_name,
                     "dim_level": str(getattr(self, "_generic_rf_current_dim_level", 50)),
+                    "debug_info": f"**Debug:** Last rtl_433 log line: `{last_log_line}`",
                 },
             )
 
@@ -3133,6 +3174,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             description_placeholders={
                 "name": self._generic_rf_name,
                 "dim_level": str(getattr(self, "_generic_rf_current_dim_level", 50)),
+                "debug_info": "",
             },
         )
 
@@ -3148,17 +3190,30 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             if self._generic_rf_captured is not None:
                 self._generic_rf_timings_up = self._generic_rf_captured.get("timings")
                 return await self.async_step_generic_rf_confirm_up()
+            # No MQTT signal — check logs for unknown signals
+            log_signal = await self._check_rtl433_logs_for_signal()
+            if log_signal is not None:
+                self._generic_rf_captured = log_signal
+                self._generic_rf_timings_up = log_signal.get("timings")
+                return await self.async_step_generic_rf_confirm_up()
+            last_log_line = await self._get_rtl433_last_log_line()
             return self.async_show_form(
                 step_id="generic_rf_listen_up",
                 errors={"base": "no_signal"},
                 data_schema=vol.Schema({}),
-                description_placeholders={"name": self._generic_rf_name},
+                description_placeholders={
+                    "name": self._generic_rf_name,
+                    "debug_info": f"**Debug:** Last rtl_433 log line: `{last_log_line}`",
+                },
             )
 
         return self.async_show_form(
             step_id="generic_rf_listen_up",
             data_schema=vol.Schema({}),
-            description_placeholders={"name": self._generic_rf_name},
+            description_placeholders={
+                "name": self._generic_rf_name,
+                "debug_info": "",
+            },
         )
 
     async def async_step_generic_rf_confirm_up(
@@ -3201,17 +3256,30 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             if self._generic_rf_captured is not None:
                 self._generic_rf_timings_down = self._generic_rf_captured.get("timings")
                 return await self.async_step_generic_rf_confirm_down()
+            # No MQTT signal — check logs for unknown signals
+            log_signal = await self._check_rtl433_logs_for_signal()
+            if log_signal is not None:
+                self._generic_rf_captured = log_signal
+                self._generic_rf_timings_down = log_signal.get("timings")
+                return await self.async_step_generic_rf_confirm_down()
+            last_log_line = await self._get_rtl433_last_log_line()
             return self.async_show_form(
                 step_id="generic_rf_listen_down",
                 errors={"base": "no_signal"},
                 data_schema=vol.Schema({}),
-                description_placeholders={"name": self._generic_rf_name},
+                description_placeholders={
+                    "name": self._generic_rf_name,
+                    "debug_info": f"**Debug:** Last rtl_433 log line: `{last_log_line}`",
+                },
             )
 
         return self.async_show_form(
             step_id="generic_rf_listen_down",
             data_schema=vol.Schema({}),
-            description_placeholders={"name": self._generic_rf_name},
+            description_placeholders={
+                "name": self._generic_rf_name,
+                "debug_info": "",
+            },
         )
 
     async def async_step_generic_rf_confirm_down(
@@ -3258,17 +3326,30 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             if self._generic_rf_captured is not None:
                 self._generic_rf_timings_stop = self._generic_rf_captured.get("timings")
                 return await self._async_save_generic_rf_device()
+            # No MQTT signal — check logs for unknown signals
+            log_signal = await self._check_rtl433_logs_for_signal()
+            if log_signal is not None:
+                self._generic_rf_captured = log_signal
+                self._generic_rf_timings_stop = log_signal.get("timings")
+                return await self._async_save_generic_rf_device()
+            last_log_line = await self._get_rtl433_last_log_line()
             return self.async_show_form(
                 step_id="generic_rf_listen_stop",
                 errors={"base": "no_signal"},
                 data_schema=vol.Schema({}),
-                description_placeholders={"name": self._generic_rf_name},
+                description_placeholders={
+                    "name": self._generic_rf_name,
+                    "debug_info": f"**Debug:** Last rtl_433 log line: `{last_log_line}`",
+                },
             )
 
         return self.async_show_form(
             step_id="generic_rf_listen_stop",
             data_schema=vol.Schema({}),
-            description_placeholders={"name": self._generic_rf_name},
+            description_placeholders={
+                "name": self._generic_rf_name,
+                "debug_info": "",
+            },
         )
 
     async def _async_save_generic_rf_device(self) -> SubentryFlowResult:
