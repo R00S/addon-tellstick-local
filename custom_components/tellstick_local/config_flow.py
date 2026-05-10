@@ -2928,6 +2928,9 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                     # Log a sample of the new logs for debugging (first 500 chars)
                     sample = new_logs[:500] if len(new_logs) > 500 else new_logs
                     _LOGGER.debug(f"New rtl_433 log sample: {sample}")
+                    # Log the last row of rtl_433 logs to verify it's working
+                    last_row = new_logs.strip().split('\n')[-1] if new_logs.strip() else ""
+                    _LOGGER.debug(f"Last row of rtl_433 logs: {last_row}")
         
         except Exception:  # noqa: BLE001
             _LOGGER.debug("Failed to check rtl_433 logs (non-fatal)", exc_info=True)
