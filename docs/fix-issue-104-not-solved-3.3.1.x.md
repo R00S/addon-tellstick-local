@@ -117,3 +117,9 @@ and remains safe for the shorter arctech/everflourish bursts that motivated
 the original 0.35 s value.
 
 manifest.json bumped 3.3.1.3 → 3.3.1.4 in both locations.
+
+## 3.3.1.5 — CHORES bump
+
+Routine version bump per `CHORES.md` (D digit). No code changes; manifest
+bumped 3.3.1.4 → 3.3.1.5 in both `custom_components/tellstick_local/` and
+`tellsticklive/rootfs/usr/share/tellstick_local/`.
