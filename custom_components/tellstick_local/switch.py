@@ -19,14 +19,18 @@ from .const import (
     CONF_DEVICE_MODEL,
     CONF_DEVICE_NAME,
     CONF_DEVICE_PROTOCOL,
+    CONF_DEVICE_TYPE,
     CONF_DEVICE_UNIT,
     CONF_DEVICES,
     DOMAIN,
     ENTRY_DEVICE_ID_MAP,
     ENTRY_TELLSTICK_CONTROLLER,
+    GENERIC_RF_TYPE_SWITCH,
+    PROTOCOL_GENERIC_RF,
     SIGNAL_EVENT,
     SIGNAL_NEW_DEVICE,
     TELLSTICK_TURNON,
+    generic_rf_build_raw_command,
     luxorparts_build_raw_command,
     luxorparts_generate_codes,
 )
@@ -51,9 +55,17 @@ _SWITCH_MODELS = {
 _COVER_PROTOCOLS = {"hasta", "brateck"}
 
 
-def _is_switch(protocol: str, model: str) -> bool:
+def _is_switch(protocol: str, model: str, device_cfg: dict | None = None) -> bool:
+    """Check if a device should be a switch entity."""
     if protocol.lower() in _COVER_PROTOCOLS:
         return False
+    if protocol.lower() == PROTOCOL_GENERIC_RF:
+        # For Generic RF devices, check device_type
+        # Default to switch for backward compatibility with existing devices
+        if device_cfg:
+            device_type = device_cfg.get(CONF_DEVICE_TYPE, GENERIC_RF_TYPE_SWITCH)
+            return device_type == GENERIC_RF_TYPE_SWITCH
+        return True  # Backward compat: assume switch if no device_cfg
     base = model.split(":")[0].lower() if ":" in model else model.lower()
     return base in _SWITCH_MODELS
 
@@ -106,7 +118,7 @@ async def async_setup_entry(
     for device_uid, device_cfg in entry.options.get(CONF_DEVICES, {}).items():
         protocol = device_cfg.get(CONF_DEVICE_PROTOCOL, "")
         model = device_cfg.get(CONF_DEVICE_MODEL, "")
-        if not _is_switch(protocol, model):
+        if not _is_switch(protocol, model, device_cfg):
             # If the stored model is a dimmer, clean up any stale switch
             # entity from before the model was changed.
             if _is_dimmer_model(model):
@@ -126,6 +138,9 @@ async def async_setup_entry(
                 unit=device_cfg.get(CONF_DEVICE_UNIT, ""),
                 manufacturer=manufacturer,
                 group_uid=device_cfg.get("group_uid") or None,
+                timings_on=device_cfg.get("timings_on"),
+                timings_off=device_cfg.get("timings_off"),
+                repeat_count=device_cfg.get("repeat_count", 10),
             )
         )
     if stored_entities:
@@ -162,7 +177,7 @@ async def async_setup_entry(
             or stored.get(CONF_DEVICE_MODEL, "")
             or model
         )
-        if not _is_switch(protocol, check_model):
+        if not _is_switch(protocol, check_model, stored):
             # Catalog/stored model says dimmer — clean up any stale switch.
             if _is_dimmer_model(check_model):
                 _remove_stale_switch(ent_reg, entry.entry_id, uid)
@@ -181,6 +196,9 @@ async def async_setup_entry(
             unit=params.get("unit", params.get("code", "")),
             manufacturer=manufacturer,
             group_uid=stored.get("group_uid") or None,
+            timings_on=stored.get("timings_on"),
+            timings_off=stored.get("timings_off"),
+            repeat_count=stored.get("repeat_count", 10),
         )
         async_add_entities([entity])
 
@@ -208,6 +226,9 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
         unit: str = "",
         manufacturer: str = "",
         group_uid: str | None = None,
+        timings_on: list[int] | None = None,
+        timings_off: list[int] | None = None,
+        repeat_count: int = 10,
     ) -> None:
         """Initialize a TellStick switch."""
         super().__init__(
@@ -224,6 +245,13 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
         self._controller = controller
         self._telldusd_device_id = device_id
         self._attr_is_on = False
+        # Generic RF: stored pulse timings and repeat count
+        self._timings_on: list[int] | None = timings_on
+        self._timings_off: list[int] | None = timings_off
+        self._repeat_count: int = repeat_count
+        # Generic RF switches have no state feedback — assumed state
+        if protocol == PROTOCOL_GENERIC_RF:
+            self._attr_assumed_state = True
 
     async def async_added_to_hass(self) -> None:
         """Restore state and subscribe to events."""
@@ -262,7 +290,9 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
             "turn_on: uid=%s controller=%s device_id=%r",
             self._device_uid, type(self._controller).__name__, self._telldusd_device_id,
         )
-        if self._protocol == "luxorparts" and hasattr(self._controller, "send_raw_command"):
+        if self._protocol == PROTOCOL_GENERIC_RF and hasattr(self._controller, "send_raw_command"):
+            await self._send_generic_rf_raw("on")
+        elif self._protocol == "luxorparts" and hasattr(self._controller, "send_raw_command"):
             await self._send_luxorparts_raw("on")
         elif self._telldusd_device_id is not None:
             await self._controller.turn_on(self._telldusd_device_id)
@@ -281,7 +311,9 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
             "turn_off: uid=%s controller=%s device_id=%r",
             self._device_uid, type(self._controller).__name__, self._telldusd_device_id,
         )
-        if self._protocol == "luxorparts" and hasattr(self._controller, "send_raw_command"):
+        if self._protocol == PROTOCOL_GENERIC_RF and hasattr(self._controller, "send_raw_command"):
+            await self._send_generic_rf_raw("off")
+        elif self._protocol == "luxorparts" and hasattr(self._controller, "send_raw_command"):
             await self._send_luxorparts_raw("off")
         elif self._telldusd_device_id is not None:
             await self._controller.turn_off(self._telldusd_device_id)
@@ -336,3 +368,38 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
             _LOGGER.warning("LX raw TX failed: result=%d", result)
         else:
             _LOGGER.info("LX raw TX success: result=%d", result)
+
+    async def _send_generic_rf_raw(self, action: str) -> None:
+        """Send a Generic RF raw OOK pulse command via tdSendRawCommand (Duo path).
+
+        Converts stored µs timings → TellStick firmware tick bytes and sends
+        the raw command using the same ``P\\x02 R<n> S<data>+`` format as Luxorparts.
+
+        If no OFF timings are stored, the ON timings are used for both actions
+        (common for remotes with a single toggle button).
+        """
+        if action == "off" and self._timings_off:
+            timings = self._timings_off
+        elif self._timings_on:
+            timings = self._timings_on
+        else:
+            _LOGGER.warning(
+                "Generic RF raw TX: no timings stored for %s action=%s",
+                self._device_uid, action,
+            )
+            return
+
+        raw_cmd = generic_rf_build_raw_command(timings, self._repeat_count)
+        _LOGGER.info(
+            "Generic RF raw TX: uid=%s action=%s timings=%d bytes=%d",
+            self._device_uid, action, len(timings), len(raw_cmd),
+        )
+        result = await self._controller.send_raw_command(raw_cmd)
+        if result == -5:
+            _LOGGER.info(
+                "Generic RF raw TX: ACK timeout (expected for long TX), hardware should still transmit"
+            )
+        elif result != 0:
+            _LOGGER.warning("Generic RF raw TX failed: result=%d uid=%s", result, self._device_uid)
+        else:
+            _LOGGER.info("Generic RF raw TX success: result=%d uid=%s", result, self._device_uid)

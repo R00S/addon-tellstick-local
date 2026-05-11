@@ -1,11 +1,10 @@
 # Home Assistant: TellStick Local
 
 > [!NOTE]
-> **✅ v3.1 — TellStick Duo + Net/ZNet + Mirror/Range Extender + Device Grouping**
-> This release adds full **TellStick Net / ZNet** support, the
-> **Mirror / Range Extender** feature, **manual device grouping** (group any
-> switches, lights, or covers under a shared HA device), and an improved
-> TellStick Duo experience.
+> **🟡 RTL-433 / Generic RF status — Temporarily halted**
+> Ongoing RTL-433 and Generic RF development is temporarily paused while this
+> branch is prepared for merge. Existing branch artifacts remain in history, but
+> related GUI entry points are disabled for now.
 > If you hit any problem, please [open an issue][issue].
 
 > [!WARNING]
@@ -29,7 +28,7 @@
 
 Local-only TellStick Duo and TellStick Net/ZNet support for Home Assistant – no cloud, no YAML, full GUI.
 
-**v3.1 highlights:** TellStick Net / ZNet support · Mirror / range extender · full GUI device management · all 433 MHz protocols · manual device grouping
+**v3.2 highlights:** TellStick Net / ZNet support · Mirror / range extender · full GUI device management
 
 📊 **Project presentation:** [English][presentation-en] · [Svenska][presentation-sv]
 
@@ -87,6 +86,7 @@ Live account, and no YAML file editing.
 | **Automations**              | Device triggers on any 433 MHz button press, usable directly in HA automations                                      |
 | **HA bus events**            | Every RF signal fires a `tellstick_local_event` on the HA bus — use in automations or Developer Tools               |
 | **Mirror / range extender**  | Use a second TellStick as a mirror to extend RF coverage — all commands are replicated automatically                |
+| **RTL-433 / Generic RF**     | **Temporarily halted** in GUI on this merge-prep branch                                                              |
 | **Debug connection**         | Service action `tellstick_local.debug_connection` logs connection state and last events                             |
 | **Companion app**            | Identical UX in the HA Android/iOS app                                                                              |
 | **No Telldus Live required** | Zero cloud, zero account, zero internet dependency                                                                  |
@@ -409,6 +409,17 @@ These devices must be added via **Method B** (Add device → Add by brand or Add
 | `silvanchip` | Switch      | Ecosavers, KingPin KP100           |
 | `upm`        | Switch      | UPM                                |
 | `yidong`     | Switch      | Goobay                             |
+
+---
+
+## RTL-433 / Generic RF status (temporarily halted)
+
+Development for **RTL-433 sensor auto-discovery** and **Generic RF record/replay**
+is currently **temporarily halted** for this merge-prep branch.
+
+- Related GUI entry points are disabled for now.
+- Existing documentation/history is kept in the repository for future resumption.
+- Core TellStick Local functionality (Duo and Net/ZNet) remains active.
 
 ---
 

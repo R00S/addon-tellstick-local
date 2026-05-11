@@ -1,8 +1,11 @@
 """Constants for TellStick Local integration."""
 from __future__ import annotations
 
+import base64
 import json as _json
 import pathlib as _pathlib
+import re
+import urllib.parse
 
 DOMAIN = "tellstick_local"
 
@@ -120,6 +123,61 @@ ENTRY_MIRRORS = "_mirrors"
 # Signal for new device discovery
 SIGNAL_NEW_DEVICE = DOMAIN + "_new_device_{}"
 SIGNAL_EVENT = DOMAIN + "_event_{}"
+
+# ---------------------------------------------------------------------------
+# RTL-433 MQTT integration
+# ---------------------------------------------------------------------------
+
+# Config option: listen for rtl_433 sensors via MQTT
+CONF_RTL433_SENSORS = "rtl433_sensors"
+DEFAULT_RTL433_SENSORS = False
+
+# Config option: monitor rtl_433 add-on logs for unknown signals
+CONF_RTL433_LOG_MONITOR = "rtl433_log_monitor"
+DEFAULT_RTL433_LOG_MONITOR = False
+
+# RTL-433 add-on slug (pbkhrv/rtl_433-hass-addons)
+RTL433_ADDON_SLUG = "rtl_433"
+
+# MQTT topic for rtl_433 events
+RTL433_MQTT_TOPIC = "rtl_433/#"
+
+# Signal fired when a new RTL-433 sensor reading arrives (per entry_id)
+SIGNAL_RTL433_READING = DOMAIN + "_rtl433_{}"
+
+# Signal fired when an unknown signal is detected in logs (per entry_id)
+SIGNAL_RTL433_UNKNOWN = DOMAIN + "_rtl433_unknown_{}"
+
+# RTL-433 protocol field → (device_class_string, unit, entity_suffix)
+# device_class_string maps to homeassistant.components.sensor.SensorDeviceClass
+RTL433_SENSOR_FIELDS: dict[str, tuple[str, str, str]] = {
+    "temperature_C": ("temperature", "°C", "temperature"),
+    "temperature_F": ("temperature", "°F", "temperature_f"),
+    "humidity": ("humidity", "%", "humidity"),
+    "rain_mm": ("precipitation", "mm", "rain_total"),
+    "rain_rate_mm_h": ("precipitation_intensity", "mm/h", "rain_rate"),
+    "wind_speed_km_h": ("wind_speed", "km/h", "wind_speed"),
+    "wind_dir_deg": (None, "°", "wind_dir"),
+    "pressure_hPa": ("atmospheric_pressure", "hPa", "pressure"),
+    "moisture": ("moisture", "%", "moisture"),
+    "battery_ok": ("battery", "%", "battery"),
+    "battery_V": ("voltage", "V", "battery_voltage"),
+}
+
+# ---------------------------------------------------------------------------
+# Generic RF record & replay
+# ---------------------------------------------------------------------------
+
+# Protocol name for Generic RF devices (record & replay via raw OOK pulses)
+PROTOCOL_GENERIC_RF = "generic_rf"
+
+# Generic RF device types
+GENERIC_RF_TYPE_SWITCH = "switch"
+GENERIC_RF_TYPE_LIGHT = "light"
+GENERIC_RF_TYPE_COVER = "cover"
+
+# Config key for storing device type
+CONF_DEVICE_TYPE = "device_type"
 
 # TX-capable protocols (can send commands and teach self-learning devices)
 # Source: telldus-core Protocol.cpp::getProtocolInstance() — only protocols
@@ -1300,4 +1358,258 @@ def normalize_rf_model(model: str) -> str:
     """
     base = model.split(":")[0] if ":" in model else model
     return _UID_MODEL_NORMALIZE.get(base, base)
+
+
+# ---------------------------------------------------------------------------
+# Generic RF record & replay — timing helpers
+# ---------------------------------------------------------------------------
+
+def timings_to_tellstick_bytes(timings: list[int]) -> bytes:
+    """Convert alternating µs pulse/space timings to TellStick firmware tick bytes.
+
+    The TellStick firmware uses ~10 µs per tick.  Each timing value is converted:
+      tick = min(255, max(1, round(abs(µs) / 10)))
+
+    The sign (positive=pulse, negative=space) is discarded because the
+    firmware infers polarity from the byte position within the S command
+    (alternating high/low starting with high=pulse).
+
+    Args:
+        timings: List of alternating µs values; positive=pulse, negative=space.
+
+    Returns:
+        bytes of firmware tick values, one byte per timing element.
+    """
+    out = bytearray()
+    for us in timings:
+        tick = min(255, max(1, round(abs(us) / 10)))
+        out.append(tick)
+    return bytes(out)
+
+
+def generic_rf_build_raw_command(timings: list[int], repeat_count: int = 10) -> bytes:
+    """Build a complete TellStick raw command from OOK pulse timings.
+
+    Uses the same ``P\\x02 R<n> S<data>+`` format as Luxorparts:
+      - ``P\\x02``: 2 ms pause between firmware repeats (avoids null bytes)
+      - ``R<n>``: firmware repeat count byte (1–255)
+      - ``S<tick_bytes>+``: pulse/space timing data
+
+    Args:
+        timings: Alternating µs pulse/space values (positive=pulse, negative=space)
+        repeat_count: Number of times the firmware transmits the signal (1–255)
+
+    Returns:
+        bytes ready for ``TellStickController.send_raw_command()``.
+    """
+    tick_bytes = timings_to_tellstick_bytes(timings)
+    repeat = min(255, max(1, repeat_count))
+    return bytes([ord("P"), 2, ord("R"), repeat]) + b"S" + tick_bytes + b"+"
+
+
+def parse_rtl433_pulse_analysis(log_text: str) -> list[int] | None:
+    """Parse RTL-433 verbose pulse and gap analysis from log output.
+
+    Extracts pulse/gap values from TWO SEPARATE sections in rtl_433 output.
+    Actual rtl_433 verbose output format (analyze_pulses=true, verbose=2):
+        [rtl_433] Pulse width distribution:
+        [rtl_433]  [ 0] count:  140,  width:  392 us [384;412]   (  98 S)
+        [rtl_433]  [ 1] count:  110,  width: 1148 us [1144;1156] ( 287 S)
+        [rtl_433] Gap width distribution:
+        [rtl_433]  [ 0] count:   10,  width: 2244 us [2240;2252] ( 561 S)
+        [rtl_433]  [ 1] count:  129,  width: 1108 us [1104;1124] ( 277 S)
+
+    Note: Sections are separate - pulses first, then gaps. We combine them alternating.
+
+    Args:
+        log_text: Raw log text from RTL-433 verbose output (analyze_pulses true, verbose 2).
+
+    Returns:
+        List of alternating µs pulse/gap values (positive=pulse, negative=gap),
+        or None if no valid pulse data found.
+    """
+    pulses = []
+    gaps = []
+    
+    # Find both "Pulse width distribution:" and "Gap width distribution:" sections
+    lines = log_text.split('\n')
+    section = None
+    
+    for line in lines:
+        # Check section headers
+        if 'Pulse width distribution:' in line:
+            section = 'pulses'
+            continue
+        elif 'Gap width distribution:' in line:
+            section = 'gaps'
+            continue
+        
+        # Exit section when we hit a new section or non-rtl_433 line
+        if section:
+            # Stop at next major section or when line doesn't match expected format
+            if line.strip() and not line.strip().startswith('[rtl_433]'):
+                # Only break if it's not just whitespace and not an rtl_433 line
+                if 'distribution:' not in line and 'Level estimates' not in line:
+                    section = None
+                continue
+            if 'Level estimates' in line or 'RSSI:' in line:
+                section = None
+                continue
+                
+            # Parse width lines: [ N] count: X, width: YYY us [range] (samples)
+            # Pattern: [ 0] count:  140,  width:  392 us [384;412]   (  98 S)
+            match = re.search(r'\[\s*\d+\]\s+count:\s+\d+,\s+width:\s+(\d+)\s+us', line)
+            if match:
+                width = int(match.group(1))
+                if section == 'pulses':
+                    pulses.append(width)
+                elif section == 'gaps':
+                    gaps.append(width)
+    
+    # Must have at least one pulse and one gap
+    if not pulses or not gaps:
+        return None
+    
+    # Combine pulses and gaps alternating: pulse, gap, pulse, gap, ...
+    # Use the most common gap (first in distribution = highest count)
+    timings = []
+    common_gap = gaps[0]  # Most common gap is listed first
+    
+    for pulse in pulses:
+        timings.append(pulse)  # Pulse (positive)
+        timings.append(-common_gap)  # Gap (negative)
+    
+    return timings if timings else None
+
+
+def convert_flex_decoder_params(decoder_params: str) -> list[int] | None:
+    """Convert RTL-433 flex decoder parameters to pulse/space timings.
+
+    Converts parameters like 's=376,l=776,r=1520,y=1472' into the alternating
+    pulse/space format expected by generic_rf_build_raw_command().
+
+    Flex decoder parameters (OOK_PWM encoding):
+        s = short pulse width (µs)
+        l = long pulse width (µs)
+        r = reset/sync pulse width (µs)
+        g = gap width (µs) - defaults to long gap if not specified
+        y = sync/preamble pulse width (µs)
+        t = tolerance (not used for timing generation)
+
+    Args:
+        decoder_params: Flex decoder parameter string (e.g., 
+                       's=376,l=776,r=1520,g=0,t=0,y=1472' or
+                       'n=name,m=OOK_PWM,s=376,l=776,r=1520,y=1472')
+
+    Returns:
+        List of alternating µs pulse/space values representing a typical signal
+        pattern (preamble + data bits), or None if required parameters missing.
+    """
+    params = {}
+    for param in decoder_params.split(','):
+        if '=' in param:
+            key, val = param.split('=', 1)
+            params[key.strip()] = val.strip()
+    
+    # Extract timing parameters
+    try:
+        s = int(params.get('s', 0))  # short pulse
+        l = int(params.get('l', 0))  # long pulse
+        r = int(params.get('r', 0))  # reset/sync
+        # Gap: default to long if not specified OR if specified as 0
+        # rtl_433 uses g=0 to mean "auto-detect gap", which we treat as "use long pulse"
+        g_raw = params.get('g', None)
+        if g_raw is None or g_raw == '0':
+            g = l
+        else:
+            g = int(g_raw)
+        y = int(params.get('y', 0))  # preamble/sync pulse
+    except (ValueError, TypeError):
+        return None
+    
+    # Need at least short and long pulse widths
+    if not s or not l:
+        return None
+    
+    timings = []
+    
+    # Add preamble/sync if present
+    if y > 0:
+        timings.extend([y, -g])  # preamble pulse + gap
+    
+    # Add reset/sync pulse if present
+    if r > 0:
+        timings.extend([r, -g])  # reset pulse + gap
+    
+    # Generate a typical data pattern (alternating short/long for demonstration)
+    # In OOK_PWM: bit 0 = short pulse + long gap, bit 1 = long pulse + short gap
+    # Generate an 8-bit pattern: 10101010
+    for i in range(8):
+        if i % 2 == 0:  # bit 1
+            timings.extend([l, -s])  # long pulse, short gap
+        else:  # bit 0
+            timings.extend([s, -l])  # short pulse, long gap
+    
+    # Add final reset if present
+    if r > 0:
+        timings.append(r)
+    
+    return timings if timings else None
+
+
+def decode_triq_url(url: str) -> list[int] | None:
+    """Decode triq.org pulse data viewer URL to extract pulse timings.
+
+    Parses URLs in the format:
+        https://triq.org/pdv/#<base64-encoded-pulse-data>
+        https://triq.org/pdv/?pulses=<base64-encoded-pulse-data>
+
+    The base64-encoded data decodes to comma-separated integers representing
+    alternating pulse/space values in microseconds.
+
+    Args:
+        url: triq.org pulse data viewer URL.
+
+    Returns:
+        List of alternating µs pulse/space values (positive=pulse, negative=space),
+        or None if URL cannot be parsed or decoded.
+    """
+    try:
+        # Extract the base64 part from URL
+        base64_data = None
+        
+        # Try fragment format: https://triq.org/pdv/#<base64>
+        if '#' in url:
+            base64_data = url.split('#', 1)[1]
+        # Try query parameter format: https://triq.org/pdv/?pulses=<base64>
+        elif '?pulses=' in url:
+            parsed = urllib.parse.urlparse(url)
+            params = urllib.parse.parse_qs(parsed.query)
+            if 'pulses' in params:
+                base64_data = params['pulses'][0]
+        
+        if not base64_data:
+            return None
+        
+        # Decode base64
+        decoded = base64.b64decode(base64_data).decode('utf-8')
+        
+        # Parse comma-separated integers
+        values = [int(v.strip()) for v in decoded.split(',') if v.strip()]
+        
+        if not values:
+            return None
+        
+        # Convert to alternating positive (pulse) / negative (space) format
+        timings = []
+        for i, val in enumerate(values):
+            if i % 2 == 0:  # even index = pulse (positive)
+                timings.append(abs(val))
+            else:  # odd index = space (negative)
+                timings.append(-abs(val))
+        
+        return timings
+        
+    except (ValueError, TypeError, base64.binascii.Error):
+        return None
 

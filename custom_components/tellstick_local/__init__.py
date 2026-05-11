@@ -51,8 +51,10 @@ from .const import (
     CONF_EVENT_PORT,
     CONF_IGNORED_UIDS,
     CONF_MIRROR_OF,
+    CONF_RTL433_SENSORS,
     DEFAULT_AUTOMATIC_ADD,
     DEFAULT_DETECT_SARTANO,
+    DEFAULT_RTL433_SENSORS,
     DOMAIN,
     ENTRY_DEVICE_ID_MAP,
     ENTRY_MIRRORS,
@@ -61,8 +63,11 @@ from .const import (
     ISSUE_DEV_CHANNEL,
     ISSUE_RESTART,
     PLATFORMS,
+    PROTOCOL_GENERIC_RF,
+    RTL433_MQTT_TOPIC,
     SIGNAL_EVENT,
     SIGNAL_NEW_DEVICE,
+    SIGNAL_RTL433_READING,
     build_device_uid,
 )
 
@@ -806,7 +811,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         device_id_map: dict[str, Any] = {}
         stored_devices: dict[str, Any] = entry.options.get(CONF_DEVICES, {})
         for device_uid, device_cfg in stored_devices.items():
-            if device_uid.startswith("sensor_"):
+            if device_uid.startswith("sensor_") or device_uid.startswith("rtl433_"):
                 continue
             device_id_map[device_uid] = {
                 CONF_DEVICE_PROTOCOL: device_cfg.get(CONF_DEVICE_PROTOCOL, ""),
@@ -842,18 +847,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         stored_devices = entry.options.get(CONF_DEVICES, {})
         for device_uid, device_cfg in stored_devices.items():
             # Skip sensor entries — they don't register with telldusd
-            if device_uid.startswith("sensor_"):
+            if device_uid.startswith("sensor_") or device_uid.startswith("rtl433_"):
                 continue
-            # Luxorparts bypasses telldusd entirely — store a param dict
-            # (same as Net backend) so button.py / switch.py can detect it
-            # and send raw commands directly.
-            if device_cfg.get(CONF_DEVICE_PROTOCOL) == "luxorparts":
+            protocol = device_cfg.get(CONF_DEVICE_PROTOCOL, "")
+            # Generic RF and Luxorparts bypass telldusd entirely — store a
+            # param dict so switch.py can send raw commands directly.
+            if protocol in ("luxorparts", PROTOCOL_GENERIC_RF):
                 device_id_map[device_uid] = {
-                    CONF_DEVICE_PROTOCOL: "luxorparts",
+                    CONF_DEVICE_PROTOCOL: protocol,
                     CONF_DEVICE_MODEL: device_cfg.get(CONF_DEVICE_MODEL, ""),
                     CONF_DEVICE_HOUSE: device_cfg.get(CONF_DEVICE_HOUSE, ""),
                     CONF_DEVICE_UNIT: device_cfg.get(CONF_DEVICE_UNIT, ""),
-                    CONF_DEVICE_ENCODING: "",
+                    CONF_DEVICE_ENCODING: device_cfg.get(CONF_DEVICE_ENCODING, ""),
                 }
                 continue
             try:
@@ -977,6 +982,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Listen for options changes (reload only when automatic_add changes)
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
 
+    # Subscribe to RTL-433 MQTT topic if enabled
+    await _async_setup_rtl433_mqtt(hass, entry)
+
     # Import devices pre-configured in the app's YAML config (Configuration tab)
     # that are not yet known to the integration.  Duo-only — the Net backend
     # has no telldusd registry and no app config tab.
@@ -1073,7 +1081,86 @@ async def _async_options_updated(
     # option changes and we must reload so the event handler picks up the new
     # value.  Device additions/edits must NOT trigger a reload — they use
     # signals to create entities on the fly.
-    pass  # No reload needed — options are read live from entry.options
+
+    # Re-evaluate RTL-433 MQTT subscription when options change.
+    await _async_setup_rtl433_mqtt(hass, entry)
+
+
+async def _async_setup_rtl433_mqtt(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+) -> None:
+    """Subscribe (or unsubscribe) from rtl_433 MQTT topic based on options.
+
+    Stores the unsubscribe callback in entry_data["_rtl433_unsub"] so it can
+    be called when the integration unloads or the option is toggled off.
+    Handles gracefully if the MQTT integration is not loaded.
+    """
+    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    if entry_data is None:
+        return
+
+    enabled = entry.options.get(CONF_RTL433_SENSORS, DEFAULT_RTL433_SENSORS)
+
+    # Cancel existing subscription first (toggle off, or re-subscribe)
+    existing_unsub = entry_data.pop("_rtl433_unsub", None)
+    if existing_unsub is not None:
+        try:
+            existing_unsub()
+        except Exception:  # noqa: BLE001
+            _LOGGER.debug("Error cancelling rtl_433 MQTT subscription (non-fatal)", exc_info=True)
+
+    if not enabled:
+        return
+
+    try:
+        from homeassistant.components import mqtt  # noqa: PLC0415
+
+        if not await mqtt.async_wait_for_mqtt_client(hass):
+            _LOGGER.warning(
+                "RTL-433 MQTT subscription skipped: MQTT integration not available"
+            )
+            return
+
+        @callback
+        def _rtl433_mqtt_callback(msg: Any) -> None:
+            """Handle an incoming rtl_433 MQTT message."""
+            try:
+                payload = json.loads(msg.payload)
+            except (json.JSONDecodeError, TypeError):
+                return
+            if not isinstance(payload, dict):
+                return
+            # Skip unknown-model entries (no useful sensor fields)
+            model = payload.get("model", "")
+            if not model or model == "unknown":
+                # Still relay to capture Generic RF records
+                _LOGGER.debug("RTL-433 unknown model: %s", payload)
+                # Store in entry_data for Generic RF capture flows
+                entry_data["_rtl433_last_unknown"] = payload
+                return
+
+            async_dispatcher_send(
+                hass,
+                SIGNAL_RTL433_READING.format(entry.entry_id),
+                payload,
+            )
+
+        unsub = await mqtt.async_subscribe(
+            hass, RTL433_MQTT_TOPIC, _rtl433_mqtt_callback
+        )
+        entry_data["_rtl433_unsub"] = unsub
+        _LOGGER.info(
+            "Subscribed to RTL-433 MQTT topic %s for entry %s",
+            RTL433_MQTT_TOPIC,
+            entry.entry_id,
+        )
+    except ImportError:
+        _LOGGER.warning("RTL-433 MQTT: homeassistant.components.mqtt not available")
+    except Exception:  # noqa: BLE001
+        _LOGGER.warning("RTL-433 MQTT subscription failed", exc_info=True)
+
+
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -1102,6 +1189,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         ctrl = entry_data.get(ENTRY_TELLSTICK_CONTROLLER)
         if ctrl:
             await ctrl.disconnect()
+        # Clean up RTL-433 MQTT subscription
+        rtl433_unsub = entry_data.get("_rtl433_unsub")
+        if rtl433_unsub is not None:
+            try:
+                rtl433_unsub()
+            except Exception:  # noqa: BLE001
+                _LOGGER.debug("Error cancelling rtl_433 MQTT subscription on unload (non-fatal)", exc_info=True)
     return ok
 
 

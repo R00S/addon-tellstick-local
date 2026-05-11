@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import secrets
 from typing import TYPE_CHECKING, Any
 
@@ -24,6 +25,7 @@ from homeassistant.helpers import (
     device_registry as dr,
     entity_registry as er,
 )
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 if TYPE_CHECKING:
@@ -45,6 +47,7 @@ from .const import (
     CONF_DEVICE_MODEL,
     CONF_DEVICE_NAME,
     CONF_DEVICE_PROTOCOL,
+    CONF_DEVICE_TYPE,
     CONF_DEVICE_UNIT,
     CONF_DEVICES,
     CONF_EVENT_PORT,
@@ -64,6 +67,10 @@ from .const import (
     ENTRY_DEVICE_ID_MAP,
     ENTRY_MIRRORS,
     ENTRY_TELLSTICK_CONTROLLER,
+    GENERIC_RF_TYPE_COVER,
+    GENERIC_RF_TYPE_LIGHT,
+    GENERIC_RF_TYPE_SWITCH,
+    PROTOCOL_GENERIC_RF,
     PROTOCOL_MODEL_LABELS,
     PROTOCOL_MODEL_MAP,
     PROTOCOL_NATIVE_LABELS,
@@ -74,7 +81,10 @@ from .const import (
     SIGNAL_NEW_DEVICE,
     WIDGET_PARAMS,
     build_device_uid,
+    convert_flex_decoder_params,
+    decode_triq_url,
     luxorparts_build_raw_command,
+    parse_rtl433_pulse_analysis,
     luxorparts_generate_codes,
     normalize_rf_model,
 )
@@ -2595,3 +2605,850 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             },
             errors=errors,
         )
+
+    # ------------------------------------------------------------------
+    # Generic RF record & replay flow
+    # ------------------------------------------------------------------
+
+    # Instance state for the generic RF recording flow
+    _generic_rf_name: str = ""
+    _generic_rf_device_type: str = GENERIC_RF_TYPE_SWITCH
+    _generic_rf_timings_on: list[int] | None = None
+    _generic_rf_timings_off: list[int] | None = None
+    _generic_rf_timings_up: list[int] | None = None
+    _generic_rf_timings_down: list[int] | None = None
+    _generic_rf_timings_stop: list[int] | None = None
+    _generic_rf_timings_dim_levels: dict[int, list[int]] = {}
+    _generic_rf_listen_unsub: Any = None
+    _generic_rf_captured: dict | None = None
+    _generic_rf_repeat_count: int = 10
+    _generic_rf_log_position: int = 0
+    _rtl433_addon_slug_cache: str | None = None
+
+    async def async_step_generic_rf(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Step: enter a name for the Generic RF device, device type, and repeat count."""
+        entry = self._get_entry()
+        backend = entry.data.get(CONF_BACKEND, BACKEND_DUO)
+
+        if user_input is not None:
+            self._generic_rf_name = user_input["name"]
+            self._generic_rf_device_type = user_input.get("device_type", GENERIC_RF_TYPE_SWITCH)
+            self._generic_rf_repeat_count = int(user_input.get("repeat_count", 10))
+            # Reset timings for new recording
+            self._generic_rf_timings_on = None
+            self._generic_rf_timings_off = None
+            self._generic_rf_timings_up = None
+            self._generic_rf_timings_down = None
+            self._generic_rf_timings_stop = None
+            self._generic_rf_timings_dim_levels = {}
+            
+            # Route to appropriate capture flow based on device type
+            if self._generic_rf_device_type == GENERIC_RF_TYPE_SWITCH:
+                return await self.async_step_generic_rf_listen_on()
+            elif self._generic_rf_device_type == GENERIC_RF_TYPE_LIGHT:
+                return await self.async_step_generic_rf_listen_on()
+            elif self._generic_rf_device_type == GENERIC_RF_TYPE_COVER:
+                return await self.async_step_generic_rf_listen_up()
+            return await self.async_step_generic_rf_listen_on()
+
+        description = ""
+        if backend != BACKEND_DUO:
+            description = "warning_not_duo"
+
+        return self.async_show_form(
+            step_id="generic_rf",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("name"): str,
+                    vol.Required("device_type", default=GENERIC_RF_TYPE_SWITCH): vol.In(
+                        {
+                            GENERIC_RF_TYPE_SWITCH: "Switch (ON/OFF)",
+                            GENERIC_RF_TYPE_LIGHT: "Dimmer/Light (ON/OFF/DIM)",
+                            GENERIC_RF_TYPE_COVER: "Cover/Blind (UP/DOWN/STOP)",
+                        }
+                    ),
+                    vol.Optional("repeat_count", default=10): vol.All(
+                        int, vol.Range(min=1, max=50)
+                    ),
+                }
+            ),
+            description_placeholders={"note": description},
+        )
+
+    async def async_step_generic_rf_listen_on(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Step: listen for the ON signal from the remote.
+
+        Starts an MQTT subscription to rtl_433/# when first entered.
+        Also monitors rtl_433 add-on logs for unknown signals.
+        User presses their remote, then clicks "Check signal" to proceed.
+        """
+        # Start a fresh capture session whenever this listen step is entered.
+        if user_input is None:
+            await self._restart_generic_rf_listen()
+
+        if user_input is not None:
+            # User clicked submit — check if a signal was captured via MQTT
+            if self._generic_rf_captured is not None:
+                self._generic_rf_timings_on = self._generic_rf_captured.get("timings")
+                return await self.async_step_generic_rf_confirm_on()
+            
+            # No MQTT signal yet — check logs for unknown signals
+            log_signal = await self._check_rtl433_logs_for_signal()
+            if log_signal is not None:
+                self._generic_rf_captured = log_signal
+                self._generic_rf_timings_on = log_signal.get("timings")
+                return await self.async_step_generic_rf_confirm_on()
+            
+            # No signal yet (neither MQTT nor logs) — re-show with error and debug info
+            last_log_line = await self._get_rtl433_last_log_line()
+            return self.async_show_form(
+                step_id="generic_rf_listen_on",
+                errors={"base": "no_signal"},
+                data_schema=vol.Schema({}),
+                description_placeholders={
+                    "name": self._generic_rf_name,
+                    "debug_info": f"**Debug:** Last rtl_433 log line: `{last_log_line}`",
+                },
+            )
+
+        return self.async_show_form(
+            step_id="generic_rf_listen_on",
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "name": self._generic_rf_name,
+                "debug_info": "",
+            },
+        )
+
+    async def _start_generic_rf_listen(self) -> None:
+        """Subscribe to rtl_433/# MQTT and monitor logs to capture the next RF signal."""
+        # Store the initial log position before starting capture
+        self._generic_rf_log_position = await self._get_rtl433_log_position()
+        
+        try:
+            from homeassistant.components import mqtt  # noqa: PLC0415
+
+            if not await mqtt.async_wait_for_mqtt_client(self.hass):
+                _LOGGER.warning("Generic RF listen: MQTT not available")
+                return
+
+            @callback
+            def _capture_callback(msg: Any) -> None:
+                """Capture the first RF signal received."""
+                if self._generic_rf_captured is not None:
+                    return  # already captured
+                try:
+                    import json as _json  # noqa: PLC0415
+                    payload = _json.loads(msg.payload)
+                except Exception:  # noqa: BLE001
+                    return
+                if not isinstance(payload, dict):
+                    return
+                # Look for the codes field (raw pulse timings)
+                codes_str = payload.get("codes", "")
+                if codes_str:
+                    timings = _parse_rtl433_codes(codes_str)
+                    if timings:
+                        self._generic_rf_captured = {
+                            "timings": timings,
+                            "model": payload.get("model", "unknown"),
+                            "raw": str(codes_str)[:200],
+                            "source": "mqtt",
+                        }
+                        return
+                # Also accept any decoded signal — store as empty timings
+                # (user can confirm the device was detected even if we
+                # can't replay it via raw pulse, for documentation purposes)
+                model = payload.get("model", "")
+                if model and model != "unknown":
+                    self._generic_rf_captured = {
+                        "timings": [],
+                        "model": model,
+                        "raw": "",
+                        "source": "mqtt",
+                    }
+
+            self._generic_rf_listen_unsub = await mqtt.async_subscribe(
+                self.hass, "rtl_433/#", _capture_callback
+            )
+        except ImportError:
+            _LOGGER.warning("Generic RF listen: MQTT integration not available")
+        except Exception:  # noqa: BLE001
+            _LOGGER.warning("Generic RF listen: failed to subscribe to MQTT", exc_info=True)
+
+    async def _restart_generic_rf_listen(self) -> None:
+        """Start a fresh Generic RF capture session for a new listen step."""
+        if self._generic_rf_listen_unsub is not None:
+            try:
+                self._generic_rf_listen_unsub()
+            except Exception:  # noqa: BLE001
+                _LOGGER.debug(
+                    "Error unsubscribing from previous rtl_433 MQTT listener (non-fatal)",
+                    exc_info=True,
+                )
+            self._generic_rf_listen_unsub = None
+
+        self._generic_rf_captured = None
+        await self._start_generic_rf_listen()
+    
+    def _supervisor_headers(self) -> dict[str, str]:
+        """Return HTTP headers for Supervisor API requests."""
+        token = os.environ.get("SUPERVISOR_TOKEN", "")
+        return {"Authorization": f"Bearer {token}"}
+
+    async def _discover_rtl433_addon_slug(self) -> str | None:
+        """Discover the actual RTL_433 addon slug.
+        
+        The slug may have a prefix when installed from custom repositories
+        (e.g., 'e9305338-rtl_433' instead of 'rtl_433').
+        
+        Returns the discovered slug or None if addon is not found/installed.
+        """
+        # Return cached value if already discovered
+        if self._rtl433_addon_slug_cache is not None:
+            return self._rtl433_addon_slug_cache
+        
+        try:
+            session = async_get_clientsession(self.hass)
+            # Query supervisor for list of installed addons using absolute URL + auth token
+            url = "http://supervisor/addons"
+            async with session.get(url, headers=self._supervisor_headers()) as resp:
+                if resp.status != 200:
+                    _LOGGER.warning("Failed to query addon list: HTTP %s", resp.status)
+                    return None
+                
+                result = await resp.json()
+                addons = result.get("data", {}).get("addons", [])
+                
+                # Log all installed addons for debugging
+                addon_list = [(a.get("slug", ""), a.get("name", "")) for a in addons]
+                _LOGGER.debug(f"Installed addons: {addon_list}")
+                
+                # Search for rtl_433 addon by name or slug
+                for addon in addons:
+                    slug = addon.get("slug", "")
+                    name = addon.get("name", "").lower()
+                    
+                    _LOGGER.debug(f"Checking addon: slug={slug}, name={name}")
+                    
+                    # Match if slug ends with 'rtl_433' (handles prefix) or name contains 'rtl'
+                    if slug.endswith("rtl_433") or "rtl" in name:
+                        _LOGGER.info(f"Discovered RTL_433 addon with slug: {slug}, name: {addon.get('name')}")
+                        self._rtl433_addon_slug_cache = slug
+                        return slug
+                
+                _LOGGER.warning(f"RTL_433 addon not found in {len(addons)} installed addons. Installed addons: {addon_list}")
+                return None
+        except Exception:  # noqa: BLE001
+            _LOGGER.warning("Failed to discover RTL_433 addon slug", exc_info=True)
+            return None
+    
+    async def _get_rtl433_log_position(self) -> int:
+        """Get the current position in rtl_433 logs."""
+        try:
+            # Discover the actual addon slug (may have prefix from custom repo)
+            slug = await self._discover_rtl433_addon_slug()
+            if slug is None:
+                _LOGGER.debug("RTL_433 addon not found, cannot get log position")
+                return 0
+            
+            session = async_get_clientsession(self.hass)
+            # Supervisor logs endpoint returns plain text, not JSON
+            url = f"http://supervisor/addons/{slug}/logs"
+            async with session.get(url, headers=self._supervisor_headers()) as resp:
+                if resp.status == 200:
+                    logs = await resp.text()
+                    return len(logs)
+        except Exception:  # noqa: BLE001
+            _LOGGER.debug("Failed to get rtl_433 log position (non-fatal)", exc_info=True)
+        return 0
+    
+    async def _get_rtl433_last_log_line(self) -> str:
+        """Get the last non-empty line from rtl_433 logs for debug purposes."""
+        try:
+            # Discover the actual addon slug (may have prefix from custom repo)
+            slug = await self._discover_rtl433_addon_slug()
+            if slug is None:
+                return "RTL_433 addon not found - check Home Assistant logs"
+            
+            session = async_get_clientsession(self.hass)
+            # Supervisor logs endpoint returns plain text, not JSON
+            url = f"http://supervisor/addons/{slug}/logs"
+            async with session.get(url, headers=self._supervisor_headers()) as resp:
+                if resp.status == 200:
+                    logs = await resp.text()
+                    # Get the last non-empty line
+                    lines = [line.strip() for line in logs.strip().split('\n') if line.strip()]
+                    if lines:
+                        return lines[-1]
+                    return "No logs available"
+                return f"Failed to fetch logs (HTTP {resp.status})"
+        except Exception as e:  # noqa: BLE001
+            _LOGGER.warning("Failed to get rtl_433 last log line", exc_info=True)
+            return f"Error: {str(e)}"
+    
+    async def _check_rtl433_logs_for_signal(self) -> dict[str, Any] | None:
+        """Check rtl_433 logs for new unknown signals since capture started."""
+        import re  # noqa: PLC0415
+        
+        try:
+            # Discover the actual addon slug (may have prefix from custom repo)
+            slug = await self._discover_rtl433_addon_slug()
+            if slug is None:
+                _LOGGER.debug("RTL_433 addon not found, cannot check logs")
+                return None
+            
+            session = async_get_clientsession(self.hass)
+            # Supervisor logs endpoint returns plain text, not JSON
+            url = f"http://supervisor/addons/{slug}/logs"
+            async with session.get(url, headers=self._supervisor_headers()) as resp:
+                if resp.status != 200:
+                    return None
+                
+                logs = await resp.text()
+                
+                # Only check new log content
+                start_pos = getattr(self, "_generic_rf_log_position", 0)
+                if len(logs) <= start_pos:
+                    return None
+                
+                new_logs = logs[start_pos:]
+                
+                # Log what we're examining for debugging
+                sample = new_logs[:500] if len(new_logs) > 500 else new_logs
+                _LOGGER.debug(f"New rtl_433 log sample: {sample}")
+                last_row = new_logs.strip().split('\n')[-1] if new_logs.strip() else ""
+                _LOGGER.debug(f"Last row of rtl_433 logs: {last_row}")
+                
+                # Parse for decoder suggestions or pulse data
+                pattern_decoder = re.compile(r"Use a flex decoder with -X '([^']+)'")
+                pattern_view_url = re.compile(r"view at (https://triq\.org/pdv/#[^\s]+)")
+                
+                # Look for decoder suggestion (most useful)
+                match_decoder = pattern_decoder.search(new_logs)
+                if match_decoder:
+                    decoder_cmd = match_decoder.group(1)
+                    _LOGGER.debug(f"Found flex decoder suggestion in rtl_433 logs: {decoder_cmd}")
+                    # Extract pulse parameters from decoder suggestion
+                    # Example: n=name,m=OOK_PWM,s=376,l=776,r=1520,g=0,t=0,y=1472
+                    params = {}
+                    for param in decoder_cmd.split(","):
+                        if "=" in param:
+                            key, val = param.split("=", 1)
+                            params[key] = val
+                    
+                    # Convert flex decoder params to timings
+                    timings = convert_flex_decoder_params(decoder_cmd) or []
+                    _LOGGER.debug(f"Converted flex decoder to {len(timings)} timings")
+                    
+                    return {
+                        "timings": timings,
+                        "model": params.get("n", "unknown"),
+                        "decoder": decoder_cmd,
+                        "raw": decoder_cmd,
+                        "source": "log_decoder",
+                    }
+                
+                # Look for visualization URL
+                match_view = pattern_view_url.search(new_logs)
+                if match_view:
+                    url = match_view.group(1)
+                    _LOGGER.debug("Found triq.org visualization URL in rtl_433 logs")
+                    # Decode triq.org URL to extract timings
+                    timings = decode_triq_url(url) or []
+                    _LOGGER.debug(f"Decoded triq.org URL to {len(timings)} timings")
+                    
+                    return {
+                        "timings": timings,
+                        "model": "unknown",
+                        "raw": url,
+                        "source": "log_view_url",
+                    }
+                
+                # Look for pulse analysis data
+                timings = parse_rtl433_pulse_analysis(new_logs)
+                if timings:
+                    _LOGGER.debug(f"Parsed pulse/gap distribution from rtl_433 logs: {len(timings)} timings")
+                    return {
+                        "timings": timings,
+                        "model": "unknown",
+                        "raw": "pulse_analysis",
+                        "source": "log_pulse_analysis",
+                    }
+                else:
+                    _LOGGER.debug("No pulse/gap width distribution found in rtl_433 logs")
+        
+        except Exception:  # noqa: BLE001
+            _LOGGER.debug("Failed to check rtl_433 logs (non-fatal)", exc_info=True)
+        
+        _LOGGER.debug("No RF signal found in rtl_433 logs (no decoder suggestions, URLs, or pulse distributions)")
+        return None
+
+    async def async_step_generic_rf_confirm_on(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Step: confirm the captured ON signal and optionally record OFF or DIM levels."""
+        if self._generic_rf_listen_unsub is not None:
+            try:
+                self._generic_rf_listen_unsub()
+            except Exception:  # noqa: BLE001
+                _LOGGER.debug("Error unsubscribing from rtl_433 MQTT (non-fatal)", exc_info=True)
+            self._generic_rf_listen_unsub = None
+
+        if user_input is not None:
+            # User confirms — next step depends on device type
+            if self._generic_rf_device_type == GENERIC_RF_TYPE_LIGHT:
+                # For lights, ask about OFF and DIM levels
+                if user_input.get("record_off"):
+                    self._generic_rf_captured = None
+                    return await self.async_step_generic_rf_listen_off()
+                # Skip to dim level capture
+                return await self.async_step_generic_rf_dim_choice()
+            else:
+                # For switches, just ask about OFF
+                if user_input.get("record_off"):
+                    self._generic_rf_captured = None
+                    return await self.async_step_generic_rf_listen_off()
+                return await self._async_save_generic_rf_device()
+
+        captured = self._generic_rf_captured or {}
+        timings_count = len(self._generic_rf_timings_on or [])
+        
+        # Different prompts based on device type
+        if self._generic_rf_device_type == GENERIC_RF_TYPE_LIGHT:
+            description_key = "generic_rf_confirm_on_light"
+        else:
+            description_key = "generic_rf_confirm_on"
+            
+        return self.async_show_form(
+            step_id=description_key,
+            data_schema=vol.Schema(
+                {vol.Optional("record_off", default=False): bool}
+            ),
+            description_placeholders={
+                "name": self._generic_rf_name,
+                "model": captured.get("model", "unknown"),
+                "timings_count": str(timings_count),
+            },
+        )
+
+    async def async_step_generic_rf_listen_off(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Step: listen for the OFF signal from the remote."""
+        if user_input is None:
+            await self._restart_generic_rf_listen()
+
+        if user_input is not None:
+            if self._generic_rf_captured is not None:
+                self._generic_rf_timings_off = self._generic_rf_captured.get("timings")
+                # For lights, continue to dim level capture
+                if self._generic_rf_device_type == GENERIC_RF_TYPE_LIGHT:
+                    return await self.async_step_generic_rf_dim_choice()
+                # For switches, save now
+                return await self._async_save_generic_rf_device()
+            # No MQTT signal — check logs for unknown signals (same fallback as ON)
+            log_signal = await self._check_rtl433_logs_for_signal()
+            if log_signal is not None:
+                self._generic_rf_captured = log_signal
+                self._generic_rf_timings_off = log_signal.get("timings")
+                if self._generic_rf_device_type == GENERIC_RF_TYPE_LIGHT:
+                    return await self.async_step_generic_rf_dim_choice()
+                return await self._async_save_generic_rf_device()
+            last_log_line = await self._get_rtl433_last_log_line()
+            return self.async_show_form(
+                step_id="generic_rf_listen_off",
+                errors={"base": "no_signal"},
+                data_schema=vol.Schema({}),
+                description_placeholders={
+                    "name": self._generic_rf_name,
+                    "debug_info": f"**Debug:** Last rtl_433 log line: `{last_log_line}`",
+                },
+            )
+
+        return self.async_show_form(
+            step_id="generic_rf_listen_off",
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "name": self._generic_rf_name,
+                "debug_info": "",
+            },
+        )
+
+    async def async_step_generic_rf_dim_choice(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Step: ask if user wants to record dim levels for a light."""
+        if user_input is not None:
+            if user_input.get("record_dim"):
+                # Ask which dim level to record
+                return await self.async_step_generic_rf_dim_level_select()
+            # Skip dim levels - save device
+            return await self._async_save_generic_rf_device()
+
+        return self.async_show_form(
+            step_id="generic_rf_dim_choice",
+            data_schema=vol.Schema(
+                {vol.Optional("record_dim", default=False): bool}
+            ),
+            description_placeholders={"name": self._generic_rf_name},
+        )
+
+    async def async_step_generic_rf_dim_level_select(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Step: select which dim level to record (e.g., 25%, 50%, 75%)."""
+        if user_input is not None:
+            dim_level = int(user_input["dim_level"])
+            self._generic_rf_current_dim_level = dim_level
+            self._generic_rf_captured = None
+            return await self.async_step_generic_rf_listen_dim()
+
+        # Offer common dim levels that haven't been recorded yet
+        available_levels = [25, 50, 75, 100]
+        recorded_levels = list(self._generic_rf_timings_dim_levels.keys())
+        remaining_levels = [lvl for lvl in available_levels if lvl not in recorded_levels]
+        
+        if not remaining_levels:
+            # All common levels recorded, allow saving
+            return await self._async_save_generic_rf_device()
+
+        return self.async_show_form(
+            step_id="generic_rf_dim_level_select",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("dim_level"): vol.In(
+                        {lvl: f"{lvl}%" for lvl in remaining_levels}
+                    )
+                }
+            ),
+            description_placeholders={
+                "name": self._generic_rf_name,
+                "recorded": ", ".join(f"{lvl}%" for lvl in recorded_levels) if recorded_levels else "none",
+            },
+        )
+
+    async def async_step_generic_rf_listen_dim(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Step: listen for a DIM level signal from the remote."""
+        if user_input is None:
+            await self._restart_generic_rf_listen()
+
+        if user_input is not None:
+            if self._generic_rf_captured is not None:
+                timings = self._generic_rf_captured.get("timings")
+                if timings:
+                    # Store this dim level
+                    dim_level = getattr(self, "_generic_rf_current_dim_level", 50)
+                    self._generic_rf_timings_dim_levels[dim_level] = timings
+
+                # Ask if they want to record another level
+                return await self.async_step_generic_rf_dim_choice()
+
+            # No MQTT signal — check logs for unknown signals
+            log_signal = await self._check_rtl433_logs_for_signal()
+            if log_signal is not None:
+                self._generic_rf_captured = log_signal
+                timings = log_signal.get("timings")
+                if timings:
+                    dim_level = getattr(self, "_generic_rf_current_dim_level", 50)
+                    self._generic_rf_timings_dim_levels[dim_level] = timings
+                return await self.async_step_generic_rf_dim_choice()
+
+            last_log_line = await self._get_rtl433_last_log_line()
+            return self.async_show_form(
+                step_id="generic_rf_listen_dim",
+                errors={"base": "no_signal"},
+                data_schema=vol.Schema({}),
+                description_placeholders={
+                    "name": self._generic_rf_name,
+                    "dim_level": str(getattr(self, "_generic_rf_current_dim_level", 50)),
+                    "debug_info": f"**Debug:** Last rtl_433 log line: `{last_log_line}`",
+                },
+            )
+
+        return self.async_show_form(
+            step_id="generic_rf_listen_dim",
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "name": self._generic_rf_name,
+                "dim_level": str(getattr(self, "_generic_rf_current_dim_level", 50)),
+                "debug_info": "",
+            },
+        )
+
+    async def async_step_generic_rf_listen_up(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Step: listen for the UP signal from a cover/blind remote."""
+        if user_input is None:
+            await self._restart_generic_rf_listen()
+
+        if user_input is not None:
+            if self._generic_rf_captured is not None:
+                self._generic_rf_timings_up = self._generic_rf_captured.get("timings")
+                return await self.async_step_generic_rf_confirm_up()
+            # No MQTT signal — check logs for unknown signals
+            log_signal = await self._check_rtl433_logs_for_signal()
+            if log_signal is not None:
+                self._generic_rf_captured = log_signal
+                self._generic_rf_timings_up = log_signal.get("timings")
+                return await self.async_step_generic_rf_confirm_up()
+            last_log_line = await self._get_rtl433_last_log_line()
+            return self.async_show_form(
+                step_id="generic_rf_listen_up",
+                errors={"base": "no_signal"},
+                data_schema=vol.Schema({}),
+                description_placeholders={
+                    "name": self._generic_rf_name,
+                    "debug_info": f"**Debug:** Last rtl_433 log line: `{last_log_line}`",
+                },
+            )
+
+        return self.async_show_form(
+            step_id="generic_rf_listen_up",
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "name": self._generic_rf_name,
+                "debug_info": "",
+            },
+        )
+
+    async def async_step_generic_rf_confirm_up(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Step: confirm UP signal and ask about DOWN."""
+        if self._generic_rf_listen_unsub is not None:
+            try:
+                self._generic_rf_listen_unsub()
+            except Exception:  # noqa: BLE001
+                _LOGGER.debug("Error unsubscribing from rtl_433 MQTT (non-fatal)", exc_info=True)
+            self._generic_rf_listen_unsub = None
+
+        if user_input is not None:
+            # Always record DOWN for covers
+            self._generic_rf_captured = None
+            return await self.async_step_generic_rf_listen_down()
+
+        captured = self._generic_rf_captured or {}
+        timings_count = len(self._generic_rf_timings_up or [])
+        return self.async_show_form(
+            step_id="generic_rf_confirm_up",
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "name": self._generic_rf_name,
+                "model": captured.get("model", "unknown"),
+                "timings_count": str(timings_count),
+            },
+        )
+
+    async def async_step_generic_rf_listen_down(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Step: listen for the DOWN signal from a cover/blind remote."""
+        if user_input is None:
+            await self._restart_generic_rf_listen()
+
+        if user_input is not None:
+            if self._generic_rf_captured is not None:
+                self._generic_rf_timings_down = self._generic_rf_captured.get("timings")
+                return await self.async_step_generic_rf_confirm_down()
+            # No MQTT signal — check logs for unknown signals
+            log_signal = await self._check_rtl433_logs_for_signal()
+            if log_signal is not None:
+                self._generic_rf_captured = log_signal
+                self._generic_rf_timings_down = log_signal.get("timings")
+                return await self.async_step_generic_rf_confirm_down()
+            last_log_line = await self._get_rtl433_last_log_line()
+            return self.async_show_form(
+                step_id="generic_rf_listen_down",
+                errors={"base": "no_signal"},
+                data_schema=vol.Schema({}),
+                description_placeholders={
+                    "name": self._generic_rf_name,
+                    "debug_info": f"**Debug:** Last rtl_433 log line: `{last_log_line}`",
+                },
+            )
+
+        return self.async_show_form(
+            step_id="generic_rf_listen_down",
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "name": self._generic_rf_name,
+                "debug_info": "",
+            },
+        )
+
+    async def async_step_generic_rf_confirm_down(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Step: confirm DOWN signal and ask about STOP."""
+        if self._generic_rf_listen_unsub is not None:
+            try:
+                self._generic_rf_listen_unsub()
+            except Exception:  # noqa: BLE001
+                _LOGGER.debug("Error unsubscribing from rtl_433 MQTT (non-fatal)", exc_info=True)
+            self._generic_rf_listen_unsub = None
+
+        if user_input is not None:
+            if user_input.get("record_stop"):
+                self._generic_rf_captured = None
+                return await self.async_step_generic_rf_listen_stop()
+            # Skip STOP - save device
+            return await self._async_save_generic_rf_device()
+
+        captured = self._generic_rf_captured or {}
+        timings_count = len(self._generic_rf_timings_down or [])
+        return self.async_show_form(
+            step_id="generic_rf_confirm_down",
+            data_schema=vol.Schema(
+                {vol.Optional("record_stop", default=False): bool}
+            ),
+            description_placeholders={
+                "name": self._generic_rf_name,
+                "model": captured.get("model", "unknown"),
+                "timings_count": str(timings_count),
+            },
+        )
+
+    async def async_step_generic_rf_listen_stop(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Step: listen for the STOP signal from a cover/blind remote."""
+        if user_input is None:
+            await self._restart_generic_rf_listen()
+
+        if user_input is not None:
+            if self._generic_rf_captured is not None:
+                self._generic_rf_timings_stop = self._generic_rf_captured.get("timings")
+                return await self._async_save_generic_rf_device()
+            # No MQTT signal — check logs for unknown signals
+            log_signal = await self._check_rtl433_logs_for_signal()
+            if log_signal is not None:
+                self._generic_rf_captured = log_signal
+                self._generic_rf_timings_stop = log_signal.get("timings")
+                return await self._async_save_generic_rf_device()
+            last_log_line = await self._get_rtl433_last_log_line()
+            return self.async_show_form(
+                step_id="generic_rf_listen_stop",
+                errors={"base": "no_signal"},
+                data_schema=vol.Schema({}),
+                description_placeholders={
+                    "name": self._generic_rf_name,
+                    "debug_info": f"**Debug:** Last rtl_433 log line: `{last_log_line}`",
+                },
+            )
+
+        return self.async_show_form(
+            step_id="generic_rf_listen_stop",
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "name": self._generic_rf_name,
+                "debug_info": "",
+            },
+        )
+
+    async def _async_save_generic_rf_device(self) -> SubentryFlowResult:
+        """Save the Generic RF device to entry options and dispatch signal."""
+        if self._generic_rf_listen_unsub is not None:
+            try:
+                self._generic_rf_listen_unsub()
+            except Exception:  # noqa: BLE001
+                _LOGGER.debug("Error unsubscribing from rtl_433 MQTT (non-fatal)", exc_info=True)
+            self._generic_rf_listen_unsub = None
+
+        entry = self._get_entry()
+        import secrets as _secrets  # noqa: PLC0415
+
+        # The device UID is built from protocol+model+house+unit by
+        # RawDeviceEvent.device_id.  For Generic RF devices, there are
+        # no meaningful house/unit codes, so we use a random token as the
+        # "house" field to create a unique UID: generic_rf_<token>.
+        uid_suffix = _secrets.token_hex(4)
+        device_uid = f"generic_rf_{uid_suffix}"
+
+        device_data = {
+            CONF_DEVICE_NAME: self._generic_rf_name,
+            CONF_DEVICE_PROTOCOL: PROTOCOL_GENERIC_RF,
+            CONF_DEVICE_MODEL: "",
+            CONF_DEVICE_HOUSE: uid_suffix,   # used as the UID discriminator
+            CONF_DEVICE_UNIT: "",
+            CONF_DEVICE_TYPE: self._generic_rf_device_type,
+            "repeat_count": self._generic_rf_repeat_count,
+        }
+        
+        # Store timings based on device type
+        if self._generic_rf_device_type == GENERIC_RF_TYPE_SWITCH:
+            device_data["timings_on"] = self._generic_rf_timings_on or []
+            device_data["timings_off"] = self._generic_rf_timings_off
+        elif self._generic_rf_device_type == GENERIC_RF_TYPE_LIGHT:
+            device_data["timings_on"] = self._generic_rf_timings_on or []
+            device_data["timings_off"] = self._generic_rf_timings_off
+            device_data["timings_dim_levels"] = self._generic_rf_timings_dim_levels
+        elif self._generic_rf_device_type == GENERIC_RF_TYPE_COVER:
+            device_data["timings_up"] = self._generic_rf_timings_up or []
+            device_data["timings_down"] = self._generic_rf_timings_down or []
+            device_data["timings_stop"] = self._generic_rf_timings_stop
+
+        # Persist in entry.options[CONF_DEVICES]
+        existing_devices = dict(entry.options.get(CONF_DEVICES, {}))
+        existing_devices[device_uid] = device_data
+        new_options = dict(entry.options)
+        new_options[CONF_DEVICES] = existing_devices
+        self.hass.config_entries.async_update_entry(entry, options=new_options)
+
+        # Also update device_id_map so the entity can send commands immediately
+        entry_data = self.hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
+        device_id_map: dict = entry_data.get(ENTRY_DEVICE_ID_MAP, {})
+        device_id_map[device_uid] = {
+            CONF_DEVICE_PROTOCOL: PROTOCOL_GENERIC_RF,
+            CONF_DEVICE_MODEL: "",
+            CONF_DEVICE_HOUSE: uid_suffix,
+            CONF_DEVICE_UNIT: "",
+        }
+
+        # Mark as discovered to avoid double-processing phantom events
+        entry_data.setdefault("_discovered_uids", set()).add(device_uid)
+
+        # Dispatch synthetic RawDeviceEvent so switch.py creates the entity
+        # immediately.  We encode uid_suffix as "house" so device_id resolves
+        # to "generic_rf_<uid_suffix>" — matching the stored device_uid.
+        from .client import RawDeviceEvent  # noqa: PLC0415
+
+        synthetic = RawDeviceEvent(
+            raw=(
+                f"class:command;protocol:{PROTOCOL_GENERIC_RF};model:;"
+                f"house:{uid_suffix};unit:;method:turnon;"
+            ),
+            controller_id=0,
+        )
+        async_dispatcher_send(
+            self.hass,
+            SIGNAL_NEW_DEVICE.format(entry.entry_id),
+            synthetic,
+        )
+
+        return self.async_abort(reason="device_added")
+
+
+def _parse_rtl433_codes(codes_str: str) -> list[int]:
+    """Parse an rtl_433 codes field into a list of µs timings.
+
+    The codes field looks like: ``{392,-1108,392,-352,...}`` or
+    ``392,-1108,392,-352,...``  (alternating pulse/space in µs).
+
+    Returns an empty list if parsing fails.
+    """
+    try:
+        # Strip braces if present
+        codes_str = codes_str.strip().strip("{}")
+        if not codes_str:
+            return []
+        return [int(x.strip()) for x in codes_str.split(",") if x.strip()]
+    except (ValueError, AttributeError):
+        return []
