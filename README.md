@@ -1,19 +1,17 @@
 # Home Assistant: TellStick Local
+Home assistant support for tellsticks (duo, net, znet) without no need for Telldus live nor any Telldus software nor cloud.
 
-> [!NOTE]
-> **🟡 RTL-433 / Generic RF status — Temporarily halted**
-> Ongoing RTL-433 and Generic RF development is temporarily paused while this
-> branch is prepared for merge. Existing branch artifacts remain in history, but
-> related GUI entry points are disabled for now.
+> **🟡 TellStick duo / Stable**
+> Stable and production ready.
 > If you hit any problem, please [open an issue][issue].
 
 > [!WARNING]
-> **🟡 TellStick Net / ZNet — Beta** – On/off commands, event reception, and sensor
+> **🟡 TellStick Net / ZNet — Release candidate** – On/off commands, event reception, and sensor
 > decoding work for all major protocols. A wide range of scenarios has been tested, but
 > edge cases may remain. Feedback and bug reports are very welcome.
 
 > [!CAUTION]
-> **🟡 Luxorparts / Cleverio 50969, 50970, 50972 — Beta (Duo only)** – On/off works
+> **🟡 Luxorparts / Cleverio 50969, 50970, 50972 — Release candidate (Duo only)** – On/off works
 > on TellStick Duo using raw RF pulse encoding with pre-captured Telldus Live codes
 > (LPD 1–24). Not yet available on TellStick Net/ZNet. See [details below](#known-limitations).
 
