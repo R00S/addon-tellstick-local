@@ -25,6 +25,6 @@ Synchronise the runtime files with custom_components at the same time (they were
 ## Status
 
 - [x] Timeline file created
-- [ ] `description_url` added to all steps
-- [ ] Runtime files synced and updated
-- [ ] Manifest version bumped
+- [x] `description_url` added to all 42 flow steps (config, options, subentries, issues fix_flow)
+- [x] Runtime files synced and updated (were behind on inline 📖 links from prior session)
+- [x] Manifest version bumped 3.3.0.1 → 3.3.0.2
