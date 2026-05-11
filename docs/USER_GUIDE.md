@@ -16,8 +16,8 @@
    - 4.1 [Install the TellStick Local app](#41-install-the-tellstick-local-app)
    - 4.2 [Accept the setup prompt](#42-accept-the-setup-prompt)
 5. [Pairing devices](#5-pairing-devices)
-   - 5.1 [Automatic add — press-to-discover](#51-automatic-add-press-to-discover)
-   - 5.2 [Self-learning teach — Add device button](#52-self-learning-teach-add-device-button)
+   - 5.1 [Automatic add (press-to-discover)](#51-automatic-add-press-to-discover)
+   - 5.2 [Self-learning teach (Add device button)](#52-self-learning-teach-add-device-button)
 6. [Editing a device](#6-editing-a-device)
 7. [Grouping devices](#7-grouping-devices)
    - 7.1 [Grouping multi-probe sensors](#71-grouping-multi-probe-sensors)
@@ -147,7 +147,7 @@ Go to **Settings → Devices & Services → Add Integration**, search for
 
 ## 5. Pairing devices
 
-### 5.1 Automatic add — press-to-discover
+### 5.1 Automatic add (press-to-discover)
 
 Works for any device that transmits 433 MHz when a button is pressed (remotes,
 wall switches, wireless sensors).
@@ -174,7 +174,7 @@ wall switches, wireless sensors).
 > timer — you do not need to press a button. Just wait a few minutes and they should
 > appear on their own.
 
-### 5.2 Self-learning teach — Add device button
+### 5.2 Self-learning teach (Add device button)
 
 Use this for self-learning receivers (Nexa, KAKU, Proove, Intertechno, etc.) that
 need to be taught a code before they respond.

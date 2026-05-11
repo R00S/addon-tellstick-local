@@ -32,3 +32,17 @@ Import repo-management practices from `R00S/meater-in-local-haos`:
   config-flow steps (hassio_confirm, add_rf_device, settings, confirm/teach,
   group_device).
 - Bumped version to `3.3.0.0` in both `manifest.json` files.
+
+### 2026-05-11 — CHORES.md execution
+
+- Fixed two subsection headings in `docs/USER_GUIDE.md` that used em-dash (`—`)
+  to use parentheses instead. GitHub's anchor algorithm strips the em-dash but
+  keeps both surrounding spaces as hyphens, producing `--`; the links already in
+  `strings.json` / `translations/en.json` used single hyphens, so they would have
+  been broken. Fixed headings:
+  - `5.1 Automatic add — press-to-discover` → `5.1 Automatic add (press-to-discover)`
+  - `5.2 Self-learning teach — Add device button` → `5.2 Self-learning teach (Add device button)`
+  Updated Table of Contents entries in USER_GUIDE.md accordingly.
+  No changes needed to `strings.json` or `translations/en.json` — the existing
+  anchors now match the corrected headings.
+- Bumped version: `3.3.0.0` → `3.3.0.1` in both `manifest.json` files.
