@@ -23,6 +23,7 @@
         "step": {
           "init": {
             "title": "Restart Home Assistant",
+            "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#a-notification-appeared-saying-restart-is-required",
             "description": "Home Assistant will restart now to activate TellStick Local **v{new_version}**.\n\nClick **Submit** to restart."
           }
         }
@@ -38,10 +39,12 @@
     "step": {
       "hassio_confirm": {
         "title": "TellStick Local detected",
+        "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#4-installation",
         "description": "The **{addon}** app is running and ready.\n\nIt will connect on **{host}** (command port **{command_port}**, event port **{event_port}**).\n\nClick **Submit** to set up TellStick Local.\n\n[📖 User Guide: Installation](https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#4-installation)"
       },
       "user": {
         "title": "TellStick hardware type",
+        "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#4-installation",
         "menu_options": {
           "duo": "TellStick Duo (USB — connected to HAOS via the TellStick Local app)",
           "net": "TellStick Net / ZNet (connected via Wi-Fi or Ethernet)"
@@ -49,6 +52,7 @@
       },
       "duo": {
         "title": "Connect to TellStick daemon",
+        "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#41-install-the-tellstick-local-app",
         "description": "Enter the host and ports of the TellStick Local app.\n\nFind the correct hostname in the **app log** — look for the line `use host: …`. For apps installed from a custom repository the hostname includes a prefix (e.g. `e9305338-tellsticklive`).",
         "data": {
           "host": "Host",
@@ -63,6 +67,7 @@
       },
       "reconfigure": {
         "title": "Update connection settings",
+        "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#41-install-the-tellstick-local-app",
         "description": "Update the hostname (or IP address) and ports for this TellStick entry.\n\nThis is useful when switching between the **stable** and **dev** channels — each channel has a different add-on hostname (e.g. `e9305338-tellsticklive` vs `abc12345-tellstick-local`).\n\nYour stored devices and settings are preserved.",
         "data": {
           "host": "Host",
@@ -77,6 +82,7 @@
       },
       "net_discovery": {
         "title": "Discover TellStick Net / ZNet",
+        "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#41-install-the-tellstick-local-app",
         "description": "Searching for TellStick Net devices on your local network…\n\nIf a device was found, select it from the dropdown. Otherwise enter the IP address of your TellStick Net / ZNet manually.",
         "data": {
           "discovered_ip": "Discovered device",
@@ -89,6 +95,7 @@
       },
       "net_confirm": {
         "title": "Confirm TellStick Net device",
+        "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#41-install-the-tellstick-local-app",
         "description": "Confirm connection to TellStick Net / ZNet at **{host}**.\n\nThe MAC address (if known): {mac}",
         "data": {
           "host": "IP address",
@@ -101,6 +108,7 @@
       },
       "mirror_setup": {
         "title": "Mirror / range extender",
+        "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#8-mirror--range-extender",
         "description": "Would you like this TellStick to act as a **mirror / range extender** for an existing TellStick?\n\nA mirror replicates all commands sent to the primary TellStick's devices, extending RF coverage. It also forwards received RF signals back to the primary for device detection.\n\nThe mirror does not have its own devices — it shares the primary's.",
         "data": {
           "mirror_of": "Use as mirror of"
@@ -108,6 +116,7 @@
       },
       "add_rf_device": {
         "title": "New 433 MHz device detected",
+        "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#51-automatic-add-press-to-discover",
         "description": "A 433 MHz device was detected via RF signal:\n\n- **Protocol:** {protocol}\n- **Model:** {model}\n- **House:** {house}\n- **Unit:** {unit}\n- **UID:** {device_uid}\n\nGive the device a name and click **Submit** to add it.\n\nFor sensors you can also **add to an existing device** (e.g. indoor + outdoor probes of the same weather station) or **replace** an existing sensor (e.g. after battery change). Check **Ignore** to hide it.\n\n[📖 User Guide: Automatic add](https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#51-automatic-add-press-to-discover)",
         "data": {
           "name": "Device name",
@@ -142,10 +151,12 @@
           "manage_device": "Edit a device",
           "remove_devices": "Remove multiple devices",
           "manage_ignored": "Manage ignored devices"
-        }
+        },
+        "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#5-pairing-devices"
       },
       "settings": {
         "title": "TellStick Local settings",
+        "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#5-pairing-devices",
         "data": {
           "automatic_add": "Automatically add new devices (when off, new devices appear as 'Discovered' for manual confirmation)",
           "detect_sartano": "Detect sartano/codeswitch devices (off by default — arctech signals are often falsely decoded as sartano)",
@@ -157,6 +168,7 @@
       },
       "manage_device": {
         "title": "Select a device",
+        "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#6-editing-a-device",
         "description": "Pick a device to edit or delete.\n\nTo send a learn signal, go to the device page and press the **Send learn signal** button.",
         "data": {
           "device": "Device"
@@ -164,6 +176,7 @@
       },
       "device_actions": {
         "title": "Manage device",
+        "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#6-editing-a-device",
         "description": "Choose an action for **{name}**.",
         "menu_options": {
           "device_detail": "Edit device",
@@ -175,6 +188,7 @@
       },
       "device_detail": {
         "title": "Edit device",
+        "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#6-editing-a-device",
         "description": "**{device_uid}**\n\nProtocol: **{protocol}** / Model: **{model}**\n\nChange the name or parameters below. Changing house/unit codes or sensor ID will update the device identity — entity ID and history are preserved.",
         "data": {
           "name": "Device name",
@@ -188,10 +202,12 @@
       },
       "teach_device": {
         "title": "Send learn signal",
+        "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#52-self-learning-teach-add-device-button",
         "description": "This will send a learn/pairing signal for **{name}** ({protocol}/{model}).\n\nPut your 433 MHz receiver in **learn mode** now, then click **Submit**."
       },
       "move_device": {
         "title": "Move to another instance",
+        "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#6-editing-a-device",
         "description": "Move **{name}** to a different TellStick instance.\n\nThe entity keeps its existing entity ID and state history.",
         "data": {
           "target_entry": "Target TellStick instance"
@@ -199,10 +215,12 @@
       },
       "move_device_confirm": {
         "title": "Confirm move",
+        "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#6-editing-a-device",
         "description": "Move **{name}** from **{src}** to **{dst}**?\n\nThe entity ID and state history are preserved. The integration will reload to apply the change."
       },
       "group_device": {
         "title": "Group under a shared device",
+        "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#72-grouping-any-device-under-a-shared-ha-device",
         "description": "Group **{name}** with other devices under a shared Home Assistant device.\n\nAll devices with the same group name appear as entities under one device in Devices & Services.\n\nExisting groups: **{existing_groups}**\n\nLeave blank to remove from group (standalone device).\n\n[📖 User Guide: Grouping devices](https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#72-grouping-any-device-under-a-shared-ha-device)",
         "data": {
           "group_uid": "Group name"
@@ -213,6 +231,7 @@
       },
       "delete_device": {
         "title": "Delete device",
+        "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#removing-a-single-device",
         "description": "Delete **{name}** from this integration?",
         "data": {
           "ignore": "Also ignore this device (prevents automatic re-detection)"
@@ -220,6 +239,7 @@
       },
       "remove_devices": {
         "title": "Remove multiple devices",
+        "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#removing-multiple-devices",
         "description": "Select devices to remove from this integration.",
         "data": {
           "devices": "Devices to remove",
@@ -228,6 +248,7 @@
       },
       "manage_ignored": {
         "title": "Manage ignored devices",
+        "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#managing-ignored-devices",
         "description": "Select devices to un-ignore. Un-ignored devices can be detected again when they send an RF signal.",
         "data": {
           "devices": "Devices to un-ignore"
@@ -250,6 +271,7 @@
       "step": {
         "user": {
           "title": "Add a device",
+          "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#52-self-learning-teach-add-device-button",
           "menu_options": {
             "by_brand": "Add by brand",
             "by_protocol": "Add by protocol",
@@ -261,6 +283,7 @@
         },
         "by_brand": {
           "title": "Add by brand",
+          "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#52-self-learning-teach-add-device-button",
           "description": "Pick your device type and give it a name.",
           "data": {
             "name": "Device name",
@@ -269,6 +292,7 @@
         },
         "by_protocol": {
           "title": "Add by protocol",
+          "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#52-self-learning-teach-add-device-button",
           "description": "Pick the protocol and model, then give it a name.",
           "data": {
             "name": "Device name",
@@ -277,6 +301,7 @@
         },
         "by_protocol_raw": {
           "title": "Add by protocol (raw pulse)",
+          "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#52-self-learning-teach-add-device-button",
           "description": "These protocols use **raw pulse-train encoders** that bypass ZNet firmware bugs. Not yet tested on real hardware.\n\nPick the protocol and model, then give it a name.",
           "data": {
             "name": "Device name",
@@ -285,6 +310,7 @@
         },
         "by_protocol_native": {
           "title": "Add by protocol (TellStick native — unit-1 fix)",
+          "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#52-self-learning-teach-add-device-button",
           "description": "These protocols are handled by the TellStick firmware's built-in protocol stack. The firmware's **unit+1 bug** is compensated for (we subtract 1), but only **house** and **unit** parameters are passed — protocols needing code, system, or fade may not work correctly.\n\nPick the protocol and model, then give it a name.",
           "data": {
             "name": "Device name",
@@ -293,6 +319,7 @@
         },
         "by_protocol_native_nofix": {
           "title": "Add by protocol (TellStick native — no unit fix)",
+          "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#52-self-learning-teach-add-device-button",
           "description": "Same as native encoding but does **NOT** compensate for the firmware's unit+1 bug — the unit value is sent as-is. Use this to test whether the bug actually applies to your device.\n\nPick the protocol and model, then give it a name.",
           "data": {
             "name": "Device name",
@@ -301,6 +328,7 @@
         },
         "params": {
           "title": "Device parameters",
+          "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#52-self-learning-teach-add-device-button",
           "description": "Enter the parameters for **{device_type}**. Ranges and defaults match the hardware.",
           "data": {
             "house": "House code",
@@ -313,10 +341,12 @@
         },
         "confirm": {
           "title": "Send pairing signal",
+          "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#52-self-learning-teach-add-device-button",
           "description": "**{name}** ({protocol}/{model}) will learn house code **{house}**, unit **{unit}**.\n\nPut your 433 MHz receiver in **learn mode** now, then click **Submit** — the pairing signal is sent immediately.\n\n[📖 User Guide: Self-learning teach](https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#52-self-learning-teach-add-device-button)"
         },
         "generic_rf": {
           "title": "Generic RF device — record from remote",
+          "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#52-self-learning-teach-add-device-button",
           "description": "Record a 433 MHz signal from any remote and replay it via the TellStick Duo. This only works on TellStick Duo (not Net/ZNet).\n\nEnter a name for this device.",
           "data": {
             "name": "Device name",
@@ -328,11 +358,13 @@
         },
         "generic_rf_listen_on": {
           "title": "Record ON signal",
+          "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#52-self-learning-teach-add-device-button",
           "description": "Press the **ON button** on your remote now.\n\nThe rtl_433 add-on will capture the raw pulse timings. Click **Check** after pressing the button.\n\n{debug_info}",
           "data": {}
         },
         "generic_rf_confirm_on": {
           "title": "ON signal captured",
+          "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#52-self-learning-teach-add-device-button",
           "description": "Signal captured from **{model}** ({timings_count} timings).\n\nDo you want to record a separate OFF signal? If not, the ON signal will be used for both ON and OFF.",
           "data": {
             "record_off": "Record a separate OFF signal"
@@ -340,11 +372,13 @@
         },
         "generic_rf_listen_off": {
           "title": "Record OFF signal",
+          "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#52-self-learning-teach-add-device-button",
           "description": "Press the **OFF button** on your remote now.\n\nClick **Check** after pressing the button.\n\n{debug_info}",
           "data": {}
         },
         "generic_rf_confirm_on_light": {
           "title": "ON signal captured",
+          "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#52-self-learning-teach-add-device-button",
           "description": "Signal captured from **{model}** ({timings_count} timings).\n\nDo you want to record a separate OFF signal and/or dim levels? If not, the ON signal will be used for all states.",
           "data": {
             "record_off": "Record a separate OFF signal"
@@ -352,6 +386,7 @@
         },
         "generic_rf_dim_choice": {
           "title": "Dim levels",
+          "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#52-self-learning-teach-add-device-button",
           "description": "Do you want to record specific dim level signals for **{name}**?\n\nThis lets you dim the device to preset levels.",
           "data": {
             "record_dim": "Record dim level signals"
@@ -359,6 +394,7 @@
         },
         "generic_rf_dim_level_select": {
           "title": "Select dim level",
+          "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#52-self-learning-teach-add-device-button",
           "description": "Which dim level do you want to record next for **{name}**?\n\nAlready recorded: {recorded}",
           "data": {
             "dim_level": "Dim level"
@@ -366,26 +402,31 @@
         },
         "generic_rf_listen_dim": {
           "title": "Record {dim_level}% dim signal",
+          "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#52-self-learning-teach-add-device-button",
           "description": "Set your device to {dim_level}% brightness and press the remote button now.\n\nClick **Check** after pressing the button.\n\n{debug_info}",
           "data": {}
         },
         "generic_rf_listen_up": {
           "title": "Record UP signal",
+          "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#52-self-learning-teach-add-device-button",
           "description": "Press the **UP button** on your cover/blind remote now.\n\nThe rtl_433 add-on will capture the raw pulse timings. Click **Check** after pressing the button.\n\n{debug_info}",
           "data": {}
         },
         "generic_rf_confirm_up": {
           "title": "UP signal captured",
+          "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#52-self-learning-teach-add-device-button",
           "description": "UP signal captured from **{model}** ({timings_count} timings).\n\nNow record the DOWN signal.",
           "data": {}
         },
         "generic_rf_listen_down": {
           "title": "Record DOWN signal",
+          "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#52-self-learning-teach-add-device-button",
           "description": "Press the **DOWN button** on your cover/blind remote now.\n\nClick **Check** after pressing the button.\n\n{debug_info}",
           "data": {}
         },
         "generic_rf_confirm_down": {
           "title": "DOWN signal captured",
+          "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#52-self-learning-teach-add-device-button",
           "description": "DOWN signal captured from **{model}** ({timings_count} timings).\n\nOptionally record a STOP signal.",
           "data": {
             "record_stop": "Record a STOP signal"
@@ -393,6 +434,7 @@
         },
         "generic_rf_listen_stop": {
           "title": "Record STOP signal",
+          "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#52-self-learning-teach-add-device-button",
           "description": "Press the **STOP button** on your cover/blind remote now.\n\nClick **Check** after pressing the button.\n\n{debug_info}",
           "data": {}
         }
