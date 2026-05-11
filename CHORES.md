@@ -11,6 +11,7 @@
 * Bump version according to the version bumping scheme
 * Update the branch history file with any missing information about what has been done in this branch
 * Update the user guide with changes made in this branch, and update any user guide links in `strings.json` (and `translations/en.json`) descriptions that link to sections whose headings have changed (links appear as markdown in `"description"` fields and use anchors of the form `docs/USER_GUIDE.md#section-anchor`)
+* When mirroring changes from `custom_components/tellstick_local/` to `tellsticklive/rootfs/usr/share/tellstick_local/`, verify the two files are identical after the change (e.g. `diff custom_components/tellstick_local/<file> tellsticklive/rootfs/usr/share/tellstick_local/<file>` should produce no output)
 
 ---
 
