@@ -38,7 +38,7 @@
     "step": {
       "hassio_confirm": {
         "title": "TellStick Local detected",
-        "description": "The **{addon}** app is running and ready.\n\nIt will connect on **{host}** (command port **{command_port}**, event port **{event_port}**).\n\nClick **Submit** to set up TellStick Local."
+        "description": "The **{addon}** app is running and ready.\n\nIt will connect on **{host}** (command port **{command_port}**, event port **{event_port}**).\n\nClick **Submit** to set up TellStick Local.\n\n[📖 User Guide: Installation](https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#4-installation)"
       },
       "user": {
         "title": "TellStick hardware type",
@@ -108,7 +108,7 @@
       },
       "add_rf_device": {
         "title": "New 433 MHz device detected",
-        "description": "A 433 MHz device was detected via RF signal:\n\n- **Protocol:** {protocol}\n- **Model:** {model}\n- **House:** {house}\n- **Unit:** {unit}\n- **UID:** {device_uid}\n\nGive the device a name and click **Submit** to add it.\n\nFor sensors you can also **add to an existing device** (e.g. indoor + outdoor probes of the same weather station) or **replace** an existing sensor (e.g. after battery change). Check **Ignore** to hide it.",
+        "description": "A 433 MHz device was detected via RF signal:\n\n- **Protocol:** {protocol}\n- **Model:** {model}\n- **House:** {house}\n- **Unit:** {unit}\n- **UID:** {device_uid}\n\nGive the device a name and click **Submit** to add it.\n\nFor sensors you can also **add to an existing device** (e.g. indoor + outdoor probes of the same weather station) or **replace** an existing sensor (e.g. after battery change). Check **Ignore** to hide it.\n\n[📖 User Guide: Automatic add](https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#51-automatic-add-press-to-discover)",
         "data": {
           "name": "Device name",
           "replace_device": "Existing device",
@@ -152,7 +152,7 @@
           "rtl433_sensors": "Listen for rtl_433 sensors via MQTT (requires MQTT integration and rtl_433 add-on)"
         },
         "data_description": {
-          "rtl433_sensors": "When enabled, sensor entities are auto-created for any 433 MHz sensor the rtl_433 add-on decodes. Requires the MQTT integration and the rtl_433 add-on configured with MQTT output."
+          "rtl433_sensors": "When enabled, sensor entities are auto-created for any 433 MHz sensor the rtl_433 add-on decodes. Requires the MQTT integration and the rtl_433 add-on configured with MQTT output.\n\n[📖 User Guide: Pairing devices](https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#5-pairing-devices)"
         }
       },
       "manage_device": {
@@ -203,7 +203,7 @@
       },
       "group_device": {
         "title": "Group under a shared device",
-        "description": "Group **{name}** with other devices under a shared Home Assistant device.\n\nAll devices with the same group name appear as entities under one device in Devices & Services.\n\nExisting groups: **{existing_groups}**\n\nLeave blank to remove from group (standalone device).",
+        "description": "Group **{name}** with other devices under a shared Home Assistant device.\n\nAll devices with the same group name appear as entities under one device in Devices & Services.\n\nExisting groups: **{existing_groups}**\n\nLeave blank to remove from group (standalone device).\n\n[📖 User Guide: Grouping devices](https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#72-grouping-any-device-under-a-shared-ha-device)",
         "data": {
           "group_uid": "Group name"
         },
@@ -313,7 +313,7 @@
         },
         "confirm": {
           "title": "Send pairing signal",
-          "description": "**{name}** ({protocol}/{model}) will learn house code **{house}**, unit **{unit}**.\n\nPut your 433 MHz receiver in **learn mode** now, then click **Submit** — the pairing signal is sent immediately."
+          "description": "**{name}** ({protocol}/{model}) will learn house code **{house}**, unit **{unit}**.\n\nPut your 433 MHz receiver in **learn mode** now, then click **Submit** — the pairing signal is sent immediately.\n\n[📖 User Guide: Self-learning teach](https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#52-self-learning-teach-add-device-button)"
         },
         "generic_rf": {
           "title": "Generic RF device — record from remote",

@@ -28,9 +28,16 @@
 
 Local-only TellStick Duo and TellStick Net/ZNet support for Home Assistant – no cloud, no YAML, full GUI.
 
-**v3.2 highlights:** TellStick Net / ZNet support · Mirror / range extender · full GUI device management
+**v3.3 highlights:** TellStick Net / ZNet support · Mirror / range extender · full GUI device management
 
 📊 **Project presentation:** [English][presentation-en] · [Svenska][presentation-sv]
+
+---
+
+## 📖 User Guide
+
+Full installation, pairing, device management, and troubleshooting documentation:
+**[→ docs/USER_GUIDE.md](docs/USER_GUIDE.md)**
 
 ---
 
