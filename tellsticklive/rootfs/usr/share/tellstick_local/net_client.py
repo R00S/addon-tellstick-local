@@ -244,6 +244,36 @@ def _decode_arctech_codeswitch(data: int) -> dict | None:
     return dict(_class="command", house=house, unit=unit, method=method)
 
 
+def _decode_comen(data: int) -> dict | None:
+    """Decode Comen raw data int -> house/unit/method.
+
+    Comen uses arctech selflearning encoding with a house transformation.
+    The firmware applies: intHouse = (inputHouse << 2) + 2
+    To decode, we reverse it: inputHouse = (intHouse - 2) >> 2
+
+    Source: telldus-core ProtocolComen::getIntParameter()
+    """
+    # First decode as arctech selflearning to get the transformed house
+    arctech_decoded = _decode_arctech_selflearning(data)
+    if arctech_decoded is None:
+        return None
+
+    # Reverse the Comen house transformation
+    transformed_house = arctech_decoded.get("house", 0)
+    if transformed_house < 2:
+        # Invalid: house transformation would result in negative value
+        return None
+
+    original_house = (transformed_house - 2) >> 2
+
+    return dict(
+        _class="command", protocol="comen", model="selflearning-switch",
+        house=original_house,
+        unit=arctech_decoded["unit"],
+        method=arctech_decoded["method"],
+    )
+
+
 def _decode_waveman(data: int) -> dict | None:
     method_nib = (data & 0xF00) >> 8
     unit = ((data & 0xF0) >> 4) + 1
@@ -1010,6 +1040,8 @@ def _decode_rf_event(packet: dict) -> dict | None:
                 decoded.update(protocol="arctech", model=model)
         else:
             decoded = None
+    elif protocol == "comen":
+        decoded = _decode_comen(data)
     elif protocol == "waveman":
         decoded = _decode_waveman(data)
     elif protocol == "sartano":
@@ -1217,6 +1249,54 @@ def _encode_arctech_command(
             unit=unit0,
             method=_TURNON,
         )
+    return None
+
+
+def _encode_comen_command(
+    model: str, house: Any, unit: Any, method_name: str, param: Any = None
+) -> dict | None:
+    """Encode a Comen RF command as a native firmware dict.
+
+    Comen extends arctech selflearning with a house shift transformation:
+        intHouse <<= 2  (shift left by 2 bits)
+        intHouse += 2   (add 2)
+
+    Source: telldus-core ProtocolComen::getIntParameter()
+    """
+    method_int = _METHOD_INT.get(method_name)
+    if method_int is None:
+        return None
+
+    # Comen only supports selflearning model with integer house codes
+    try:
+        house_int = int(house)
+    except (TypeError, ValueError):
+        _LOGGER.warning("Comen: house must be an integer, got %r", house)
+        return None
+
+    # Apply the Comen house transformation
+    transformed_house = (house_int << 2) + 2
+
+    try:
+        unit0 = max(0, int(unit) - 1)   # 1-indexed -> 0-indexed
+    except (TypeError, ValueError):
+        unit0 = 0
+
+    # DIM at level 0 is equivalent to TURNOFF
+    if method_int == _DIM and int(param or 0) == 0:
+        method_int = _TURNOFF
+
+    if method_int in (_TURNON, _TURNOFF, _LEARN):
+        # Use arctech selflearning with the transformed house value
+        return OrderedDict(
+            protocol="arctech",
+            model="selflearning",
+            house=transformed_house,
+            unit=unit0,
+            method=method_int,
+        )
+
+    _LOGGER.warning("Comen: unsupported method %s", method_name)
     return None
 
 
@@ -2891,6 +2971,17 @@ class TellStickNetController:
                 )
                 return -1
             send_kwargs = dict(arctech_dict)
+        elif protocol == "comen":
+            # Comen-specific encoder. Extends arctech selflearning with
+            # house shift: (house << 2) + 2. Returns a native firmware dict
+            # targeting the arctech protocol with the transformed house value.
+            comen_dict = _encode_comen_command(model, house, unit, method_name, param)
+            if comen_dict is None:
+                _LOGGER.warning(
+                    "Net comen: unsupported method=%s or invalid house/unit", method_name
+                )
+                return -1
+            send_kwargs = dict(comen_dict)
         elif protocol == "everflourish":
             # Everflourish variant dispatch.  The model suffix (e.g. ":ef_v5")
             # selects the encoding variant.  See _encode_everflourish_variant().
