@@ -1,6 +1,7 @@
 """Base entity for TellStick Local integration."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -10,6 +11,18 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from .const import DOMAIN, ENTRY_MIRRORS
 
 _LOGGER = logging.getLogger(__name__)
+
+# Delay between primary RF command and mirror RF command.
+#
+# telldusd (Duo path) returns from turn_on/turn_off as soon as the TellStick
+# firmware ACKs the USB command (~2–5 ms), which happens BEFORE the RF
+# transmission is complete.  Arctech selflearning with 10 repeats takes
+# ~350 ms to transmit.  Without this delay, the mirror fires while the primary
+# is still on air, causing 433 MHz RF collision → receiver decodes nothing.
+#
+# The ZNet UDP path also returns before RF is done (no UDP ACK), so the delay
+# is needed for all backend combinations.
+_RF_MIRROR_DELAY_S = 0.35
 
 
 class TellStickEntity(RestoreEntity):
@@ -84,11 +97,21 @@ class TellStickEntity(RestoreEntity):
         commands.  The device_id argument is resolved from each mirror's
         device_id_map, so callers pass only additional arguments
         (e.g. brightness level for ``dim``).
+
+        A short RF collision-avoidance delay is inserted before the first mirror
+        command.  Both the Duo (telldusd TCP) and ZNet (UDP) return from their
+        send call before the 433 MHz RF transmission is complete, so without the
+        delay the mirror would transmit simultaneously with the primary, causing
+        RF interference that prevents the receiver from decoding either signal.
         """
         if not self.hass:
             return
         entry_data = self.hass.data.get(DOMAIN, {}).get(self._entry_id, {})
         mirrors: list[dict[str, Any]] = entry_data.get(ENTRY_MIRRORS, [])
+        if not mirrors:
+            return
+        # Wait for the primary RF transmission to finish before the mirror sends.
+        await asyncio.sleep(_RF_MIRROR_DELAY_S)
         for mirror in mirrors:
             mirror_device_id = mirror["device_id_map"].get(self._device_uid)
             if mirror_device_id is None:
