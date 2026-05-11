@@ -53,13 +53,11 @@ from .const import (
     CONF_EVENT_PORT,
     CONF_IGNORED_UIDS,
     CONF_MIRROR_OF,
-    CONF_RTL433_SENSORS,
     DEFAULT_AUTOMATIC_ADD,
     DEFAULT_COMMAND_PORT,
     DEFAULT_DETECT_SARTANO,
     DEFAULT_EVENT_PORT,
     DEFAULT_HOST,
-    DEFAULT_RTL433_SENSORS,
     DEVICE_CATALOG_LABELS,
     DEVICE_CATALOG_MAP,
     DOMAIN,
@@ -1370,7 +1368,6 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
             new_options = dict(self.config_entry.options)
             new_options[CONF_AUTOMATIC_ADD] = user_input[CONF_AUTOMATIC_ADD]
             new_options[CONF_DETECT_SARTANO] = user_input[CONF_DETECT_SARTANO]
-            new_options[CONF_RTL433_SENSORS] = user_input[CONF_RTL433_SENSORS]
             return self.async_create_entry(title="", data=new_options)
 
         current_auto = self.config_entry.options.get(
@@ -1379,16 +1376,12 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
         current_sartano = self.config_entry.options.get(
             CONF_DETECT_SARTANO, DEFAULT_DETECT_SARTANO
         )
-        current_rtl433 = self.config_entry.options.get(
-            CONF_RTL433_SENSORS, DEFAULT_RTL433_SENSORS
-        )
         return self.async_show_form(
             step_id="settings",
             data_schema=vol.Schema(
                 {
                     vol.Required(CONF_AUTOMATIC_ADD, default=current_auto): bool,
                     vol.Required(CONF_DETECT_SARTANO, default=current_sartano): bool,
-                    vol.Required(CONF_RTL433_SENSORS, default=current_rtl433): bool,
                 }
             ),
         )
@@ -2218,7 +2211,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             )
         return self.async_show_menu(
             step_id="user",
-            menu_options=["by_brand", "by_protocol", "generic_rf"],
+            menu_options=["by_brand", "by_protocol"],
         )
 
     async def async_step_by_brand(

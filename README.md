@@ -1,12 +1,10 @@
 # Home Assistant: TellStick Local
 
 > [!NOTE]
-> **✅ v3.2 — RTL-433 Sensor Auto-discovery + Generic RF Record & Replay**
-> This release adds **RTL-433 sensor auto-discovery** (integrate any 433 MHz sensor
-> via the rtl_433 add-on) and **Generic RF record & replay** (capture and replay
-> ANY 433 MHz signal, even from unsupported protocols). Also includes full
-> **TellStick Net / ZNet** support, **Mirror / Range Extender**, and **manual
-> device grouping**.
+> **🟡 RTL-433 / Generic RF status — Temporarily halted**
+> Ongoing RTL-433 and Generic RF development is temporarily paused while this
+> branch is prepared for merge. Existing branch artifacts remain in history, but
+> related GUI entry points are disabled for now.
 > If you hit any problem, please [open an issue][issue].
 
 > [!WARNING]
@@ -30,7 +28,7 @@
 
 Local-only TellStick Duo and TellStick Net/ZNet support for Home Assistant – no cloud, no YAML, full GUI.
 
-**v3.2 highlights:** RTL-433 sensor auto-discovery · Generic RF record & replay · TellStick Net / ZNet support · Mirror / range extender · full GUI device management
+**v3.2 highlights:** TellStick Net / ZNet support · Mirror / range extender · full GUI device management
 
 📊 **Project presentation:** [English][presentation-en] · [Svenska][presentation-sv]
 
@@ -88,8 +86,7 @@ Live account, and no YAML file editing.
 | **Automations**              | Device triggers on any 433 MHz button press, usable directly in HA automations                                      |
 | **HA bus events**            | Every RF signal fires a `tellstick_local_event` on the HA bus — use in automations or Developer Tools               |
 | **Mirror / range extender**  | Use a second TellStick as a mirror to extend RF coverage — all commands are replicated automatically                |
-| **RTL-433 sensors**          | Auto-discover ANY 433 MHz sensor via rtl_433 add-on + MQTT (temperature, humidity, rain, wind, etc.)                |
-| **Generic RF record/replay** | Record ANY 433 MHz signal and replay it as a switch — works even for unsupported protocols                          |
+| **RTL-433 / Generic RF**     | **Temporarily halted** in GUI on this merge-prep branch                                                              |
 | **Debug connection**         | Service action `tellstick_local.debug_connection` logs connection state and last events                             |
 | **Companion app**            | Identical UX in the HA Android/iOS app                                                                              |
 | **No Telldus Live required** | Zero cloud, zero account, zero internet dependency                                                                  |
@@ -100,9 +97,6 @@ Live account, and no YAML file editing.
 
 - **Hardware:** TellStick Duo (USB), TellStick Net, or TellStick ZNet connected or reachable
 - **Software:** Home Assistant OS with **HA Core 2025.2 or later**
-- **Optional (for RTL-433 sensors):**
-  - [rtl_433 add-on](https://github.com/pbkhrv/rtl_433-hass-addons) installed and running
-  - MQTT integration configured in HA
 
 > **Why 2025.2?** The "Add device" button on the integration card uses the
 > ConfigSubentryFlow API introduced in HA 2025.2. Older HA versions still work
@@ -418,344 +412,14 @@ These devices must be added via **Method B** (Add device → Add by brand or Add
 
 ---
 
-## RTL-433 sensor auto-discovery
+## RTL-433 / Generic RF status (temporarily halted)
 
-If you have an **RTL-SDR USB dongle**, you can use the
-[rtl_433 add-on](https://github.com/pbkhrv/rtl_433-hass-addons) to receive
-signals from ANY 433 MHz sensor — not just TellStick-compatible ones. This
-opens up support for hundreds of additional sensor models: weather stations,
-temperature/humidity sensors, rain gauges, soil moisture sensors, and more.
+Development for **RTL-433 sensor auto-discovery** and **Generic RF record/replay**
+is currently **temporarily halted** for this merge-prep branch.
 
-### Prerequisites
-
-1. **RTL-SDR USB dongle** — [supported models](https://triq.org/rtl_433/HARDWARE.html)
-2. **MQTT broker** — Install the [Mosquitto broker](https://github.com/home-assistant/addons/blob/master/mosquitto/DOCS.md) add-on (recommended)
-3. **rtl_433 add-on** — From the [pbkhrv repository](https://github.com/pbkhrv/rtl_433-hass-addons)
-
-### Step 1: Install and configure Mosquitto broker
-
-1. Go to **Settings → Add-ons → Add-on Store**
-2. Search for **Mosquitto broker** and click **Install**
-3. Start the add-on — no configuration needed for basic setup
-4. The broker runs on `localhost:1883` by default
-
-### Step 2: Install MQTT integration
-
-1. Go to **Settings → Devices & Services → Add Integration**
-2. Search for **MQTT** and select it
-3. If Mosquitto is running, HA will auto-discover it — just click **Submit**
-4. Verify connection: the MQTT integration should show as "Connected"
-
-### Step 3: Install rtl_433 add-on
-
-1. Go to **Settings → Add-ons → ⋮ → Repositories**
-2. Add: `https://github.com/pbkhrv/rtl_433-hass-addons`
-3. Find **rtl_433** in the store and click **Install**
-4. **Do not start yet** — configure it first
-
-### Step 4: Configure rtl_433 add-on
-
-Create a configuration file at `/config/rtl_433/rtl_433.conf.template`:
-
-#### Initial testing configuration (recommended)
-
-Start with this configuration to verify rtl_433 is detecting your devices in the log:
-
-```conf
-# rtl_433.conf - Initial testing configuration
-# 
-# This configuration outputs ALL detected devices to the app log first,
-# allowing you to verify RTL-433 is working before enabling MQTT integration.
-
-frequency     433920000
-sample_rate   250000
-
-# Enable ALL built-in decoders (recommended for initial testing)
-protocol      -1
-
-# Analyze pulse data for better unknown signal detection
-analyze_pulses  true
-
-# Verbose logging level (shows detailed decoding information)
-verbose       2
-
-# Output to rtl_433 add-on log (visible in Settings → Add-ons → rtl_433 → Log)
-output        json
-output        log
-```
-
-**Testing procedure:**
-1. Create the file with the configuration above
-2. Start the rtl_433 add-on
-3. Press a button on your 433 MHz sensor or wait for automatic transmission
-4. Check **Settings → Add-ons → rtl_433 → Log** — you should see JSON output like:
-   ```json
-   {"time":"2026-05-07 06:22:15","protocol":40,"model":"Acurite-592TXR",...}
-   ```
-5. Once you confirm devices are being detected, proceed to the MQTT configuration below
-
-#### Production configuration (after testing)
-
-Once you've verified devices appear in the log, switch to MQTT output:
-
-```conf
-# rtl_433 configuration for TellStick Local integration
-
-# MQTT output - connect to local Mosquitto broker
-# (retain=0 prevents database growth)
-output mqtt://localhost:1883,retain=0,qos=0
-
-# Listen frequency (433.92 MHz is default for most sensors)
-frequency 433.92M
-
-# Enable ALL protocols (or specify only the ones you need)
-protocol -1
-
-# Convert all units to SI (Celsius, meters, etc.)
-convert si
-
-# Report metadata for better debugging
-report_meta level
-report_meta time:usec
-report_meta protocol
-
-# Enable pulse detection optimizations
-pulse_detect autolevel
-pulse_detect squelch
-```
-
-> **Note:** If using MQTT authentication, replace the `output` line with:
-> ```conf
-> output mqtt://localhost:1883,user=YOUR_USERNAME,pass=YOUR_PASSWORD,retain=0,qos=0
-> ```
-
-The add-on will automatically create `/config/rtl_433/` on first start if it doesn't exist.
-Any `.conf.template` files in that directory will be processed.
-
-> **Example configuration file:** See [`docs/rtl_433.conf`](docs/rtl_433.conf) in this repository for a complete annotated example.
-
-### Preventing MQTT database growth
-
-RTL-433 sensors transmit frequently (every 30-60 seconds), which can quickly fill your MQTT
-broker's database and consume disk space. To prevent this, configure rtl_433 to publish
-messages **without retention** and optionally disable Mosquitto persistence for sensor data.
-
-#### Option 1: Non-retained messages (recommended)
-
-Add `retain=0` to the rtl_433 MQTT output line to prevent messages from being stored by the broker:
-
-```conf
-output mqtt://localhost:1883,retain=0,qos=0
-```
-
-**Explanation:**
-- `retain=0` — Messages are delivered to active subscribers but NOT stored on disk
-- `qos=0` — Fire-and-forget delivery (no acknowledgment, no queuing)
-
-This is the **recommended approach** — it prevents disk growth while allowing Home Assistant
-to receive real-time sensor updates.
-
-#### Option 2: Disable persistence entirely (optional)
-
-If you want to completely prevent the MQTT broker from writing to disk, edit the Mosquitto
-add-on configuration:
-
-1. Go to **Settings → Add-ons → Mosquitto broker → Configuration**
-2. Add these options under the **customize** section:
-   ```yaml
-   customize:
-     active: true
-     folder: mosquitto
-   ```
-3. Create `/config/mosquitto/mosquitto.conf` with:
-   ```conf
-   persistence false
-   ```
-4. Restart the Mosquitto add-on
-
-> **Note:** Disabling persistence means all MQTT data is lost on broker restart. Only use this
-> if you're comfortable with sensors briefly showing "unavailable" after a restart until they
-> transmit again.
-
-#### Default behavior
-
-By default (without `retain=0`), rtl_433 messages **are retained** — the MQTT broker stores
-the latest value for each sensor topic on disk. This causes:
-- `/data/mosquitto/mosquitto.db` to grow continuously
-- Potential disk space exhaustion on systems with many sensors
-- Slower broker startup as retained messages are reloaded
-
-Adding `retain=0` solves this without any downside for typical Home Assistant use.
-
-### Step 5: Start rtl_433 add-on and verify device detection
-
-1. Plug in your RTL-SDR dongle
-2. Start the rtl_433 add-on
-3. Go to **Settings → Add-ons → rtl_433 → Log**
-4. You should see startup messages like:
-   ```
-   Registered protocols [1-259]...
-   Found Rafael Micro R820T tuner
-   rtl_433 version 23.11 listening at 433.920 MHz
-   ```
-5. **Press a button on your sensor** or wait for an automatic transmission
-6. You should see output in the log like:
-   ```
-   [rtl_433] time      : 2026-05-07 08:22:15
-   [rtl_433] model     : Acurite-592TXR
-   [rtl_433] id        : 12345
-   [rtl_433] temperature_C : 22.5
-   [rtl_433] humidity  : 65
-   ```
-   or in JSON format:
-   ```json
-   {"time":"2026-05-07 08:22:15","protocol":40,"model":"Acurite-592TXR","id":12345,"temperature_C":22.5,"humidity":65}
-   ```
-
-**If you see devices in the log:** ✅ RTL-433 is working! Proceed to Step 6 to enable MQTT integration.
-
-**If no devices appear:**
-- Make sure your sensor is transmitting (some sensors only transmit every 30-60 seconds)
-- Check that the RTL-SDR dongle is plugged in and recognized
-- Try different frequencies if your sensors don't use 433.92 MHz
-- Check rtl_433 add-on logs for error messages
-
-### Step 6: Enable MQTT output (after verifying log detection)
-
-Once you've confirmed devices appear in the rtl_433 log (Step 5):
-
-1. Edit `/config/rtl_433/rtl_433.conf.template`
-2. Replace the `output json` and `output log` lines with:
-   ```conf
-   output mqtt://localhost:1883/rtl_433[/model][/id],retain=0,qos=0
-   ```
-   
-   **Important:** Use the full topic pattern `/rtl_433[/model][/id]` — this creates structured topics like:
-   - `rtl_433/Acurite-592TXR/12345` for a temperature sensor
-   - `rtl_433/LaCrosse-TX141/67890` for a humidity sensor
-   
-   This topic structure enables the TellStick Local integration to auto-discover sensors.
-
-3. **Optional:** Remove the `analyze_pulses true` and `verbose 2` lines to reduce log clutter (keep only the MQTT output)
-4. Restart the rtl_433 add-on
-5. Devices will now be published to MQTT instead of just logs
-
-### Step 7: Enable in TellStick Local integration
-
-**Important:** Only do this after you've switched to MQTT output in Step 6.
-
-1. Go to **Settings → Devices & Services → TellStick Local**
-2. Click **Configure** (⚙ icon)
-3. Select **Settings** from the menu
-4. Enable **"Listen for rtl_433 sensors via MQTT"**
-5. Click **Submit**
-
-The integration subscribes to `rtl_433/#` and auto-creates sensor entities when signals arrive.
-
-### Step 8: Verifying MQTT messages (optional)
-
-To verify rtl_433 is publishing to MQTT after enabling it in Step 6:
-
-1. Go to **Settings → Developer Tools → Events**
-2. In the **"Listen to events"** section, enter event type: `mqtt_message`
-3. Click **Start listening**
-4. Press a button on your sensor or wait for an automatic transmission
-5. You should see MQTT events appear with topic `rtl_433/...` and JSON payload
-
-> **Note (HAOS 2026.x.x):** The dedicated "MQTT" tab was removed from Developer Tools.
-> MQTT message monitoring is now done through the Events tab by listening to `mqtt_message` events.
-> Alternatively, you can verify by checking the integration — discovered sensors will appear
-> automatically in **Settings → Devices & Services → TellStick Local** when rtl_433 messages arrive.
-
-### Supported sensor fields
-
-The integration auto-creates sensors for these fields:
-
-| Field                | Device class     | Unit  | Example sensors                    |
-| -------------------- | ---------------- | ----- | ---------------------------------- |
-| `temperature_C`      | temperature      | °C    | Weather stations, thermometers     |
-| `temperature_F`      | temperature      | °F    | (auto-converted to °C if needed)   |
-| `humidity`           | humidity         | %     | Humidity sensors                   |
-| `rain_mm`            | precipitation    | mm    | Rain gauges (total)                |
-| `rain_rate_mm_h`     | precipitation    | mm/h  | Rain rate                          |
-| `wind_avg_m_s`       | wind_speed       | m/s   | Wind sensors                       |
-| `wind_max_m_s`       | wind_speed       | m/s   | Wind gusts                         |
-| `wind_dir_deg`       | —                | °     | Wind direction                     |
-| `uv`                 | —                | index | UV sensors                         |
-| `pressure_hPa`       | atmospheric_pressure | hPa | Barometers                     |
-| `battery_ok`         | battery          | —     | Battery status (0=low, 1=ok)       |
-| `moisture`           | moisture         | %     | Soil moisture sensors              |
-
-See `RTL433_SENSOR_FIELDS` in `const.py` for the complete list.
-
-### Troubleshooting
-
-**No devices appear in rtl_433 log (Step 5):**
-- Make sure your sensor is transmitting (some sensors only transmit every 30-60 seconds)
-- Check that the RTL-SDR dongle is plugged in and recognized
-- Verify the frequency matches your devices (433.92 MHz is most common)
-- Try pressing buttons on 433 MHz remotes to trigger immediate transmission
-- Check rtl_433 add-on logs for USB device detection errors
-
-**No sensors appear in Home Assistant (Step 7):**
-- Did you complete Step 6? (Switch to MQTT output and restart rtl_433)
-- Check rtl_433 add-on logs to verify MQTT connection succeeded
-- Verify MQTT broker is running and connected
-- Use Developer Tools → Events to verify messages (listen to `mqtt_message` events)
-- Make sure "Listen for rtl_433 sensors" is enabled in TellStick Local settings
-
-**Sensors stop updating:**
-- Check rtl_433 add-on is still running
-- Restart the MQTT broker if needed
-- Some sensors only transmit every 30-60 seconds
-- Check sensor battery levels
-
-**Too many unknown sensors:**
-- Edit `/config/rtl_433/rtl_433.conf.template` to enable only specific protocols
-- Replace `protocol -1` with specific protocol numbers (see [protocol list](https://github.com/merbanan/rtl_433/blob/master/README.md))
-- Example: `protocol 40` for Acurite sensors only
-- Restart rtl_433 add-on after config changes
-
-**Note:** rtl_433 sensors are **receive-only** — you cannot send commands to them.
-They appear as sensor entities in HA and update automatically when signals arrive.
-
----
-
-## Generic RF record & replay
-
-**Generic RF** lets you record ANY 433 MHz signal (even from unsupported protocols)
-and replay it as a switch in Home Assistant. This works for:
-
-- Devices from protocols not implemented in `telldusd`
-- Proprietary remotes with unknown encoding
-- Any On-Off-Keying (OOK) 433 MHz device
-
-**How it works:**
-
-1. Go to **Settings → Devices & Services → TellStick Local**
-2. Click **Add device** and select **"Record Generic RF"**
-3. Choose whether to use **rtl_433** (RTL-SDR dongle) or **TellStick** hardware
-   - rtl_433 (recommended): cleaner captures, more protocols, works with any RTL-SDR
-   - TellStick: works if you don't have an RTL-SDR
-4. Press the button you want to record — HA captures the signal
-5. Test the replay — HA sends the signal back
-6. If it works, confirm — a new switch entity is created
-7. Repeat for the Off signal if needed
-
-**Requirements:**
-
-- For rtl_433 capture: rtl_433 add-on + MQTT integration must be running
-- For TellStick capture: TellStick Duo or TellStick Net/ZNet
-- For replay: TellStick Duo or TellStick Net/ZNet (any model can replay)
-
-**Note:** The recorded signal is a raw RF waveform — it bypasses protocol decoding
-entirely. This means it works for ANY 433 MHz device, but each button press must
-be recorded separately (On and Off are two different captures).
-
-**About rtl_433 signal capture:** Generic RF uses **on-demand** capture when you
-click "Record" in the UI. The rtl_433.conf file doesn't need `signal_grabber`
-(which saves ALL unknown signals to disk continuously and can consume significant
-storage). Signal capture is triggered programmatically only when needed.
+- Related GUI entry points are disabled for now.
+- Existing documentation/history is kept in the repository for future resumption.
+- Core TellStick Local functionality (Duo and Net/ZNet) remains active.
 
 ---
 

@@ -34,3 +34,9 @@
   - `python tests/test_ha_integration.py`
   - all passed after removing one unused import and one unnecessary f-string in `config_flow.py`
 - Bumped integration version from `3.2.0.17` to `3.2.0.18` in both manifest files.
+- Merge-prep decision: RTL-433 / Generic RF development is temporarily halted.
+- GUI references to RTL-433 were removed from active config-flow entry points:
+  - removed `rtl433_sensors` toggle from Settings options form
+  - removed `generic_rf` from Add Device menu options
+- README updated to mark RTL-433 / Generic RF as temporarily halted and remove
+  GUI-driven setup instructions for those paused features.
