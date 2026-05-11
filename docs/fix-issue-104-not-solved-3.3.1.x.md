@@ -59,3 +59,61 @@ Arctech selflearning per-repeat timing:
 
 350 ms ensures the primary RF is complete. The mirror then sends a reinforcing
 transmission which the receiver can decode cleanly.
+
+## Follow-up (3.3.1.4): 350 ms was too short for Comen — bumped to 700 ms
+
+User reproduced "Duo emits corrupted Comen when ZNet mirror is present" on
+their own hardware after 3.3.1.3 was deployed. rtl_433 captures provided:
+
+- **Without mirror**: clean Comen frames, OOK_PPM `short_width 224 µs /
+  long_width 1256 µs`, 32 bits, 4–6 frames per press, aggregate burst width
+  **`Total count: 462, width: 533.18 ms`**.
+- **With ZNet mirror**: the 224/1256 32-bit signature is **absent** from the
+  log. Instead a dense burst of `Detected OOK package` and `Detected FSK
+  package` lines with `Guessing modulation: No clue…` — the textbook
+  fingerprint of two co-located 433.92 MHz transmitters jamming each other.
+
+### Code-path audit (no Duo state mutation found)
+
+For a Duo primary + ZNet mirror, the following touch the Duo's telldusd
+device registry and outgoing TX:
+
+| Code path                          | Mutates Duo telldusd state? |
+| ---------------------------------- | --------------------------- |
+| `_register_mirror_devices(NET)`    | No — only fills `mirror_device_id_map` |
+| `_setup_mirror_entry`              | No — starts ZNet UDP listener only |
+| `_mirror_event_callback`           | No — callback on ZNet controller |
+| `_async_mirror_command`            | Sleeps then calls **ZNet's** `turn_on` |
+| Mirror entry's stored devices      | Empty (`options={}` at create time) |
+
+`tdTurnOn(int_id)` is what the Duo always sends; telldusd encodes from its
+own registry which only the primary populates. There is no path by which
+adding a ZNet mirror entry can change the bytes the Duo emits.
+
+### Why 350 ms was not enough — timeline math
+
+```
+t=0       Duo TCP send acked (~5 ms)
+t=5ms     Duo RF starts
+t=355ms   ZNet UDP send fires (after _RF_MIRROR_DELAY_S = 0.35 sleep)
+t=365ms   ZNet RF starts          ← Duo still has ~170 ms left
+t=535ms   Duo RF ends             ← 170 ms of overlap → frames jammed
+t=900ms   ZNet RF ends
+```
+
+For ~170 ms both transmitters are simultaneously on air at 433.92 MHz.
+At the receiver this produces constructive/destructive interference that
+destroys all overlapping Duo frames — observationally indistinguishable
+from "the Duo is sending corrupted bytes".
+
+### Fix
+
+`_RF_MIRROR_DELAY_S` bumped from **0.35 → 0.7 s** in:
+- `custom_components/tellstick_local/entity.py`
+- `tellsticklive/rootfs/usr/share/tellstick_local/entity.py`
+
+0.7 s exceeds the worst-case observed Comen burst width (533 ms) with margin,
+and remains safe for the shorter arctech/everflourish bursts that motivated
+the original 0.35 s value.
+
+manifest.json bumped 3.3.1.3 → 3.3.1.4 in both locations.

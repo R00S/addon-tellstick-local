@@ -16,13 +16,21 @@ _LOGGER = logging.getLogger(__name__)
 #
 # telldusd (Duo path) returns from turn_on/turn_off as soon as the TellStick
 # firmware ACKs the USB command (~2–5 ms), which happens BEFORE the RF
-# transmission is complete.  Arctech selflearning with 10 repeats takes
-# ~350 ms to transmit.  Without this delay, the mirror fires while the primary
-# is still on air, causing 433 MHz RF collision → receiver decodes nothing.
+# transmission is complete.  Without this delay, the mirror fires while the
+# primary is still on air, causing 433 MHz RF collision → receiver decodes
+# nothing and the user sees "the Duo is sending corrupted packets".
+#
+# Sizing: rtl_433 captures of a real Comen press show one full transmission
+# burst is up to ~533 ms wide (telldus-core ProtocolNexa repeats × pulse
+# train).  At the previous value of 0.35 s the ZNet started TX'ing while the
+# Duo had ~170 ms of repeats remaining, jamming all overlapping frames at
+# the receiver.  0.7 s clears the burst with comfortable margin and is also
+# safe for shorter arctech/everflourish bursts (no harm in a longer wait —
+# the mirror is a reinforcement TX, not the primary).
 #
 # The ZNet UDP path also returns before RF is done (no UDP ACK), so the delay
 # is needed for all backend combinations.
-_RF_MIRROR_DELAY_S = 0.35
+_RF_MIRROR_DELAY_S = 0.7
 
 
 class TellStickEntity(RestoreEntity):
