@@ -24,3 +24,9 @@ Mirrored all four Comen changes to the runtime file:
 2. Comen branch in protocol decode chain
 3. `_encode_comen_command()` function — applies house transformation `(house << 2) + 2`
 4. Comen branch in `_send_rf()` — dispatches to `_encode_comen_command`
+
+## CHORES (3.3.1.2)
+
+- Added standing CHORES.md task: after any runtime mirror operation, verify the two files
+  are identical with `diff custom_components/tellstick_local/<file> tellsticklive/rootfs/usr/share/tellstick_local/<file>`
+- Bumped version to 3.3.1.2
