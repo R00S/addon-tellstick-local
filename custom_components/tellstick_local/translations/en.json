@@ -108,7 +108,7 @@
       },
       "mirror_setup": {
         "title": "Mirror / range extender",
-        "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#8-mirror--range-extender",
+        "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#8-mirror-range-extender",
         "description": "Would you like this TellStick to act as a **mirror / range extender** for an existing TellStick?\n\nA mirror replicates all commands sent to the primary TellStick's devices, extending RF coverage. It also forwards received RF signals back to the primary for device detection.\n\nThe mirror does not have its own devices — it shares the primary's.",
         "data": {
           "mirror_of": "Use as mirror of"
@@ -146,6 +146,7 @@
   "options": {
     "step": {
       "init": {
+        "title": "TellStick Local",
         "menu_options": {
           "settings": "Settings",
           "manage_device": "Edit a device",
