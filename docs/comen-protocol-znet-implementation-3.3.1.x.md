@@ -135,3 +135,11 @@ The log analysis confirms the implementation is correct:
 3. No encoding bugs are visible in the captured data
 
 The issue can be closed as resolved.
+
+---
+
+## CHORES Done
+
+- Version bumped: 3.3.1.5 → 3.3.1.6 (both manifest.json files)
+- USER_GUIDE.md: no update needed — no user-visible changes on this branch
+- Mirror diff: no code changes — nothing to mirror; manifests confirmed identical
