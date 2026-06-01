@@ -1,7 +1,7 @@
 # Home Assistant: TellStick Local
 Home assistant support for tellsticks (duo, net, znet) without no need for Telldus live nor any Telldus software nor cloud.
 
-> **🟡 TellStick duo / Stable**
+> **✅ TellStick duo / Stable**
 > Stable and production ready.
 > If you hit any problem, please [open an issue][issue].
 
