@@ -251,7 +251,101 @@ is irrelevant to the user.
 
 ---
 
-## 5. Open questions (need hardware)
+## 5. Software-only ingress — assessed and closed
+
+**Question:** can the patch be delivered without touching the hardware, by
+finding a vulnerability in the firmware (old or new)?
+
+**Verdict: no — and the reason is structural, not "not found yet".** The
+primitive a chain would need (a file write as `nobody`, to reach the root
+upgrader) sits behind the thing we are trying to build. Every candidate route
+below dies on that wall.
+
+### 5.1 Pre-authentication surface
+
+| Surface                     | Reachable pre-auth | Primitives available                                  |
+| --------------------------- | ------------------ | ----------------------------------------------------- |
+| UDP `30303` / `42314`       | yes                | Two verbs only: `B:reglistener` and `send` → RF encode |
+| HTTP `/web/login`           | yes                | OpenID redirect (see 5.2)                             |
+| HTTP `/api/token` (PUT/GET) | yes                | Token creation/exchange, HS256 JWT, `ttl`/`exp`       |
+| HTTP static assets          | yes                | None                                                  |
+
+`productiontest/Server.pyc` handles no other message names. Neither path
+reaches `eval`, `exec`, `os.system`, `subprocess` or a deserialiser — the
+whole stack is Python 2.7, so there is no memory-corruption class to exploit
+either. No public CVE exists for these devices.
+
+### 5.2 The one real auth weakness, and where it stops
+
+`tellduslive/web/WebRequestHandler.pyc` uses **plain HTTP** for the only login
+provider:
+
+```text
+http://login.telldus.com
+```
+
+An on-path attacker (DNS/ARP on the user's LAN) can therefore impersonate the
+provider; python-openid fetches the provider's key material over that same
+unauthenticated channel. That yields a web session, and from there
+`/api/authorize` issues a Bearer token.
+
+What a token buys: `device/*`, `sensor/*`, and `lua/call` — which invokes a
+named function inside an **already present** `.lua` script. What it does not
+buy: any file write. No API route writes files, and
+`Board.doUpgradeImage()` is called only from `tellstick-upgrade.py`.
+
+**So an auth bypass stops at "I can switch lamps", not at code installation.**
+
+### 5.3 The root trust chain holds
+
+```python
+retval = subprocess.call(['gpg', '--verify',
+    '--no-default-keyring',
+    '--keyring', '/etc/upgrade/telldus.gpg',
+    '%s.asc' % path])
+```
+
+Note the `--no-default-keyring` plus explicit keyring, applied to every hotfix
+file *and* script. Related, and worth recording: `downloadFile()` uses Python
+2.7 `urllib.request.urlopen()`, which does **not** verify TLS — so
+`https://fw.telldus.com/hotfixes.yml` is spoofable on-path. It gains nothing:
+`hotfixes.yml` carries no checksum for hotfix payloads (only the firmware path
+passes `size`/`sha1`), so the GPG signature is the sole gate, and it is pinned.
+
+### 5.4 The residual weakness — circular
+
+`/etc/init.d/telldus-upgrade` runs the upgrader as root with:
+
+```sh
+procd_set_param env GNUPGHOME=/tmp
+```
+
+`/tmp` is world-writable, so a planted `$GNUPGHOME/gpg.conf` containing an
+extra `keyring` line could in principle defeat the keyring pin in 5.3 (whether
+`--no-default-keyring` neutralises a config-supplied keyring, and whether gpg's
+homedir permission checks intervene, would need bench verification).
+
+Planting that file requires **a write as `nobody`** — the exact primitive we do
+not have. This is the whole answer to "is an exploit possible": every chain
+reaches this wall, and the wall is on the wrong side.
+
+### 5.5 The one thing expected to open on its own
+
+`/etc/dropbear/authorized_keys` ships a Telldus support key and
+`/etc/firewall.telldus` accepts tcp/22 on the WAN rule. If that private key
+ever leaks, every ZNet becomes `ssh root@<device>` with no exploit at all.
+That is a risk to warn users about (do not port-forward 22), not a tool.
+
+### 5.6 Why this is not being pursued
+
+Cost/odds: an un-attacked, un-patchable Python stack, months of effort, to
+produce a pre-authentication LAN root on devices sitting in people's homes —
+a worse artefact than the patch it would deliver. Re-open only if a new fact
+appears: a published CVE, a leaked vendor key, or a vendor-signed hotfix.
+
+---
+
+## 6. Open questions (need hardware)
 
 1. **Overlay shadowing.** Python 2 prefers a `.pyc` newer than its `.py`. A
    patched `.py` in `/overlay/upper/…` must either carry a newer mtime or be
