@@ -281,6 +281,12 @@ RF events received by the mirror are forwarded to the primary for device detecti
 > immediately shows _"This TellStick is a mirror — devices must be added through the
 > primary hub entry."_ To add or teach devices, open the **primary** entry instead.
 
+**All TellSticks receive events at the same time.** When you run several TellSticks
+(a primary plus mirrors, or several independent hubs), each unit's sensor readings
+and button-press events reach Home Assistant independently — one unit never blocks
+another. This was fixed in **v3.3.1.7**; before that, only one of several Net/ZNet
+units received events at a time while the others went silent (GitHub issue #115).
+
 ---
 
 ## 9. Removing and ignoring devices
@@ -432,6 +438,10 @@ decoded parameters. This is the easiest way to verify the TellStick is receiving
 
 Call the **`tellstick_local.debug_connection`** service (from **Developer Tools →
 Services**) to log the current connection state and recent event counts to the HA log.
+The report is saved to `config/tellstick_local_debug.txt`. For each TellStick Net/ZNet
+entry it includes **Last packet received** (when, how long ago, and how many packets) —
+this shows whether a unit is receiving anything at all, even when its connection
+status shows OK.
 
 ### App log
 
@@ -484,6 +494,15 @@ and run the manual setup flow.
 1. Check the HA log for warnings like "No telldusd device ID for …"
 2. Try deleting the device and re-adding it via **Add device**
 3. Verify house/unit codes via **Configure → Edit device**
+
+### "Sensor values / button presses stopped updating — I have several TellSticks"
+
+Before **v3.3.1.7**, running several Net/ZNet TellSticks could starve all but
+one of them (GitHub issue #115) — one unit received everything while the others
+went silent. Update to v3.3.1.7 or later and restart Home Assistant. If it still
+happens, run `TellStick Local: Debug connection` and check **Last packet
+received** for each entry: a unit with no packets for minutes has a network
+problem (check that UDP port 42314 is not blocked and the unit's IP is correct).
 
 ### "Add device shows 'This TellStick is a mirror' message"
 

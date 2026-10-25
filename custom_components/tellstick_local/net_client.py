@@ -6,9 +6,10 @@ The ZNet firmware exposes a UDP protocol on two ports:
   with a string like "TellStickNet:MAC:code:17" or "TellstickNetV2:MAC:code:1.1.0:uid".
 
 - **Port 42314** -- RF command/event socket:
-  - Bind a local UDP socket to port 42314 (SO_REUSEADDR) to receive events.
+  - Share one local UDP socket on port 42314 (SO_REUSEADDR) across all
+    entries; datagrams are dispatched by source IP to the matching entry.
   - Send "reglistener" to host:42314 to subscribe to RF events.
-    The ZNet pushes "7:RawData" packets to all clients bound on port 42314.
+    The ZNet then pushes "7:RawData" packets to that shared socket.
   - Send "send" packets to transmit 433 MHz commands via the hardware.
   - Re-register every 10 minutes to keep the subscription alive.
 
@@ -31,6 +32,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import socket
+import time
 from collections import OrderedDict
 from collections.abc import AsyncGenerator, Callable, Iterator
 from dataclasses import dataclass, field
@@ -2738,6 +2740,181 @@ async def discover(timeout: float = 3.0) -> AsyncGenerator[tuple[str, str, str],
 
 
 # ---------------------------------------------------------------------------
+# Shared UDP listener  (issue #115)
+# ---------------------------------------------------------------------------
+#
+# All Net/ZNet config entries on one HA instance share a single UDP socket.
+# Previously every entry bound its own SO_REUSEADDR socket to port 42314; a
+# unicast datagram is delivered to only ONE such socket (the one bound last),
+# so with a primary + mirror entries only one entry ever saw traffic — and it
+# dropped every datagram not from its own TellStick host.  Symptoms: sensors
+# on the primary stop updating until the primary is reloaded (it then "binds
+# last"), and mirror-received events never reach the primary.
+#
+# The shared listener receives every datagram once and dispatches it by
+# source IP to the controller(s) registered for that host.  The socket is
+# reference-counted: it opens with the first subscriber and closes with the
+# last, so entries can be added, reloaded and removed independently.
+
+
+class _NetUdpHub:
+    """Reference-counted shared UDP listener for Net/ZNet event packets."""
+
+    def __init__(self, port: int = NET_COMMAND_PORT) -> None:
+        self._port = port
+        self._sock: socket.socket | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._task: asyncio.Task | None = None
+        self._bound_port: int = 0
+        # host -> controllers subscribed for that host (usually exactly one)
+        self._subscribers: dict[str, list[Any]] = {}
+        self._last_seen: dict[str, float] = {}
+        self._idle_logged: dict[str, float] = {}
+        self._packets_logged: dict[str, int] = {}
+
+    # -- lifecycle ----------------------------------------------------
+
+    def _ensure_started(self, loop: asyncio.AbstractEventLoop) -> None:
+        if self._sock is not None and self._loop is loop:
+            return
+        if self._sock is not None:
+            # Socket belongs to a different (closed) event loop — rebind.
+            self._shutdown()
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.setblocking(False)
+        try:
+            # Bind to all interfaces on port 42314.  The ZNet firmware pushes
+            # RF events to the source address of our reglistener packet, which
+            # is this socket for every entry.  Binding to a single interface
+            # would miss events; this matches the molobrakos reference client.
+            sock.bind(("", self._port))
+            self._bound_port = sock.getsockname()[1]
+        except OSError:
+            _LOGGER.warning(
+                "Net: port %d already bound; using ephemeral port for events",
+                self._port,
+            )
+            # Fall back to an ephemeral port if 42314 is used by another
+            # process.  The reglistener packet tells each ZNet to send its
+            # events to that ephemeral port instead.
+            sock.bind(("", 0))
+            self._bound_port = sock.getsockname()[1]
+        self._sock = sock
+        self._loop = loop
+        self._task = loop.create_task(self._run())
+        _LOGGER.info("Net: shared event listener bound to port %d", self._bound_port)
+
+    def _shutdown(self) -> None:
+        if self._task is not None:
+            self._task.cancel()
+            self._task = None
+        if self._sock is not None:
+            self._sock.close()
+            self._sock = None
+        self._loop = None
+
+    async def subscribe(self, controller: Any) -> None:
+        """Register a controller to receive packets from its host."""
+        loop = asyncio.get_running_loop()
+        self._ensure_started(loop)
+        self._subscribers.setdefault(controller.host, []).append(controller)
+        self._last_seen.setdefault(controller.host, loop.time())
+
+    async def unsubscribe(self, controller: Any) -> None:
+        """Release a controller; close the socket with the last subscriber."""
+        subs = self._subscribers.get(controller.host)
+        if subs and controller in subs:
+            subs.remove(controller)
+        if not subs:
+            self._subscribers.pop(controller.host, None)
+            self._last_seen.pop(controller.host, None)
+            self._idle_logged.pop(controller.host, None)
+            self._packets_logged.pop(controller.host, None)
+        if not self._subscribers:
+            self._shutdown()
+
+    async def send(self, data: bytes, host: str) -> None:
+        """Send a command/reglistener packet to a TellStick over the shared socket."""
+        if self._sock is None:
+            raise OSError("Socket not connected")
+        await asyncio.get_running_loop().sock_sendto(
+            self._sock, data, (host, NET_COMMAND_PORT)
+        )
+
+    # -- receive loop --------------------------------------------------
+
+    async def _run(self) -> None:
+        loop = asyncio.get_running_loop()
+        while self._sock is not None:
+            try:
+                data, (src_ip, _port) = await asyncio.wait_for(
+                    loop.sock_recvfrom(self._sock, 4096), timeout=70.0
+                )
+            except asyncio.TimeoutError:
+                self._log_idle_hosts(loop.time())
+                continue
+            except asyncio.CancelledError:
+                break
+            except OSError as err:
+                if self._sock is None:
+                    # Socket was closed intentionally — stop.
+                    break
+                # Transient network error (e.g. interface briefly down after
+                # HAOS restart).  Retry after a short delay instead of dying
+                # permanently, so events resume once the network recovers.
+                _LOGGER.warning("Net: UDP receive error: %s — retrying in 5s", err)
+                await asyncio.sleep(5)
+                continue
+            self._dispatch(src_ip, data, loop.time())
+
+    def _dispatch(self, src_ip: str, data: bytes, now: float) -> None:
+        """Deliver one datagram to the controller(s) registered for its source."""
+        self._log_idle_hosts(now)
+        targets = self._subscribers.get(src_ip)
+        if not targets:
+            _LOGGER.debug(
+                "Net: ignoring packet from %s (no entry configured for that host)",
+                src_ip,
+            )
+            return
+        self._last_seen[src_ip] = now
+        self._idle_logged.pop(src_ip, None)
+        count = self._packets_logged.get(src_ip, 0)
+        if count < 3:
+            self._packets_logged[src_ip] = count + 1
+            _LOGGER.info(
+                "Net: received packet #%d from %s (%d bytes)",
+                count + 1, src_ip, len(data),
+            )
+        for controller in list(targets):
+            try:
+                controller._handle_datagram(data)
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug("Net: packet processing error: %s", err)
+
+    def _log_idle_hosts(self, now: float) -> None:
+        """Log a debug line for hosts that have been quiet for 70s."""
+        for host in list(self._subscribers):
+            last = self._last_seen.get(host, now)
+            if now - last < 70.0 or now - self._idle_logged.get(host, 0.0) < 70.0:
+                continue
+            self._idle_logged[host] = now
+            _LOGGER.debug("Net: no packets from %s in 70s (waiting…)", host)
+
+
+_HUB: _NetUdpHub | None = None
+
+
+def _get_hub() -> _NetUdpHub:
+    """Return the process-wide shared UDP hub, creating it on first use."""
+    global _HUB  # noqa: PLW0603
+    if _HUB is None:
+        _HUB = _NetUdpHub()
+    return _HUB
+
+
+# ---------------------------------------------------------------------------
 # TellStick Net UDP controller
 # ---------------------------------------------------------------------------
 
@@ -2754,8 +2931,9 @@ class TellStickNetController:
     ``device_id_map[uid]`` for Net entries instead of integer telldusd IDs.
 
     Protocol details:
-    - Binds local UDP socket to port 42314 (SO_REUSEADDR) to receive events
-      broadcast by the ZNet firmware.
+    - Shares one UDP listener (port 42314) with every other Net/ZNet entry;
+      incoming datagrams are dispatched by source IP to the right controller
+      (issue #115).
     - Sends "reglistener" on connect() and re-registers every 10 minutes.
     - Incoming "7:RawData" packets are decoded with protocol-specific decoders
       and dispatched as RawDeviceEvent / SensorEvent objects.
@@ -2766,11 +2944,16 @@ class TellStickNetController:
     host: str
     mac: str = ""
 
-    _sock: socket.socket | None = field(default=None, init=False, repr=False)
-    _event_task: asyncio.Task | None = field(default=None, init=False, repr=False)
+    _hub: _NetUdpHub | None = field(default=None, init=False, repr=False)
     _reregister_task: asyncio.Task | None = field(
         default=None, init=False, repr=False
     )
+    _started: bool = field(default=False, init=False, repr=False)
+    _pending_raw: list[bytes] = field(default_factory=list, init=False, repr=False)
+    # Diagnostics: wall-clock time of the last event packet received for this
+    # entry and a running count (surfaced by the debug_connection service).
+    last_packet_at: float | None = field(default=None, init=False, repr=False)
+    packets_received: int = field(default=0, init=False, repr=False)
     _callbacks: list[Callable[[Any], None]] = field(
         default_factory=list, init=False, repr=False
     )
@@ -2783,48 +2966,38 @@ class TellStickNetController:
     # ------------------------------------------------------------------
 
     async def connect(self) -> None:
-        """Bind UDP socket to port 42314 and send initial reglistener."""
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sock.setblocking(False)
-        try:
-            # Bind to all interfaces on port 42314 (SO_REUSEADDR).
-            # The ZNet firmware broadcasts RF events to port 42314 on the local
-            # network — binding to a single interface would miss them.
-            # This matches the molobrakos/tellsticknet reference implementation.
-            sock.bind(("", NET_COMMAND_PORT))
-            _LOGGER.info("Net: bound to port %d for %s", NET_COMMAND_PORT, self.host)
-        except OSError:
-            _LOGGER.warning(
-                "Port %d already bound; using ephemeral port for %s",
-                NET_COMMAND_PORT, self.host,
-            )
-            # Fall back to an ephemeral port if 42314 is in use (e.g. a second
-            # Net entry is already bound).  The reglistener packet we send will
-            # tell the ZNet to direct future events to our ephemeral port.
-            sock.bind(("", 0))
-        self._sock = sock
+        """Subscribe to the shared UDP listener and send initial reglistener."""
+        self._hub = _get_hub()
+        await self._hub.subscribe(self)
         await self._send_raw(encode_packet("reglistener"))
         _LOGGER.info("Net: sent reglistener to %s:%d", self.host, NET_COMMAND_PORT)
 
     async def disconnect(self) -> None:
-        """Cancel tasks and close the socket."""
-        for task in (self._event_task, self._reregister_task):
-            if task and not task.done():
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
-        self._event_task = None
+        """Cancel tasks and release the shared UDP listener."""
+        if self._reregister_task and not self._reregister_task.done():
+            self._reregister_task.cancel()
+            try:
+                await self._reregister_task
+            except asyncio.CancelledError:
+                pass
         self._reregister_task = None
-        if self._sock:
-            self._sock.close()
-            self._sock = None
+        self._started = False
+        self._pending_raw = []
+        if self._hub is not None:
+            await self._hub.unsubscribe(self)
+            self._hub = None
 
     def start_event_listener(self) -> None:
-        """Start the UDP event loop and re-registration heartbeat."""
-        self._event_task = asyncio.ensure_future(self._event_loop())
+        """Process buffered packets and start the re-registration heartbeat.
+
+        The shared UDP hub dispatches packets from the moment connect() runs;
+        datagrams arriving before this call are buffered (as the kernel did
+        for the old per-entry socket) and flushed here.
+        """
+        self._started = True
+        pending, self._pending_raw = self._pending_raw, []
+        for raw in pending:
+            self._process_packet(raw)
         self._reregister_task = asyncio.ensure_future(self._reregister_loop())
 
     async def reconnect(self) -> None:
@@ -2833,7 +3006,7 @@ class TellStickNetController:
         Call this after HA has fully started to recover from a lost initial
         registration (e.g. ZNet not reachable during early HAOS boot).
         """
-        if self._sock is None:
+        if self._hub is None:
             return
         try:
             await self._send_raw(encode_packet("reglistener"))
@@ -2919,10 +3092,9 @@ class TellStickNetController:
     # ------------------------------------------------------------------
 
     async def _send_raw(self, data: bytes) -> None:
-        if self._sock is None:
+        if self._hub is None:
             raise OSError("Socket not connected")
-        loop = asyncio.get_running_loop()
-        await loop.sock_sendto(self._sock, data, (self.host, NET_COMMAND_PORT))
+        await self._hub.send(data, self.host)
 
     async def _send_rf(
         self, device: Any, method_name: str, param: Any = None
@@ -2935,7 +3107,7 @@ class TellStickNetController:
 
         _LOGGER.debug(
             "Net _send_rf called: method=%s device=%r sock=%s",
-            method_name, device, "OK" if self._sock else "NONE",
+            method_name, device, "OK" if self._hub else "NONE",
         )
 
         protocol = device.get("protocol", "")
@@ -3027,54 +3199,21 @@ class TellStickNetController:
             _LOGGER.error("Net: send to %s failed: %s", self.host, err)
             return -1
 
-    async def _event_loop(self) -> None:
-        if self._sock is None:
+    def _handle_datagram(self, raw: bytes) -> None:
+        """Entry point for the shared UDP hub.
+
+        Buffers packets until start_event_listener() so events arriving in the
+        window between connect() and callback registration are not lost.
+        """
+        if not self._started:
+            if len(self._pending_raw) < 200:
+                self._pending_raw.append(raw)
             return
-        loop = asyncio.get_running_loop()
-        _LOGGER.info(
-            "Net: event listener started for %s (socket bound to port %s)",
-            self.host,
-            self._sock.getsockname()[1] if self._sock else "?",
-        )
-        packet_count = 0
-        while True:
-            try:
-                data, (src_ip, _port) = await asyncio.wait_for(
-                    loop.sock_recvfrom(self._sock, 4096), timeout=70.0
-                )
-                if src_ip != self.host:
-                    _LOGGER.debug(
-                        "Net: ignoring packet from %s (expected %s)", src_ip, self.host
-                    )
-                    continue
-                packet_count += 1
-                if packet_count <= 3:
-                    _LOGGER.info(
-                        "Net: received packet #%d from %s (%d bytes)",
-                        packet_count, src_ip, len(data),
-                    )
-                self._process_packet(data)
-            except asyncio.TimeoutError:
-                _LOGGER.debug("Net: no packets from %s in 70s (waiting…)", self.host)
-                continue
-            except asyncio.CancelledError:
-                break
-            except OSError as err:
-                if self._sock is None:
-                    # Socket was closed intentionally by disconnect() — stop.
-                    break
-                # Transient network error (e.g. interface briefly down after
-                # HAOS restart).  Retry after a short delay instead of dying
-                # permanently, so events resume once the network recovers.
-                _LOGGER.warning(
-                    "Net event error for %s: %s — retrying in 5s", self.host, err
-                )
-                await asyncio.sleep(5)
-                continue
-            except Exception as err:  # noqa: BLE001
-                _LOGGER.debug("Net: packet processing error: %s", err)
+        self._process_packet(raw)
 
     def _process_packet(self, raw: bytes) -> None:
+        self.last_packet_at = time.time()
+        self.packets_received += 1
         args = decode_packet(raw)
         if not args:
             _LOGGER.debug("Net: unrecognised packet from %s: %r", self.host, raw[:60])

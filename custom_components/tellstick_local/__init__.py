@@ -661,16 +661,14 @@ async def _setup_mirror_entry(
     )
 
     # For Net/ZNet mirrors: re-send reglistener once HA has fully started.
+    # Same as the primary path: no async_on_unload wrapper (see note in
+    # async_setup_entry) — reconnect() is a no-op on a disconnected controller.
     if backend == BACKEND_NET:
 
         async def _on_hass_started_mirror(_event: Any) -> None:
             await controller.reconnect()
 
-        entry.async_on_unload(
-            hass.bus.async_listen_once(
-                EVENT_HOMEASSISTANT_STARTED, _on_hass_started_mirror
-            )
-        )
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _on_hass_started_mirror)
 
     # Register with the primary entry's data so entities can send
     # commands through the mirror.
@@ -970,14 +968,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # After a HAOS restart the initial reglistener (sent in connect()) may be
     # lost if the ZNet device is not yet reachable when HA boots.  Re-sending
     # once all integrations have loaded ensures reliable event registration.
+    #
+    # NOTE: deliberately NOT registered via entry.async_on_unload().  The
+    # one-time listener removes itself when it fires at HA startup; calling
+    # its remove callback again on a later reload logs
+    # "Unable to remove unknown job listener" (issue #115).  If the entry is
+    # unloaded before startup, the leftover listener is harmless:
+    # controller.reconnect() is a no-op once the controller is disconnected.
     if backend == BACKEND_NET:
 
         async def _on_hass_started(_event: Any) -> None:
             await controller.reconnect()
 
-        entry.async_on_unload(
-            hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _on_hass_started)
-        )
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _on_hass_started)
 
     # Listen for options changes (reload only when automatic_add changes)
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
@@ -1049,6 +1052,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     lines.append(f"  - Connection: {'OK ✅' if alive else 'FAILED ❌'}")
                 else:
                     lines.append("  - Connection: no ping available")
+
+                # Net/ZNet entries: surface when the last event packet was
+                # received, so a "Connection: OK" entry that is silently
+                # receiving nothing is visible in the report (issue #115).
+                if ctrl and hasattr(ctrl, "last_packet_at"):
+                    last = ctrl.last_packet_at
+                    if last:
+                        age = max(0, int(time.time() - last))
+                        lines.append(
+                            "  - Last packet received: "
+                            f"{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(last))} "
+                            f"({age}s ago, {ctrl.packets_received} total)"
+                        )
+                    else:
+                        lines.append("  - Last packet received: never (this session)")
 
                 stored = (
                     ce.options.get(CONF_DEVICES, {}) if ce else {}
