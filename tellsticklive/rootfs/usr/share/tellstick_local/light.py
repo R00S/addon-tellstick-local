@@ -23,16 +23,20 @@ from .const import (
     CONF_DEVICE_MODEL,
     CONF_DEVICE_NAME,
     CONF_DEVICE_PROTOCOL,
+    CONF_DEVICE_TYPE,
     CONF_DEVICE_UNIT,
     CONF_DEVICES,
     DOMAIN,
     ENTRY_DEVICE_ID_MAP,
     ENTRY_TELLSTICK_CONTROLLER,
+    GENERIC_RF_TYPE_LIGHT,
+    PROTOCOL_GENERIC_RF,
     SIGNAL_EVENT,
     SIGNAL_NEW_DEVICE,
     TELLSTICK_DIM,
     TELLSTICK_TURNOFF,
     TELLSTICK_TURNON,
+    generic_rf_build_raw_command,
 )
 from .entity import TellStickEntity
 
@@ -44,7 +48,15 @@ _DIMMER_MODELS = {
 }
 
 
-def _is_dimmer(protocol: str, model: str) -> bool:
+def _is_dimmer(protocol: str, model: str, device_cfg: dict | None = None) -> bool:
+    """Check if a device should be a dimmer/light entity."""
+    if protocol.lower() == PROTOCOL_GENERIC_RF:
+        # For Generic RF devices, check device_type
+        # Default to False for backward compatibility (existing Generic RF are switches)
+        if device_cfg:
+            device_type = device_cfg.get(CONF_DEVICE_TYPE, "")
+            return device_type == GENERIC_RF_TYPE_LIGHT
+        return False  # Backward compat: Generic RF without device_type are switches
     base = model.split(":")[0].lower() if ":" in model else model.lower()
     return base in _DIMMER_MODELS
 
@@ -92,7 +104,7 @@ async def async_setup_entry(
     for device_uid, device_cfg in entry.options.get(CONF_DEVICES, {}).items():
         protocol = device_cfg.get(CONF_DEVICE_PROTOCOL, "")
         model = device_cfg.get(CONF_DEVICE_MODEL, "")
-        if not _is_dimmer(protocol, model):
+        if not _is_dimmer(protocol, model, device_cfg):
             continue
         # Clean up stale switch entity for this UID — the device was
         # (re-)added as a dimmer, so any old switch entity must go.
@@ -111,6 +123,10 @@ async def async_setup_entry(
                 unit=device_cfg.get(CONF_DEVICE_UNIT, ""),
                 manufacturer=manufacturer,
                 group_uid=device_cfg.get("group_uid") or None,
+                timings_on=device_cfg.get("timings_on"),
+                timings_off=device_cfg.get("timings_off"),
+                timings_dim_levels=device_cfg.get("timings_dim_levels"),
+                repeat_count=device_cfg.get("repeat_count", 10),
             )
         )
     if stored_entities:
@@ -147,7 +163,7 @@ async def async_setup_entry(
             or stored.get(CONF_DEVICE_MODEL, "")
             or model
         )
-        if not _is_dimmer(protocol, check_model):
+        if not _is_dimmer(protocol, check_model, stored):
             return
         # Clean up stale switch entity for this UID — the device was
         # (re-)added as a dimmer, so any old switch entity must go.
@@ -173,6 +189,10 @@ async def async_setup_entry(
             unit=params.get("unit", params.get("code", "")),
             manufacturer=manufacturer,
             group_uid=stored.get("group_uid") or None,
+            timings_on=stored.get("timings_on"),
+            timings_off=stored.get("timings_off"),
+            timings_dim_levels=stored.get("timings_dim_levels"),
+            repeat_count=stored.get("repeat_count", 10),
         )
         async_add_entities([entity])
 
@@ -203,6 +223,10 @@ class TellStickLight(TellStickEntity, LightEntity):
         unit: str = "",
         manufacturer: str = "",
         group_uid: str | None = None,
+        timings_on: list[int] | None = None,
+        timings_off: list[int] | None = None,
+        timings_dim_levels: dict[int, list[int]] | None = None,
+        repeat_count: int = 10,
     ) -> None:
         """Initialize a TellStick light."""
         super().__init__(
@@ -220,6 +244,11 @@ class TellStickLight(TellStickEntity, LightEntity):
         self._telldusd_device_id = device_id
         self._attr_is_on = False
         self._attr_brightness: int | None = None
+        # Generic RF support
+        self._timings_on = timings_on
+        self._timings_off = timings_off
+        self._timings_dim_levels = timings_dim_levels or {}
+        self._repeat_count = repeat_count
 
     async def async_added_to_hass(self) -> None:
         """Restore state and subscribe to events."""
@@ -274,7 +303,15 @@ class TellStickLight(TellStickEntity, LightEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the light on, optionally at a brightness level."""
-        if self._telldusd_device_id is not None:
+        if self._protocol == PROTOCOL_GENERIC_RF and hasattr(self._controller, "send_raw_command"):
+            if ATTR_BRIGHTNESS in kwargs:
+                level = int(kwargs[ATTR_BRIGHTNESS])
+                await self._send_generic_rf_raw("dim", level)
+                self._attr_brightness = level
+            else:
+                await self._send_generic_rf_raw("on")
+            await self._async_mirror_command("turn_on")
+        elif self._telldusd_device_id is not None:
             if ATTR_BRIGHTNESS in kwargs:
                 level = int(kwargs[ATTR_BRIGHTNESS])
                 await self._controller.dim(self._telldusd_device_id, level)
@@ -293,7 +330,9 @@ class TellStickLight(TellStickEntity, LightEntity):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the light off."""
-        if self._telldusd_device_id is not None:
+        if self._protocol == PROTOCOL_GENERIC_RF and hasattr(self._controller, "send_raw_command"):
+            await self._send_generic_rf_raw("off")
+        elif self._telldusd_device_id is not None:
             await self._controller.turn_off(self._telldusd_device_id)
         else:
             _LOGGER.warning(
@@ -303,3 +342,62 @@ class TellStickLight(TellStickEntity, LightEntity):
         await self._async_mirror_command("turn_off")
         self._attr_is_on = False
         self.async_write_ha_state()
+
+    async def _send_generic_rf_raw(self, action: str, brightness: int | None = None) -> None:
+        """Send a Generic RF raw OOK pulse command for a light/dimmer.
+
+        For ON/OFF actions, uses the stored timings_on/timings_off.
+        For DIM actions, first tries to find a matching dim level in timings_dim_levels,
+        otherwise falls back to ON timing.
+
+        Args:
+            action: "on", "off", or "dim"
+            brightness: Brightness level (0-255) when action is "dim"
+        """
+        timings = None
+        
+        if action == "dim" and brightness is not None:
+            # Convert brightness (0-255) to percentage (0-100) and find closest level
+            percentage = int((brightness / 255) * 100)
+            # Try to find the closest dim level we have recorded
+            if self._timings_dim_levels:
+                closest_level = min(
+                    self._timings_dim_levels.keys(),
+                    key=lambda x: abs(x - percentage)
+                )
+                # Use the closest level if it's within 15% of the requested level
+                if abs(closest_level - percentage) <= 15:
+                    timings = self._timings_dim_levels[closest_level]
+                    _LOGGER.debug(
+                        "Generic RF dim: using recorded level %d%% for requested %d%%",
+                        closest_level, percentage
+                    )
+        
+        if timings is None:
+            # Fall back to on/off timings
+            if action == "off" and self._timings_off:
+                timings = self._timings_off
+            elif self._timings_on:
+                timings = self._timings_on
+        
+        if not timings:
+            _LOGGER.warning(
+                "Generic RF raw TX: no timings stored for %s action=%s",
+                self._device_uid, action,
+            )
+            return
+
+        raw_cmd = generic_rf_build_raw_command(timings, self._repeat_count)
+        _LOGGER.info(
+            "Generic RF raw TX: uid=%s action=%s brightness=%s timings=%d bytes=%d",
+            self._device_uid, action, brightness, len(timings), len(raw_cmd),
+        )
+        result = await self._controller.send_raw_command(raw_cmd)
+        if result == -5:
+            _LOGGER.info(
+                "Generic RF raw TX: ACK timeout (expected for long TX), hardware should still transmit"
+            )
+        elif result != 0:
+            _LOGGER.warning(
+                "Generic RF raw TX failed: uid=%s result=%d", self._device_uid, result
+            )
