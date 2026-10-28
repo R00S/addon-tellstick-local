@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Probe the local UDP "send" path of a TellStick Net / ZNet (issue #114).
 
-Sends five packet variants one at a time and asks you to watch the TellStick's
+Sends packet variants one at a time and asks you to watch the TellStick's
 LED after each one.  Run it from ANY machine on the same LAN as the device
 (laptop, HA host, NAS — it does not need Home Assistant):
 
@@ -11,7 +11,7 @@ Use the same house/unit the receiver is paired to (unit is 1-indexed, as in
 the integration).  For each test, answer whether the TellStick LED blinked
 (TX activity) and whether the receiver responded.
 
-The five variants and what the results mean:
+Phase 1 — packet encoding (skip with --skip-encoding if already done):
 
   A  native dict, no P/R          what TellStick Local 3.3.1.x sends today
   B  native dict + P/R in dict    documented format (developer.telldus.com)
@@ -27,9 +27,29 @@ The five variants and what the results mean:
   * None blink       -> the local "send" command itself is missing/disabled
                         in this firmware build; local TX is not possible.
 
-The script also listens for 30 s at the end: press a remote control button.
-If packets arrive, local *events* work on this unit (UDP delivery is fine);
-if nothing arrives, suspect delivery/firewall/VM networking instead.
+Phase 2 — connection state (why the integration can fail while this probe
+works, even with byte-identical packets):
+
+  F  reglistener, then send              both from this probe's socket (42314)
+  G  reglistener, RF event, then send    same socket — EXACTLY what the
+                                         integration does all the time
+  H  reglistener, RF event, then send    send from a separate ephemeral socket
+  I  reglistener + send, ephemeral       both from an ephemeral socket
+                                         (Telldus' own reference-client style)
+
+  * A works, G fails  -> the firmware drops commands from the registered
+                         listener after it has pushed an event: its per-listener
+                         event socket shadows the command socket.  Fix in the
+                         integration: register and send from an ephemeral port.
+  * G works, I works  -> state is not the problem; if HA still fails, run this
+                         probe on the HA host itself and compare (transport).
+  * Everything fails from the HA host but works from a laptop
+                      -> packets die in the network path (VM bridge / NAT /
+                         firewall), not in the integration.
+
+The script also listens briefly for RF events during phase 2: an event that
+arrives proves the firmware's event-push path works and that the shadow
+precondition (per-listener socket open) is met before each send test.
 """
 
 import argparse
@@ -96,12 +116,47 @@ def arctech_selflearning_pulses(house: int, unit: int, turn_on: bool) -> bytes:
     return code + _SHORT
 
 
+def _ask_send(label: str, sock: socket.socket, host: str, port: int, packet: bytes) -> None:
+    input(f"Press Enter to send test {label} ...")
+    sock.sendto(packet, (host, port))
+    print(f"  sent {len(packet)} bytes from {sock.getsockname()}")
+    blink = input("  Did the TellStick LED blink? [y/n] ").strip().lower()
+    resp = input("  Did the receiver respond? [y/n] ").strip().lower()
+    print(f"  => LED={'YES' if blink == 'y' else 'no'}  receiver={'YES' if resp == 'y' else 'no'}\n")
+
+
+def _wait_event(sock: socket.socket, prompt: str) -> bool:
+    """Prompt the user to trigger an RF event, then drain what arrives."""
+    input(prompt)
+    sock.settimeout(2.0)
+    got = 0
+    try:
+        while True:
+            data, src = sock.recvfrom(4096)
+            got += 1
+            print(f"  received {len(data)} bytes from {src}: {data[:60]!r}")
+    except socket.timeout:
+        pass
+    print(f"  => event push received: {'YES' if got else 'no'}\n")
+    return got > 0
+
+
+def _ephemeral_socket() -> socket.socket:
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.bind(("", 0))
+    return s
+
+
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("host", help="IP address of the TellStick Net/ZNet")
     ap.add_argument("--house", type=int, required=True, help="house code the receiver is paired to")
     ap.add_argument("--unit", type=int, required=True, help="unit (1-16)")
     ap.add_argument("--port", type=int, default=42314)
+    ap.add_argument("--skip-encoding", action="store_true",
+                    help="skip phase 1 (packet-encoding tests A-E)")
     args = ap.parse_args()
 
     house, unit = args.house, args.unit
@@ -121,6 +176,9 @@ def main() -> int:
         ("E  raw S pulse bytes + P/R in dict",            encode_packet("send", {"S": pulses, "P": 20, "R": 15})),
     ]
 
+    reg = encode_packet("reglistener")
+    on = encode_packet("send", native)
+
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
@@ -130,13 +188,53 @@ def main() -> int:
     print(f"Sending to {args.host}:{args.port} from {sock.getsockname()}")
     print(f"Target code: house={house} unit={unit} (wire button={unit0})\n")
 
-    for label, packet in tests:
-        input(f"Press Enter to send test {label} ...")
-        sock.sendto(packet, (args.host, args.port))
-        print(f"  sent {packet!r}")
-        blink = input("  Did the TellStick LED blink? [y/n] ").strip().lower()
-        resp = input("  Did the receiver respond? [y/n] ").strip().lower()
-        print(f"  => LED={'YES' if blink == 'y' else 'no'}  receiver={'YES' if resp == 'y' else 'no'}\n")
+    if not args.skip_encoding:
+        for label, packet in tests:
+            _ask_send(label, sock, args.host, args.port, packet)
+
+    print("=== Phase 2 — connection state (the integration's exact situation) ===\n")
+
+    print("F  reglistener, then send — same socket (port 42314)")
+    sock.sendto(reg, (args.host, args.port))
+    print(f"  sent reglistener from {sock.getsockname()}")
+    _ask_send("F", sock, args.host, args.port, on)
+
+    print("G  reglistener, RF event, then send — same socket.")
+    print("   This is byte-for-byte and state-for-state what the integration does.")
+    sock.sendto(reg, (args.host, args.port))
+    print(f"  sent reglistener from {sock.getsockname()}")
+    _wait_event(sock, "  Press a remote-control button near the TellStick (or wait for a\n"
+                      "  sensor report), then press Enter ...")
+    _ask_send("G", sock, args.host, args.port, on)
+
+    print("H  reglistener + RF event (port 42314), then send from a separate")
+    print("   ephemeral socket")
+    sock.sendto(reg, (args.host, args.port))
+    print(f"  sent reglistener from {sock.getsockname()}")
+    _wait_event(sock, "  Press a remote-control button near the TellStick (or wait for a\n"
+                      "  sensor report), then press Enter ...")
+    eph = _ephemeral_socket()
+    print(f"  send socket: {eph.getsockname()}")
+    _ask_send("H", eph, args.host, args.port, on)
+    eph.close()
+
+    print("I  reglistener + send, both from a separate ephemeral socket")
+    print("   (Telldus' own reference-client style)")
+    eph = _ephemeral_socket()
+    eph.sendto(reg, (args.host, args.port))
+    print(f"  sent reglistener from {eph.getsockname()}")
+    _wait_event(eph, "  Press a remote-control button near the TellStick (or wait for a\n"
+                     "  sensor report), then press Enter ...")
+    _ask_send("I", eph, args.host, args.port, on)
+    eph.close()
+
+    print("What to look for:")
+    print("  * G fails while A worked  -> root cause found: the per-listener event")
+    print("    socket shadows the command socket.  If I works, the fix is to register")
+    print("    and send from an ephemeral port (as in test I).")
+    print("  * G works                 -> connection state is not the cause; run this")
+    print("    probe on the HA host itself and compare, and check the tcpdump for")
+    print("    source port and 'bad udp cksum'.\n")
 
     print("Now listening 30 s for RF events — press a button on a 433 MHz remote")
     print("(or watch a sensor) near the TellStick...\n")

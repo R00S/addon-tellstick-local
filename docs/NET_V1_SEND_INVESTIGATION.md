@@ -178,3 +178,132 @@ config flow into `TellStickNetController` to select the v1 encoding.
    confirms the hardware generation unambiguously.
 3. For reporter 1: the debug report line "Discovered UIDs this session: 1" is
    counted at manual add too — it does not prove events were received.
+
+---
+
+# Round 2 — probe results and the listener-socket shadow (2026-10-27)
+
+## New field data (tomwickstromse, firmware 17, Nexa selflearning-dimmer)
+
+- Probe run from a Mac on the same LAN: **all five variants (A–E) work** —
+  LED blinks and the receiver responds, including A, byte-identical to what
+  the integration sends. Packet encoding is therefore exonerated on real
+  production hardware.
+- Immediately afterwards the same light commanded through HA / TellStick Local
+  3.3.1.5: no LED blink, no response. Telldus Live keeps working.
+- Reporter's conclusion: "Could the issue be related to how the integration
+  opens or binds its UDP socket?" — that is now the leading hypothesis.
+
+Remaining difference between the probe and the integration: not the bytes,
+but **the connection state** (the integration sends `reglistener` first and
+keeps the socket registered; the probe never registers) and **the source
+socket** (both use port 42314 when the integration's bind succeeds).
+
+## The v1 firmware's two sockets on one port (from published source)
+
+`localaccess.c` opens the command socket:
+
+```c
+localSocket = UDPOpen(LOCAL_ACCESS_PORT, NULL, LOCAL_ACCESS_PORT);  // 42314
+```
+
+`tellsticknet.c` implements the listener registration and event push:
+
+```c
+void registerListener() {
+    memcpy(&remote, &UDPSocketInfo[localSocket].remote, sizeof(remote));
+    localPort = UDPSocketInfo[localSocket].remotePort;   // registrant's SOURCE port
+    listenerActive = 1;
+    if(s != INVALID_UDP_SOCKET) { UDPClose(s); s = INVALID_UDP_SOCKET; return; }
+}
+
+void sendToLocalListeners() {
+    if (!listenerActive) return;
+    if(s == INVALID_UDP_SOCKET)
+        s = UDPOpen(localPort, &remote, localPort);      // ← opened on first event
+    ...UDPPut/UDPFlush...
+}
+```
+
+So on the **first RF event after registration**, the firmware opens a second
+socket `s` bound to *the registrant's source port* and pointed at the
+registrant's address. **If the client registers from source port 42314 — as
+our integration does — `s` collides with the firmware's own command socket,
+which also lives on 42314.** Telldus' own reference client registers from an
+ephemeral port and never triggers this.
+
+Why the collision eats commands (Microchip TCPIP Stack `UDP.c`):
+
+- `UDPProcess()` delivers each datagram to exactly **one** socket
+  (`SocketWithRxData = FindMatchingSocket(...)`).
+- `FindMatchingSocket()` returns the *first* socket whose
+  (localPort, remotePort, remoteIP) all match the packet's
+  (destPort, sourcePort, sourceIP); failing that, the *last* socket with a
+  matching localPort (and rebinds it to the sender).
+- `s` was created with remote = (registrant IP, 42314), so **the registered
+  client's own commands are the only traffic that exact-matches `s`**.
+- `localAccessTask()` reads only `localSocket`:
+  `if (!UDPIsGetReady(localSocket)) return;` and `UDPIsGetReady()` returns 0
+  whenever `SocketWithRxData != s_requested`. A command delivered to `s` is
+  never read and is silently discarded with the next packet.
+
+Which of `localSocket`/`s` wins depends on their socket-array slots
+(`UDPOpen` takes the first free slot; DHCP/DNS churn moves slots around), so
+the drop may be boot-dependent — consistent with "always fails" once an event
+has been pushed on the affected units.
+
+This also explains why the Mac probe works: it never sends `reglistener`, so
+`sendToLocalListeners()` never opens `s`, so nothing can shadow the command
+socket. And the last probe run can make things *worse* for HA: the probe's
+packets partially match `localSocket` and rebind its remote to the Mac's
+address, after which only `s` exact-matches HA's traffic.
+
+## Second candidate: transport (not yet excluded)
+
+`UDPProcess()` **verifies the UDP checksum whenever the field is non-zero and
+silently `MACDiscardRx()`es on mismatch** — the classic fate of packets with
+broken checksum offload leaving a VM. Reporter 2 runs HAOS in a VM on a
+Synology NAS.
+
+Note also that nothing in this thread confirms the device ever *received*
+anything from HA: "Connection: OK" is our own fire-and-forget `reglistener`
+(there is no reply), device-adding is catalog-based, and "Discovered UIDs"
+is counted at manual add. Only tcpdump (egress) was inspected.
+
+## Discriminators (probe phase 2 + two data points)
+
+`tools/probe_net_send.py` phase 2 reproduces the integration's state step by
+step from a known-good machine:
+
+| Test | State reproduced                                                |
+| ---- | --------------------------------------------------------------- |
+| F    | `reglistener` then `send`, same socket (42314)                    |
+| G    | `reglistener` + RF event + `send`, same socket = the integration  |
+| H    | same, but `send` from a separate ephemeral socket                |
+| I    | `reglistener` + `send`, both ephemeral (Telldus reference style) |
+
+| Result                       | Conclusion                                        | Fix                                              |
+| ---------------------------- | ------------------------------------------------- | ------------------------------------------------ |
+| A works, G fails, I works    | listener-socket shadow confirmed                  | register + send from an ephemeral port in the integration |
+| A works, G works             | state not the cause; transport or host-specific   | run probe on the HA host; check tcpdump headers  |
+| All fail from the HA host    | packets die in the network path (VM bridge / NAT) | network fix, no code change                      |
+| tcpdump shows `bad udp cksum`| checksum offload drop in device stack             | disable offload on the VM NIC / force checksum   |
+
+Data still wanted from the reporters:
+
+1. Run the probe **on the HA host itself** (Synology SSH or the HAOS SSH
+   add-on) and compare with the Mac run.
+2. From the existing tcpdump capture: the outgoing packet's **source port**
+   and any tcpdump checksum annotation (`bad udp cksum` / `incorrect`).
+3. HA log lines at connect: `Net: bound to port 42314 for …` vs
+   `Port 42314 already bound; using ephemeral port …`.
+
+## Candidate fix (pending phase-2 confirmation)
+
+Register and send from an **ephemeral source port** instead of binding 42314.
+This is compatible with both generations: the v1 firmware pushes events to
+the registrant's source address (`sendToLocalListeners` → `s`), and the ZNet
+v2 Python firmware pushes `RawData` to `self.clientAddress` (the `reglistener`
+source) — neither requires the client to bind 42314. The current 42314 bind
+exists only to catch hypothetical broadcasts, and on v1 it is precisely what
+causes the collision.
