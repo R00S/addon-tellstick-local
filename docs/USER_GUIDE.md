@@ -284,7 +284,7 @@ RF events received by the mirror are forwarded to the primary for device detecti
 **All TellSticks receive events at the same time.** When you run several TellSticks
 (a primary plus mirrors, or several independent hubs), each unit's sensor readings
 and button-press events reach Home Assistant independently — one unit never blocks
-another. This was fixed in **v3.3.1.7**; before that, only one of several Net/ZNet
+another. This was fixed in **v3.3.1.8**; before that, only one of several Net/ZNet
 units received events at a time while the others went silent (GitHub issue #115).
 
 ---
@@ -497,9 +497,9 @@ and run the manual setup flow.
 
 ### "Sensor values / button presses stopped updating — I have several TellSticks"
 
-Before **v3.3.1.7**, running several Net/ZNet TellSticks could starve all but
+Before **v3.3.1.8**, running several Net/ZNet TellSticks could starve all but
 one of them (GitHub issue #115) — one unit received everything while the others
-went silent. Update to v3.3.1.7 or later and restart Home Assistant. If it still
+went silent. Update to v3.3.1.8 or later and restart Home Assistant. If it still
 happens, run `TellStick Local: Debug connection` and check **Last packet
 received** for each entry: a unit with no packets for minutes has a network
 problem (check that UDP port 42314 is not blocked and the unit's IP is correct).
