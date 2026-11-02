@@ -2783,23 +2783,13 @@ class _NetUdpHub:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.setblocking(False)
-        try:
-            # Bind to all interfaces on port 42314.  The ZNet firmware pushes
-            # RF events to the source address of our reglistener packet, which
-            # is this socket for every entry.  Binding to a single interface
-            # would miss events; this matches the molobrakos reference client.
-            sock.bind(("", self._port))
-            self._bound_port = sock.getsockname()[1]
-        except OSError:
-            _LOGGER.warning(
-                "Net: port %d already bound; using ephemeral port for events",
-                self._port,
-            )
-            # Fall back to an ephemeral port if 42314 is used by another
-            # process.  The reglistener packet tells each ZNet to send its
-            # events to that ephemeral port instead.
-            sock.bind(("", 0))
-            self._bound_port = sock.getsockname()[1]
+        # Always bind an ephemeral port, never 42314.  The v1 Net firmware
+        # opens its per-listener event socket on the registrant's source port;
+        # if that is 42314 it collides with the firmware's own command socket
+        # and every later command is silently dropped (issue #114).  The
+        # reglistener packet tells each ZNet to push events to this port.
+        sock.bind(("", 0))
+        self._bound_port = sock.getsockname()[1]
         self._sock = sock
         self._loop = loop
         self._task = loop.create_task(self._run())
