@@ -304,6 +304,29 @@ def _migrate_entry_title(
 
 
 @callback
+def _remove_stale_device_cards(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove device cards left without entities by grouping or ungrouping."""
+    dev_reg = dr.async_get(hass)
+    ent_reg = er.async_get(hass)
+    devices: dict[str, Any] = entry.options.get(CONF_DEVICES, {})
+    groups = {cfg.get("group_uid") for cfg in devices.values()}
+    prefix = f"{entry.entry_id}_"
+    for device in dr.async_entries_for_config_entry(dev_reg, entry.entry_id):
+        ident = next((i[1] for i in device.identifiers if i[0] == DOMAIN), "")
+        uid = ident.removeprefix(prefix)
+        if uid.startswith("group_"):
+            stale = uid.removeprefix("group_") not in groups
+        else:
+            stale = bool(devices.get(uid, {}).get("group_uid"))
+        if stale and not er.async_entries_for_device(
+            ent_reg, device.id, include_disabled_entities=True
+        ):
+            dev_reg.async_update_device(
+                device.id, remove_config_entry_id=entry.entry_id
+            )
+
+
+@callback
 def _clear_orphaned_tombstones(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Remove stale entity and device registry tombstones at startup.
 
@@ -408,14 +431,19 @@ async def _import_app_configured_devices(
     }
 
     new_devices: dict[str, dict[str, Any]] = {}
+    registered_ids = set(device_id_map.values())
     for dev in all_devices:
         protocol = dev["protocol"]
         house = dev["house"]
         unit = dev["unit"]
+        code = dev.get("code", "")
         telldusd_id = dev["id"]
 
-        if not protocol:
+        if not protocol or telldusd_id in registered_ids:
             continue
+
+        if code and not house and not unit:
+            house = code
 
         # Sensor-only protocols: auto-discovered from TDSensorEvent, not here.
         if protocol in _APP_SENSOR_PROTOCOLS:
@@ -449,6 +477,8 @@ async def _import_app_configured_devices(
             CONF_DEVICE_UNIT: unit,
             "_telldusd_id": telldusd_id,
         }
+        if code:
+            new_devices[uid]["params"] = {"code": code}
 
     if not new_devices:
         return
@@ -513,7 +543,7 @@ async def _register_mirror_devices(
             try:
                 params = device_cfg.get("params")
                 if params:
-                    telldusd_id = await mirror_controller.add_device(
+                    telldusd_id = await mirror_controller.find_or_add_device_params(
                         name, protocol, model, params,
                     )
                 else:
@@ -652,6 +682,8 @@ async def _setup_mirror_entry(
         controller.add_raw_packet_callback(_mirror_raw_packet_callback)
 
     controller.start_event_listener()
+    if isinstance(controller, TellStickController):
+        _reload_when_telldusd_returns(hass, entry, controller)
 
     async def _on_hass_stop(_event: Any) -> None:
         await controller.disconnect()
@@ -752,6 +784,29 @@ async def _async_scan_for_net_devices(hass: HomeAssistant) -> None:
             )
     except Exception:  # noqa: BLE001
         _LOGGER.debug("Net UDP discovery scan failed (non-fatal)", exc_info=True)
+
+
+def _reload_when_telldusd_returns(
+    hass: HomeAssistant, entry: ConfigEntry, controller: TellStickController
+) -> None:
+    """Reload the entry once telldusd answers again after the event socket closed."""
+
+    async def _wait_and_reload() -> None:
+        delay = 5
+        while True:
+            await asyncio.sleep(delay)
+            if await controller.ping():
+                break
+            delay = min(delay * 2, 60)
+        hass.config_entries.async_schedule_reload(entry.entry_id)
+
+    @callback
+    def _on_disconnect() -> None:
+        entry.async_create_background_task(
+            hass, _wait_and_reload(), "tellstick_local_reconnect"
+        )
+
+    controller.on_disconnect = _on_disconnect
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -863,7 +918,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 # Prefer the "params" dict (new format) over house/unit (old format)
                 params = device_cfg.get("params")
                 if params:
-                    telldusd_id = await controller.add_device(
+                    telldusd_id = await controller.find_or_add_device_params(
                         device_cfg.get(CONF_DEVICE_NAME, device_uid),
                         device_cfg[CONF_DEVICE_PROTOCOL],
                         device_cfg.get(CONF_DEVICE_MODEL, ""),
@@ -956,6 +1011,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         controller.add_raw_packet_callback(_raw_packet_callback)
 
     controller.start_event_listener()
+    if isinstance(controller, TellStickController):
+        _reload_when_telldusd_returns(hass, entry, controller)
 
     async def _on_hass_stop(_event: Any) -> None:
         await controller.disconnect()
@@ -1008,6 +1065,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    _remove_stale_device_cards(hass, entry)
 
     # Attach any mirror entries that loaded before this primary.
     # Mirror entries store themselves in _pending_mirrors when their

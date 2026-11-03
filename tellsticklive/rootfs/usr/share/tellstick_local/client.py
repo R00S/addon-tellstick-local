@@ -195,6 +195,7 @@ class TellStickController:
     _event_writer: asyncio.StreamWriter | None = field(default=None, init=False, repr=False)
     _event_task: asyncio.Task | None = field(default=None, init=False, repr=False)
     _callbacks: list[Callable[[Any], None]] = field(default_factory=list, init=False, repr=False)
+    on_disconnect: Callable[[], None] | None = field(default=None, repr=False)
 
     async def connect(self) -> None:
         """Open the event socket (commands use one-shot connections)."""
@@ -412,12 +413,24 @@ class TellStickController:
                     )
                     or ""
                 )
+                code = (
+                    await self._call_str(
+                        "tdGetDeviceParameter",
+                        [
+                            _encode_int(device_id),
+                            _encode_string("code"),
+                            _encode_string(""),
+                        ],
+                    )
+                    or ""
+                )
                 devices.append(
                     {
                         "id": device_id,
                         "protocol": protocol.lower(),
                         "house": house,
                         "unit": unit,
+                        "code": code,
                     }
                 )
             except Exception:  # noqa: BLE001
@@ -457,6 +470,28 @@ class TellStickController:
         return await self.add_device(
             name, protocol, model, {"house": house, "unit": unit}
         )
+
+    async def find_or_add_device_params(
+        self,
+        name: str,
+        protocol: str,
+        model: str,
+        parameters: dict[str, str],
+    ) -> int:
+        """Find an existing telldusd device by protocol/parameters or create it."""
+        for dev in await self.list_devices():
+            if dev["protocol"] != protocol.lower():
+                continue
+            for key, value in parameters.items():
+                current = await self._call_str(
+                    "tdGetDeviceParameter",
+                    [_encode_int(dev["id"]), _encode_string(key), _encode_string("")],
+                )
+                if (current or "") != str(value):
+                    break
+            else:
+                return dev["id"]
+        return await self.add_device(name, protocol, model, parameters)
 
     async def _call_int(self, function: str, args: list[str]) -> int:
         """Send a command via a one-shot TCP connection, return int result."""
@@ -500,8 +535,10 @@ class TellStickController:
                 event = await self._read_event()
                 if event is not None:
                     self._dispatch(event)
-            except asyncio.IncompleteReadError:
+            except (asyncio.IncompleteReadError, ConnectionError):
                 _LOGGER.warning("TellStick event socket closed")
+                if self.on_disconnect is not None:
+                    self.on_disconnect()
                 break
             except asyncio.CancelledError:
                 break
