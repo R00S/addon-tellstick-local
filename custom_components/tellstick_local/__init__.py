@@ -304,6 +304,29 @@ def _migrate_entry_title(
 
 
 @callback
+def _remove_stale_device_cards(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove device cards left without entities by grouping or ungrouping."""
+    dev_reg = dr.async_get(hass)
+    ent_reg = er.async_get(hass)
+    devices: dict[str, Any] = entry.options.get(CONF_DEVICES, {})
+    groups = {cfg.get("group_uid") for cfg in devices.values()}
+    prefix = f"{entry.entry_id}_"
+    for device in dr.async_entries_for_config_entry(dev_reg, entry.entry_id):
+        ident = next((i[1] for i in device.identifiers if i[0] == DOMAIN), "")
+        uid = ident.removeprefix(prefix)
+        if uid.startswith("group_"):
+            stale = uid.removeprefix("group_") not in groups
+        else:
+            stale = bool(devices.get(uid, {}).get("group_uid"))
+        if stale and not er.async_entries_for_device(
+            ent_reg, device.id, include_disabled_entities=True
+        ):
+            dev_reg.async_update_device(
+                device.id, remove_config_entry_id=entry.entry_id
+            )
+
+
+@callback
 def _clear_orphaned_tombstones(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Remove stale entity and device registry tombstones at startup.
 
@@ -1005,6 +1028,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    _remove_stale_device_cards(hass, entry)
 
     # Attach any mirror entries that loaded before this primary.
     # Mirror entries store themselves in _pending_mirrors when their
