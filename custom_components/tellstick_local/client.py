@@ -195,6 +195,7 @@ class TellStickController:
     _event_writer: asyncio.StreamWriter | None = field(default=None, init=False, repr=False)
     _event_task: asyncio.Task | None = field(default=None, init=False, repr=False)
     _callbacks: list[Callable[[Any], None]] = field(default_factory=list, init=False, repr=False)
+    on_disconnect: Callable[[], None] | None = field(default=None, repr=False)
 
     async def connect(self) -> None:
         """Open the event socket (commands use one-shot connections)."""
@@ -522,8 +523,10 @@ class TellStickController:
                 event = await self._read_event()
                 if event is not None:
                     self._dispatch(event)
-            except asyncio.IncompleteReadError:
+            except (asyncio.IncompleteReadError, ConnectionError):
                 _LOGGER.warning("TellStick event socket closed")
+                if self.on_disconnect is not None:
+                    self.on_disconnect()
                 break
             except asyncio.CancelledError:
                 break

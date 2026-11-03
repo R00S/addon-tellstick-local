@@ -675,6 +675,8 @@ async def _setup_mirror_entry(
         controller.add_raw_packet_callback(_mirror_raw_packet_callback)
 
     controller.start_event_listener()
+    if isinstance(controller, TellStickController):
+        _reload_when_telldusd_returns(hass, entry, controller)
 
     async def _on_hass_stop(_event: Any) -> None:
         await controller.disconnect()
@@ -775,6 +777,29 @@ async def _async_scan_for_net_devices(hass: HomeAssistant) -> None:
             )
     except Exception:  # noqa: BLE001
         _LOGGER.debug("Net UDP discovery scan failed (non-fatal)", exc_info=True)
+
+
+def _reload_when_telldusd_returns(
+    hass: HomeAssistant, entry: ConfigEntry, controller: TellStickController
+) -> None:
+    """Reload the entry once telldusd answers again after the event socket closed."""
+
+    async def _wait_and_reload() -> None:
+        delay = 5
+        while True:
+            await asyncio.sleep(delay)
+            if await controller.ping():
+                break
+            delay = min(delay * 2, 60)
+        hass.config_entries.async_schedule_reload(entry.entry_id)
+
+    @callback
+    def _on_disconnect() -> None:
+        entry.async_create_background_task(
+            hass, _wait_and_reload(), "tellstick_local_reconnect"
+        )
+
+    controller.on_disconnect = _on_disconnect
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -979,6 +1004,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         controller.add_raw_packet_callback(_raw_packet_callback)
 
     controller.start_event_listener()
+    if isinstance(controller, TellStickController):
+        _reload_when_telldusd_returns(hass, entry, controller)
 
     async def _on_hass_stop(_event: Any) -> None:
         await controller.disconnect()
