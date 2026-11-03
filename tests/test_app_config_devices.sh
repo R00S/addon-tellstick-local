@@ -59,10 +59,16 @@ expect_count() {
 # --- bashio stubs -----------------------------------------------------------
 # bashio::config returns "null" for a missing option, exactly like the real
 # implementation; bashio::config.has_value is false for that string.
+#
+# These functions are only ever called indirectly: the copy of telldusd.sh
+# sourced in run_case() invokes them by name, which ShellCheck cannot follow.
+# shellcheck disable=SC2329
 bashio::log.info() { :; }
 
+# shellcheck disable=SC2329
 bashio::var.has_value() { [[ -n "${1}" ]]; }
 
+# shellcheck disable=SC2329
 bashio::config() {
     local key="$1"
     if [[ "${key}" == *'|keys' ]]; then
@@ -76,6 +82,7 @@ bashio::config() {
     ' "${CONFIG_JSON}"
 }
 
+# shellcheck disable=SC2329
 bashio::config.has_value() {
     local value
     value=$(bashio::config "$1")
@@ -85,12 +92,17 @@ bashio::config.has_value() {
 # Run the generator against a config and print the generated file.
 run_case() {
     printf '%s\n' "$1" > "${CONFIG_JSON}"
+    # shellcheck source=/dev/null
     (source "${SCRIPT_COPY}") >/dev/null
     cat "${TEST_CONF}"
 }
 
+# The replacement text must stay literal: ${TEST_CONF} is expanded when the
+# generated copy runs, not now.
+# shellcheck disable=SC2016
 sed 's|^CONFIG="/etc/tellstick.conf"$|CONFIG="${TEST_CONF}"|' "${SCRIPT}" > "${SCRIPT_COPY}"
 
+# shellcheck disable=SC2016
 if ! grep -q 'CONFIG="${TEST_CONF}"' "${SCRIPT_COPY}"; then
     echo "could not redirect CONFIG in the script copy" >&2
     exit 2
