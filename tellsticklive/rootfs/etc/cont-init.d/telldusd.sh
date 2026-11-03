@@ -37,16 +37,16 @@ for device in $(bashio::config 'devices|keys'); do
         then
             echo "  parameters {"
 
-            bashio::var.has_value "${ATTR_HOUSE}" \
+            bashio::config.has_value "devices[${device}].house" \
                 && echo "    house = \"${ATTR_HOUSE}\""
 
-            bashio::var.has_value "${ATTR_CODE}" \
+            bashio::config.has_value "devices[${device}].code" \
                 && echo "    code = \"${ATTR_CODE}\""
 
-            bashio::var.has_value "${ATTR_UNIT}" \
+            bashio::config.has_value "devices[${device}].unit" \
                 && echo "    unit = \"${ATTR_UNIT}\""
 
-            bashio::var.has_value "${ATTR_FADE}" \
+            bashio::config.has_value "devices[${device}].fade" \
                 && echo "    fade = \"${ATTR_FADE}\""
             
             echo "  }"
