@@ -431,13 +431,14 @@ async def _import_app_configured_devices(
     }
 
     new_devices: dict[str, dict[str, Any]] = {}
+    registered_ids = set(device_id_map.values())
     for dev in all_devices:
         protocol = dev["protocol"]
         house = dev["house"]
         unit = dev["unit"]
         telldusd_id = dev["id"]
 
-        if not protocol:
+        if not protocol or telldusd_id in registered_ids:
             continue
 
         # Sensor-only protocols: auto-discovered from TDSensorEvent, not here.
