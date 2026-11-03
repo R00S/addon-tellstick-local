@@ -431,7 +431,13 @@ async def _import_app_configured_devices(
     }
 
     new_devices: dict[str, dict[str, Any]] = {}
-    registered_ids = set(device_id_map.values())
+    # device_id_map holds integer telldusd ids for Duo devices but parameter
+    # dicts for Net devices, so only the ids belong in the lookup set (a plain
+    # set() over every value raises "unhashable type: 'dict'" and aborted the
+    # whole import).
+    registered_ids = {
+        value for value in device_id_map.values() if isinstance(value, int)
+    }
     for dev in all_devices:
         protocol = dev["protocol"]
         house = dev["house"]
