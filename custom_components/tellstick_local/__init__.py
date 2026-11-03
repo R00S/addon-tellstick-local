@@ -412,10 +412,14 @@ async def _import_app_configured_devices(
         protocol = dev["protocol"]
         house = dev["house"]
         unit = dev["unit"]
+        code = dev.get("code", "")
         telldusd_id = dev["id"]
 
         if not protocol:
             continue
+
+        if code and not house and not unit:
+            house = code
 
         # Sensor-only protocols: auto-discovered from TDSensorEvent, not here.
         if protocol in _APP_SENSOR_PROTOCOLS:
@@ -449,6 +453,8 @@ async def _import_app_configured_devices(
             CONF_DEVICE_UNIT: unit,
             "_telldusd_id": telldusd_id,
         }
+        if code:
+            new_devices[uid]["params"] = {"code": code}
 
     if not new_devices:
         return

@@ -412,12 +412,24 @@ class TellStickController:
                     )
                     or ""
                 )
+                code = (
+                    await self._call_str(
+                        "tdGetDeviceParameter",
+                        [
+                            _encode_int(device_id),
+                            _encode_string("code"),
+                            _encode_string(""),
+                        ],
+                    )
+                    or ""
+                )
                 devices.append(
                     {
                         "id": device_id,
                         "protocol": protocol.lower(),
                         "house": house,
                         "unit": unit,
+                        "code": code,
                     }
                 )
             except Exception:  # noqa: BLE001
