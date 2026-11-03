@@ -513,7 +513,7 @@ async def _register_mirror_devices(
             try:
                 params = device_cfg.get("params")
                 if params:
-                    telldusd_id = await mirror_controller.add_device(
+                    telldusd_id = await mirror_controller.find_or_add_device_params(
                         name, protocol, model, params,
                     )
                 else:
@@ -863,7 +863,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 # Prefer the "params" dict (new format) over house/unit (old format)
                 params = device_cfg.get("params")
                 if params:
-                    telldusd_id = await controller.add_device(
+                    telldusd_id = await controller.find_or_add_device_params(
                         device_cfg.get(CONF_DEVICE_NAME, device_uid),
                         device_cfg[CONF_DEVICE_PROTOCOL],
                         device_cfg.get(CONF_DEVICE_MODEL, ""),
