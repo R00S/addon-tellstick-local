@@ -2181,6 +2181,14 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
 
 _SubentryBase = ConfigSubentryFlow if ConfigSubentryFlow is not None else config_entries.OptionsFlow
 
+#: Bit-polarity variants offered by the issue #100 test-device step.
+_POC_VARIANT_LABELS = {
+    "a": "a — short mark / long gap is a 1 (derived from the captures)",
+    "b": "b — inverted (short mark / long gap is a 0)",
+    "c": "c — short mark + short gap is a 1",
+    "d": "d — long mark + long gap is a 1",
+}
+
 
 class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
     """Handle adding a 433 MHz device via the 'Add device' button."""
@@ -2211,7 +2219,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             )
         return self.async_show_menu(
             step_id="user",
-            menu_options=["by_brand", "by_protocol"],
+            menu_options=["by_brand", "by_protocol", "poc_blind"],
         )
 
     async def async_step_by_brand(
@@ -3362,7 +3370,6 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 _LOGGER.debug("Error unsubscribing from rtl_433 MQTT (non-fatal)", exc_info=True)
             self._generic_rf_listen_unsub = None
 
-        entry = self._get_entry()
         import secrets as _secrets  # noqa: PLC0415
 
         # The device UID is built from protocol+model+house+unit by
@@ -3370,7 +3377,6 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         # no meaningful house/unit codes, so we use a random token as the
         # "house" field to create a unique UID: generic_rf_<token>.
         uid_suffix = _secrets.token_hex(4)
-        device_uid = f"generic_rf_{uid_suffix}"
 
         device_data = {
             CONF_DEVICE_NAME: self._generic_rf_name,
@@ -3395,6 +3401,77 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             device_data["timings_down"] = self._generic_rf_timings_down or []
             device_data["timings_stop"] = self._generic_rf_timings_stop
 
+        return await self._async_persist_generic_rf_device(device_data, uid_suffix)
+
+    async def async_step_poc_blind(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Add the issue #100 curtain motor as a cover, without recording.
+
+        No TellStick can receive this remote, so the three pulse trains
+        captured with RTL-SDR are replayed as a generic_rf cover instead of
+        asking telldusd to encode a protocol it does not implement.
+        """
+        from .poc_blind import POC_BLIND_PAYLOADS, timings_for_button  # noqa: PLC0415
+
+        entry = self._get_entry()
+        if entry.data.get(CONF_BACKEND, BACKEND_DUO) != BACKEND_DUO:
+            return self.async_abort(reason="poc_requires_duo")
+
+        if user_input is not None:
+            name = (user_input.get("name") or "").strip() or "Kjell curtain motor"
+            variant = str(user_input.get("variant", "a"))
+            repeat_count = int(user_input.get("repeat_count", 10))
+            timings = {
+                button: timings_for_button(button, variant)
+                for button in POC_BLIND_PAYLOADS
+            }
+            uid_suffix = secrets.token_hex(4)
+            device_data = {
+                CONF_DEVICE_NAME: name,
+                CONF_DEVICE_PROTOCOL: PROTOCOL_GENERIC_RF,
+                CONF_DEVICE_MODEL: "",
+                CONF_DEVICE_HOUSE: uid_suffix,  # UID discriminator, see below
+                CONF_DEVICE_UNIT: "",
+                CONF_DEVICE_TYPE: GENERIC_RF_TYPE_COVER,
+                "repeat_count": repeat_count,
+                "timings_up": timings["up"],
+                "timings_down": timings["down"],
+                "timings_stop": timings["stop"],
+                "poc_variant": variant,
+            }
+            _LOGGER.info(
+                "Adding issue #100 test cover %s (variant %s, repeat %d)",
+                name,
+                variant,
+                repeat_count,
+            )
+            return await self._async_persist_generic_rf_device(device_data, uid_suffix)
+
+        payload_text = ", ".join(
+            f"`{button}`={payload}" for button, payload in POC_BLIND_PAYLOADS.items()
+        )
+        return self.async_show_form(
+            step_id="poc_blind",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("name", default="Kjell curtain motor"): str,
+                    vol.Required("variant", default="a"): vol.In(_POC_VARIANT_LABELS),
+                    vol.Optional("repeat_count", default=10): vol.All(
+                        int, vol.Range(min=1, max=50)
+                    ),
+                }
+            ),
+            description_placeholders={"payloads": payload_text},
+        )
+
+    async def _async_persist_generic_rf_device(
+        self, device_data: dict[str, Any], uid_suffix: str
+    ) -> SubentryFlowResult:
+        """Store a Generic RF device and let its platform create the entity."""
+        entry = self._get_entry()
+        device_uid = f"generic_rf_{uid_suffix}"
+
         # Persist in entry.options[CONF_DEVICES]
         existing_devices = dict(entry.options.get(CONF_DEVICES, {}))
         existing_devices[device_uid] = device_data
@@ -3415,11 +3492,9 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         # Mark as discovered to avoid double-processing phantom events
         entry_data.setdefault("_discovered_uids", set()).add(device_uid)
 
-        # Dispatch synthetic RawDeviceEvent so switch.py creates the entity
-        # immediately.  We encode uid_suffix as "house" so device_id resolves
-        # to "generic_rf_<uid_suffix>" — matching the stored device_uid.
-        from .client import RawDeviceEvent  # noqa: PLC0415
-
+        # Dispatch a synthetic RawDeviceEvent so the platform for this device
+        # type creates the entity immediately.  uid_suffix is encoded as
+        # "house" so device_id resolves to "generic_rf_<uid_suffix>".
         synthetic = RawDeviceEvent(
             raw=(
                 f"class:command;protocol:{PROTOCOL_GENERIC_RF};model:;"

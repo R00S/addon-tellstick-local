@@ -279,7 +279,8 @@
             "by_protocol_raw": "Add by protocol (raw pulse)",
             "by_protocol_native": "Add by protocol (TellStick native — unit-1 fix)",
             "by_protocol_native_nofix": "Add by protocol (TellStick native — no unit fix)",
-            "generic_rf": "Add Generic RF device (record from remote)"
+            "generic_rf": "Add Generic RF device (record from remote)",
+            "poc_blind": "Add test device — Kjell / Tuya curtain motor (issue #100)"
           }
         },
         "by_brand": {
@@ -355,6 +356,19 @@
           },
           "data_description": {
             "repeat_count": "More repeats improve reliability. 10 is a good default."
+          }
+        },
+        "poc_blind": {
+          "title": "Add test device — Kjell / Tuya curtain motor",
+          "description": "Adds the curtain motor from issue #100 as a cover. Its remote is transmit-only — no TellStick can receive it — so the three pulse trains captured with RTL-SDR are replayed instead.\n\nPayloads: {payloads}\n\nOnly a TellStick Duo can send raw pulses.",
+          "data": {
+            "name": "Device name",
+            "variant": "Bit polarity variant",
+            "repeat_count": "Repeat count (frames per command)"
+          },
+          "data_description": {
+            "variant": "a = short mark + long gap is a one-bit. Only change this if variant a is ignored by the motor.",
+            "repeat_count": "How many times the frame is repeated per command; 10 mimics one button press."
           }
         },
         "generic_rf_listen_on": {
@@ -446,6 +460,7 @@
         "no_signal": "No signal captured — make sure rtl_433 add-on is running and press the remote button again."
       },
       "abort": {
+        "poc_requires_duo": "This test device replays captured pulse trains, which only a TellStick Duo can transmit. Net/ZNet cannot.",
         "device_added": "Device paired successfully! It will appear in your device list shortly.",
         "mirror_is_secondary": "This TellStick is a mirror — devices must be added through the primary hub entry."
       }

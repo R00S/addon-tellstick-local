@@ -41,6 +41,9 @@ POC_BLIND_PAYLOADS: dict[str, str] = {
 #: Home Assistant service that transmits one captured frame (Duo only).
 SERVICE_POC_SEND_BLIND = "poc_send_blind"
 
+#: Label shown in the integration's "Add device" menu.
+POC_DEVICE_LABEL = "Kjell & Co / Tuya curtain motor (issue #100, test device)"
+
 PREAMBLE_MARK_US = 1460
 PREAMBLE_GAP_US = 1524
 
@@ -77,6 +80,25 @@ def build_frame_timings(hex_payload: str, variant: str = "a") -> list[int]:
         mark, gap = bits_to_timing[bit]
         timings.extend((mark, -gap))
     return timings
+
+
+def timings_for_button(button: str, variant: str = "a") -> list[int]:
+    """Return the pulse/space timings for one captured button.
+
+    Args:
+        button: ``down``, ``up`` or ``stop``.
+        variant: bit-polarity variant, one of :data:`BIT_VARIANTS`.
+
+    Raises:
+        ValueError: if the button or the variant is unknown.
+    """
+    try:
+        payload = POC_BLIND_PAYLOADS[button.lower()]
+    except KeyError as err:
+        raise ValueError(
+            f"unknown button {button!r}; expected one of {sorted(POC_BLIND_PAYLOADS)}"
+        ) from err
+    return build_frame_timings(payload, variant)
 
 
 def build_poc_command(

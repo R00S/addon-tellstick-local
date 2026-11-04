@@ -153,9 +153,11 @@ async def run_tests() -> None:
     for mod in [
         "client",
         "const",
+        "cover",
         "entity",
         "switch",
         "light",
+        "poc_blind",
         "sensor",
         "device_trigger",
     ]:
@@ -164,6 +166,26 @@ async def run_tests() -> None:
             report(f"Import {mod}", True)
         except Exception as e:
             report(f"Import {mod}", False, str(e))
+
+    # -- Test 7: issue #100 PoC device (generic RF cover) --
+    print("\n=== Test 7: Issue #100 test device ===")
+    try:
+        from custom_components.tellstick_local import poc_blind
+        from custom_components.tellstick_local.cover import _is_cover
+
+        timings = poc_blind.timings_for_button("up", "a")
+        report("PoC timings length", len(timings) == 82, f"{len(timings)}")
+        report(
+            "PoC cover routes to cover",
+            _is_cover("generic_rf", {"device_type": "cover"}),
+        )
+        report(
+            "Generic RF switch is not a cover",
+            not _is_cover("generic_rf", {"device_type": "switch"}),
+        )
+        report("Hasta still routes to cover", _is_cover("hasta"))
+    except Exception as e:
+        report("Issue #100 test device", False, str(e))
 
     print(f"\n{'=' * 50}")
     print(f"{'ALL TESTS PASSED' if ALL_PASS else 'SOME TESTS FAILED'}")

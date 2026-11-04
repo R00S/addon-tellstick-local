@@ -37,13 +37,17 @@ from .const import (
     CONF_DEVICE_MODEL,
     CONF_DEVICE_NAME,
     CONF_DEVICE_PROTOCOL,
+    CONF_DEVICE_TYPE,
     CONF_DEVICE_UNIT,
     CONF_DEVICES,
     DOMAIN,
     ENTRY_DEVICE_ID_MAP,
     ENTRY_TELLSTICK_CONTROLLER,
+    GENERIC_RF_TYPE_COVER,
+    PROTOCOL_GENERIC_RF,
     SIGNAL_EVENT,
     SIGNAL_NEW_DEVICE,
+    generic_rf_build_raw_command,
 )
 from .entity import TellStickEntity
 
@@ -55,9 +59,19 @@ _LOGGER = logging.getLogger(__name__)
 _COVER_PROTOCOLS = {"hasta", "brateck"}
 
 
-def _is_cover(protocol: str) -> bool:
-    """Return True if this protocol uses UP/DOWN/STOP (cover entity)."""
-    return protocol.lower() in _COVER_PROTOCOLS
+def _is_cover(protocol: str, device_cfg: dict | None = None) -> bool:
+    """Return True if this device uses UP/DOWN/STOP (cover entity).
+
+    ``generic_rf`` devices are covers only when their stored ``device_type``
+    says so — they replay recorded pulse trains instead of asking telldusd
+    for a protocol encoder.
+    """
+    proto = (protocol or "").lower()
+    if proto == PROTOCOL_GENERIC_RF:
+        if not device_cfg:
+            return False
+        return device_cfg.get(CONF_DEVICE_TYPE, "") == GENERIC_RF_TYPE_COVER
+    return proto in _COVER_PROTOCOLS
 
 
 async def async_setup_entry(
@@ -81,7 +95,7 @@ async def async_setup_entry(
     for device_uid, device_cfg in entry.options.get(CONF_DEVICES, {}).items():
         protocol = device_cfg.get(CONF_DEVICE_PROTOCOL, "")
         model = device_cfg.get(CONF_DEVICE_MODEL, "")
-        if not _is_cover(protocol):
+        if not _is_cover(protocol, device_cfg):
             continue
         known.add(device_uid)
         stored_entities.append(
@@ -97,6 +111,10 @@ async def async_setup_entry(
                 unit=device_cfg.get(CONF_DEVICE_UNIT, ""),
                 manufacturer=manufacturer,
                 group_uid=device_cfg.get("group_uid") or None,
+                timings_up=device_cfg.get("timings_up"),
+                timings_down=device_cfg.get("timings_down"),
+                timings_stop=device_cfg.get("timings_stop"),
+                repeat_count=device_cfg.get("repeat_count", 10),
             )
         )
     if stored_entities:
@@ -121,10 +139,10 @@ async def async_setup_entry(
             if er.async_get(hass).async_get_entity_id("cover", DOMAIN, unique_id) is not None:
                 return  # entity still active — skip duplicate
             known.discard(uid)  # entity was deleted — fall through to create
-        if not _is_cover(protocol):
+        stored = entry.options.get(CONF_DEVICES, {}).get(uid, {})
+        if not _is_cover(protocol, stored):
             return
         known.add(uid)
-        stored = entry.options.get(CONF_DEVICES, {}).get(uid, {})
         name = stored.get(CONF_DEVICE_NAME) or f"TellStick {uid}"
         entity = TellStickCover(
             entry_id=entry.entry_id,
@@ -138,6 +156,10 @@ async def async_setup_entry(
             unit=params.get("unit", ""),
             manufacturer=manufacturer,
             group_uid=stored.get("group_uid") or None,
+            timings_up=stored.get("timings_up"),
+            timings_down=stored.get("timings_down"),
+            timings_stop=stored.get("timings_stop"),
+            repeat_count=stored.get("repeat_count", 10),
         )
         async_add_entities([entity])
 
@@ -173,6 +195,10 @@ class TellStickCover(TellStickEntity, CoverEntity):
         unit: str = "",
         manufacturer: str = "",
         group_uid: str | None = None,
+        timings_up: list[int] | None = None,
+        timings_down: list[int] | None = None,
+        timings_stop: list[int] | None = None,
+        repeat_count: int = 10,
     ) -> None:
         """Initialize a TellStick cover entity."""
         super().__init__(
@@ -190,6 +216,14 @@ class TellStickCover(TellStickEntity, CoverEntity):
         self._telldusd_device_id = device_id
         # None = unknown; True = closed; False = open
         self._attr_is_closed: bool | None = None
+        # Generic RF: recorded pulse trains for UP/DOWN/STOP (Duo only)
+        self._timings_up = timings_up
+        self._timings_down = timings_down
+        self._timings_stop = timings_stop
+        self._repeat_count = repeat_count
+        if self._protocol.lower() == PROTOCOL_GENERIC_RF:
+            # Nothing receives this remote, so no state can be observed.
+            self._attr_assumed_state = True
 
     @property
     def device_class(self) -> CoverDeviceClass:
@@ -232,7 +266,9 @@ class TellStickCover(TellStickEntity, CoverEntity):
 
     async def async_open_cover(self, **kwargs: Any) -> None:
         """Open the cover (send UP command)."""
-        if self._telldusd_device_id is not None:
+        if self._protocol.lower() == PROTOCOL_GENERIC_RF:
+            await self._send_generic_rf_raw("up", self._timings_up)
+        elif self._telldusd_device_id is not None:
             await self._controller.up(self._telldusd_device_id)
         else:
             _LOGGER.warning(
@@ -245,7 +281,9 @@ class TellStickCover(TellStickEntity, CoverEntity):
 
     async def async_close_cover(self, **kwargs: Any) -> None:
         """Close the cover (send DOWN command)."""
-        if self._telldusd_device_id is not None:
+        if self._protocol.lower() == PROTOCOL_GENERIC_RF:
+            await self._send_generic_rf_raw("down", self._timings_down)
+        elif self._telldusd_device_id is not None:
             await self._controller.down(self._telldusd_device_id)
         else:
             _LOGGER.warning(
@@ -258,7 +296,9 @@ class TellStickCover(TellStickEntity, CoverEntity):
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
         """Stop the cover."""
-        if self._telldusd_device_id is not None:
+        if self._protocol.lower() == PROTOCOL_GENERIC_RF:
+            await self._send_generic_rf_raw("stop", self._timings_stop)
+        elif self._telldusd_device_id is not None:
             await self._controller.stop(self._telldusd_device_id)
         else:
             _LOGGER.warning(
@@ -266,3 +306,47 @@ class TellStickCover(TellStickEntity, CoverEntity):
                 self._device_uid,
             )
         await self._async_mirror_command("stop")
+
+    async def _send_generic_rf_raw(
+        self, action: str, timings: list[int] | None
+    ) -> None:
+        """Transmit a recorded pulse train for UP/DOWN/STOP.
+
+        Only a TellStick Duo can send an arbitrary pulse train
+        (``tdSendRawCommand``); Net/ZNet drop it silently.
+        """
+        if not timings:
+            _LOGGER.warning(
+                "Generic RF cover %s: no %s timings stored", self._device_uid, action
+            )
+            return
+        send_raw = getattr(self._controller, "send_raw_command", None)
+        if send_raw is None:
+            _LOGGER.warning(
+                "Generic RF cover %s: this controller cannot send raw pulses "
+                "(Net/ZNet) — a TellStick Duo is required",
+                self._device_uid,
+            )
+            return
+        raw_cmd = generic_rf_build_raw_command(timings, self._repeat_count)
+        _LOGGER.info(
+            "Generic RF cover TX: uid=%s action=%s timings=%d bytes=%d repeat=%d",
+            self._device_uid,
+            action,
+            len(timings),
+            len(raw_cmd),
+            self._repeat_count,
+        )
+        result = await send_raw(raw_cmd)
+        if result == -5:
+            _LOGGER.info(
+                "Generic RF cover TX: ACK timeout (expected for long TX), "
+                "hardware should still transmit"
+            )
+        elif result != 0:
+            _LOGGER.warning(
+                "Generic RF cover TX failed: uid=%s action=%s result=%d",
+                self._device_uid,
+                action,
+                result,
+            )
