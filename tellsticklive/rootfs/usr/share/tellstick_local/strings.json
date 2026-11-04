@@ -369,7 +369,7 @@
             "pause_ms": "Gap between frames (ms)"
           },
           "data_description": {
-            "variant": "a is the frame read straight off the captures. c/d reverse the 40 bits; e-h use the 1.46 ms frame start. Put the motor in learn mode before testing.",
+            "variant": "a is the frame read straight off the captures. c/d reverse the 40 bits; e-h use the 1.46 ms frame start. No learn step is needed: the codes were captured from the remote the motor is already paired with.",
             "repeat_count": "A real button press is 5 frames.",
             "pause_ms": "Silence between frames. The captures show about 16-17 ms; 17 is the default."
           }

@@ -208,15 +208,16 @@ Tuya-MOES curtain motor from issue #100 is one of those — its three button
 presses were captured over the air with an RTL-SDR at 433.92 MHz and are
 replayed instead.
 
-1. Put the motor in **learn mode** (hold its set button until it beeps). A motor
-   only obeys remote codes it has memorised — an unpaired replay is ignored no
-   matter how exact the frame is
-2. Go to **Settings → Devices & Services → TellStick Local**
-3. Click **Add device** (the button on the integration card)
-4. Choose **Add test device — Kjell / Tuya curtain motor (issue #100)**
-5. Enter a name, leave **variant a**, **frames 5** and **gap 17 ms**, click **Submit**
-6. A cover device appears with **Open**, **Stop** and **Close**
-7. Send **Open** / **Close** while the motor is still in learn mode
+> **There is no pairing step.** The payloads were captured from the remote this
+> motor is **already paired with**, so the motor knows the code. If it ignores a
+> replay, the transmission is wrong — not the pairing.
+
+1. Go to **Settings → Devices & Services → TellStick Local**
+2. Click **Add device** (the button on the integration card)
+3. Choose **Add test device — Kjell / Tuya curtain motor (issue #100)**
+4. Enter a name, leave **variant a**, **frames 5** and **gap 17 ms**, click **Submit**
+5. A cover device appears with **Open**, **Stop** and **Close**
+6. Send **Open** / **Close** while standing next to the motor
 
 **Requirements and limits**
 
