@@ -18,6 +18,7 @@
 5. [Pairing devices](#5-pairing-devices)
    - 5.1 [Automatic add (press-to-discover)](#51-automatic-add-press-to-discover)
    - 5.2 [Self-learning teach (Add device button)](#52-self-learning-teach-add-device-button)
+   - 5.3 [Add a test device for the issue #100 curtain motor (Duo only)](#53-add-a-test-device-for-the-issue-100-curtain-motor-duo-only)
 6. [Editing a device](#6-editing-a-device)
 7. [Grouping devices](#7-grouping-devices)
    - 7.1 [Grouping multi-probe sensors](#71-grouping-multi-probe-sensors)
@@ -198,6 +199,33 @@ need to be taught a code before they respond.
 > "Luxorparts — On/off (beta, Duo only)" → pick an LPD number (1–24). Put the
 > receiver in learn mode, then press Learn. See [Section 15](#15-known-limitations)
 > for details.
+
+### 5.3 Add a test device for the issue #100 curtain motor (Duo only)
+
+Some 433 MHz remotes are **transmit-only**: no TellStick can receive them, so
+their device can never be discovered by pressing a button. The Kjell & Company /
+Tuya-MOES curtain motor from issue #100 is one of those — its three button
+presses were captured with rtl_433 and can be replayed instead.
+
+1. Go to **Settings → Devices & Services → TellStick Local**
+2. Click **Add device** (the button on the integration card)
+3. Choose **Add test device — Kjell / Tuya curtain motor (issue #100)**
+4. Enter a name, leave **variant a** and **repeat 10**, then click **Submit**
+5. A cover device appears with **Open**, **Stop** and **Close**
+
+**Requirements and limits**
+
+- **TellStick Duo only.** The replay sends raw pulse trains
+  (`tdSendRawCommand`), which Net/ZNet cannot do — on those backends the flow
+  stops with an explanation instead of creating a device.
+- **No feedback.** Nothing receives this remote, so the cover reports an assumed
+  state; there is no position and no "it worked" confirmation.
+- **Variant** decides how a pulse pair is read as a bit. Variant `a` is the
+  polarity derived from the captures. If the motor ignores it, remove the device
+  and add it again with variant `b`, then `c`, then `d` — that sweep is the test.
+- One frame is 40 bits (~47 ms); `repeat 10` imitates a normal button press.
+- This is a **test device**. It will be replaced by real cover support once the
+  payloads are confirmed on hardware.
 
 ---
 

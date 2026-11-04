@@ -108,7 +108,7 @@
       },
       "mirror_setup": {
         "title": "Mirror / range extender",
-        "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#8-mirror-range-extender",
+        "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#8-mirror--range-extender",
         "description": "Would you like this TellStick to act as a **mirror / range extender** for an existing TellStick?\n\nA mirror replicates all commands sent to the primary TellStick's devices, extending RF coverage. It also forwards received RF signals back to the primary for device detection.\n\nThe mirror does not have its own devices — it shares the primary's.",
         "data": {
           "mirror_of": "Use as mirror of"
@@ -360,6 +360,7 @@
         },
         "poc_blind": {
           "title": "Add test device — Kjell / Tuya curtain motor",
+          "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#53-add-a-test-device-for-the-issue-100-curtain-motor-duo-only",
           "description": "Adds the curtain motor from issue #100 as a cover. Its remote is transmit-only — no TellStick can receive it — so the three pulse trains captured with RTL-SDR are replayed instead.\n\nPayloads: {payloads}\n\nOnly a TellStick Duo can send raw pulses.",
           "data": {
             "name": "Device name",
