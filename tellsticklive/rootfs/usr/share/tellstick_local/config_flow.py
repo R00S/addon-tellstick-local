@@ -2181,12 +2181,16 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
 
 _SubentryBase = ConfigSubentryFlow if ConfigSubentryFlow is not None else config_entries.OptionsFlow
 
-#: Bit-polarity variants offered by the issue #100 test-device step.
+#: Frame variants offered by the issue #100 test-device step.
 _POC_VARIANT_LABELS = {
-    "a": "a — short mark / long gap is a 1 (derived from the captures)",
-    "b": "b — inverted (short mark / long gap is a 0)",
-    "c": "c — short mark + short gap is a 1",
-    "d": "d — long mark + long gap is a 1",
+    "a": "a — 4.9 ms frame start, short mark + long gap = 1 (capture-faithful)",
+    "b": "b — 4.9 ms frame start, inverted bit polarity",
+    "c": "c — 4.9 ms frame start, variant a with the 40 bits reversed",
+    "d": "d — 4.9 ms frame start, variant b with the 40 bits reversed",
+    "e": "e — 1.46 ms frame start, short mark + long gap = 1 (previous a)",
+    "f": "f — 1.46 ms frame start, inverted bit polarity",
+    "g": "g — 1.46 ms frame start, 40 bits reversed",
+    "h": "h — 1.46 ms frame start, inverted and 40 bits reversed",
 }
 
 
@@ -3412,7 +3416,12 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         captured with RTL-SDR are replayed as a generic_rf cover instead of
         asking telldusd to encode a protocol it does not implement.
         """
-        from .poc_blind import POC_BLIND_PAYLOADS, timings_for_button  # noqa: PLC0415
+        from .poc_blind import (  # noqa: PLC0415
+            BURST_FRAMES,
+            BURST_GAP_MS,
+            POC_BLIND_PAYLOADS,
+            timings_for_button,
+        )
 
         entry = self._get_entry()
         if entry.data.get(CONF_BACKEND, BACKEND_DUO) != BACKEND_DUO:
@@ -3421,7 +3430,8 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         if user_input is not None:
             name = (user_input.get("name") or "").strip() or "Kjell curtain motor"
             variant = str(user_input.get("variant", "a"))
-            repeat_count = int(user_input.get("repeat_count", 10))
+            repeat_count = int(user_input.get("repeat_count", BURST_FRAMES))
+            pause_ms = int(user_input.get("pause_ms", BURST_GAP_MS))
             timings = {
                 button: timings_for_button(button, variant)
                 for button in POC_BLIND_PAYLOADS
@@ -3435,16 +3445,18 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 CONF_DEVICE_UNIT: "",
                 CONF_DEVICE_TYPE: GENERIC_RF_TYPE_COVER,
                 "repeat_count": repeat_count,
+                "pause_ms": pause_ms,
                 "timings_up": timings["up"],
                 "timings_down": timings["down"],
                 "timings_stop": timings["stop"],
                 "poc_variant": variant,
             }
             _LOGGER.info(
-                "Adding issue #100 test cover %s (variant %s, repeat %d)",
+                "Adding issue #100 test cover %s (variant %s, frames %d, gap %d ms)",
                 name,
                 variant,
                 repeat_count,
+                pause_ms,
             )
             return await self._async_persist_generic_rf_device(device_data, uid_suffix)
 
@@ -3457,8 +3469,11 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 {
                     vol.Required("name", default="Kjell curtain motor"): str,
                     vol.Required("variant", default="a"): vol.In(_POC_VARIANT_LABELS),
-                    vol.Optional("repeat_count", default=10): vol.All(
+                    vol.Optional("repeat_count", default=BURST_FRAMES): vol.All(
                         int, vol.Range(min=1, max=50)
+                    ),
+                    vol.Optional("pause_ms", default=BURST_GAP_MS): vol.All(
+                        int, vol.Range(min=1, max=255)
                     ),
                 }
             ),

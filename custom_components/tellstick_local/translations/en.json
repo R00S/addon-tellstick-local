@@ -364,12 +364,14 @@
           "description": "Adds the curtain motor from issue #100 as a cover. Its remote is transmit-only — no TellStick can receive it — so the three pulse trains captured with RTL-SDR are replayed instead.\n\nPayloads: {payloads}\n\nOnly a TellStick Duo can send raw pulses.",
           "data": {
             "name": "Device name",
-            "variant": "Bit polarity variant",
-            "repeat_count": "Repeat count (frames per command)"
+            "variant": "Frame variant",
+            "repeat_count": "Frames per command",
+            "pause_ms": "Gap between frames (ms)"
           },
           "data_description": {
-            "variant": "a = short mark + long gap is a one-bit. Only change this if variant a is ignored by the motor.",
-            "repeat_count": "How many times the frame is repeated per command; 10 mimics one button press."
+            "variant": "a is the frame read straight off the captures. c/d reverse the 40 bits; e-h use the 1.46 ms frame start. Put the motor in learn mode before testing.",
+            "repeat_count": "A real button press is 5 frames.",
+            "pause_ms": "Silence between frames. The captures show about 16-17 ms; 17 is the default."
           }
         },
         "generic_rf_listen_on": {

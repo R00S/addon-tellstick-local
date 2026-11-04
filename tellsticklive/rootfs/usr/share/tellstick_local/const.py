@@ -1387,7 +1387,9 @@ def timings_to_tellstick_bytes(timings: list[int]) -> bytes:
     return bytes(out)
 
 
-def generic_rf_build_raw_command(timings: list[int], repeat_count: int = 10) -> bytes:
+def generic_rf_build_raw_command(
+    timings: list[int], repeat_count: int = 10, pause_ms: int = 2
+) -> bytes:
     """Build a complete TellStick raw command from OOK pulse timings.
 
     Uses the same ``P\\x02 R<n> S<data>+`` format as Luxorparts:
@@ -1398,13 +1400,18 @@ def generic_rf_build_raw_command(timings: list[int], repeat_count: int = 10) -> 
     Args:
         timings: Alternating µs pulse/space values (positive=pulse, negative=space)
         repeat_count: Number of times the firmware transmits the signal (1–255)
+        pause_ms: Millisecond pause between those repeats (1–255).  The default
+            of 2 ms suits dense packets; a sparse press (e.g. five frames of a
+            curtain remote ~17 ms apart) needs a larger value.
 
     Returns:
         bytes ready for ``TellStickController.send_raw_command()``.
     """
     tick_bytes = timings_to_tellstick_bytes(timings)
     repeat = min(255, max(1, repeat_count))
-    return bytes([ord("P"), 2, ord("R"), repeat]) + b"S" + tick_bytes + b"+"
+    # 0 would truncate the IPC chain, so the pause floor is 1 ms.
+    pause = min(255, max(1, int(pause_ms)))
+    return bytes([ord("P"), pause, ord("R"), repeat]) + b"S" + tick_bytes + b"+"
 
 
 def parse_rtl433_pulse_analysis(log_text: str) -> list[int] | None:

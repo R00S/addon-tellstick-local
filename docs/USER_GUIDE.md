@@ -205,13 +205,18 @@ need to be taught a code before they respond.
 Some 433 MHz remotes are **transmit-only**: no TellStick can receive them, so
 their device can never be discovered by pressing a button. The Kjell & Company /
 Tuya-MOES curtain motor from issue #100 is one of those — its three button
-presses were captured with rtl_433 and can be replayed instead.
+presses were captured over the air with an RTL-SDR at 433.92 MHz and are
+replayed instead.
 
-1. Go to **Settings → Devices & Services → TellStick Local**
-2. Click **Add device** (the button on the integration card)
-3. Choose **Add test device — Kjell / Tuya curtain motor (issue #100)**
-4. Enter a name, leave **variant a** and **repeat 10**, then click **Submit**
-5. A cover device appears with **Open**, **Stop** and **Close**
+1. Put the motor in **learn mode** (hold its set button until it beeps). A motor
+   only obeys remote codes it has memorised — an unpaired replay is ignored no
+   matter how exact the frame is
+2. Go to **Settings → Devices & Services → TellStick Local**
+3. Click **Add device** (the button on the integration card)
+4. Choose **Add test device — Kjell / Tuya curtain motor (issue #100)**
+5. Enter a name, leave **variant a**, **frames 5** and **gap 17 ms**, click **Submit**
+6. A cover device appears with **Open**, **Stop** and **Close**
+7. Send **Open** / **Close** while the motor is still in learn mode
 
 **Requirements and limits**
 
@@ -220,10 +225,18 @@ presses were captured with rtl_433 and can be replayed instead.
   stops with an explanation instead of creating a device.
 - **No feedback.** Nothing receives this remote, so the cover reports an assumed
   state; there is no position and no "it worked" confirmation.
-- **Variant** decides how a pulse pair is read as a bit. Variant `a` is the
-  polarity derived from the captures. If the motor ignores it, remove the device
-  and add it again with variant `b`, then `c`, then `d` — that sweep is the test.
-- One frame is 40 bits (~47 ms); `repeat 10` imitates a normal button press.
+- **The burst matters.** A real button press is five identical 40-bit frames
+  with ~16.3–16.8 ms of silence between them, and each frame starts with a
+  ~4.9 ms mark. The replay reproduces exactly that: `frames 5` with a `gap` of
+  17 ms between them. One frame on its own, or frames a couple of milliseconds
+  apart, is ignored by the receiver.
+- **Variant** decides how a pulse pair is read as a bit. `a` is the reading
+  derived from the captures; `c`/`d` reverse the 40 bits (bit order cannot be
+  read off the pulse counts) and `e`–`h` repeat the four readings with the
+  1.46 ms frame start that single-frame decodes report. If `a` is ignored,
+  re-add the device with `b`, then `c`, and so on — or run the
+  `tellstick_local.poc_sweep_blind` action (Developer Tools → Actions) with
+  `button: down` to transmit all eight variants in turn.
 - This is a **test device**. It will be replaced by real cover support once the
   payloads are confirmed on hardware.
 

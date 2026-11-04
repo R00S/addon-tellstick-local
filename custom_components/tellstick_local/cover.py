@@ -115,6 +115,7 @@ async def async_setup_entry(
                 timings_down=device_cfg.get("timings_down"),
                 timings_stop=device_cfg.get("timings_stop"),
                 repeat_count=device_cfg.get("repeat_count", 10),
+                pause_ms=device_cfg.get("pause_ms", 2),
             )
         )
     if stored_entities:
@@ -160,6 +161,7 @@ async def async_setup_entry(
             timings_down=stored.get("timings_down"),
             timings_stop=stored.get("timings_stop"),
             repeat_count=stored.get("repeat_count", 10),
+            pause_ms=stored.get("pause_ms", 2),
         )
         async_add_entities([entity])
 
@@ -199,6 +201,7 @@ class TellStickCover(TellStickEntity, CoverEntity):
         timings_down: list[int] | None = None,
         timings_stop: list[int] | None = None,
         repeat_count: int = 10,
+        pause_ms: int = 2,
     ) -> None:
         """Initialize a TellStick cover entity."""
         super().__init__(
@@ -221,6 +224,7 @@ class TellStickCover(TellStickEntity, CoverEntity):
         self._timings_down = timings_down
         self._timings_stop = timings_stop
         self._repeat_count = repeat_count
+        self._pause_ms = pause_ms
         if self._protocol.lower() == PROTOCOL_GENERIC_RF:
             # Nothing receives this remote, so no state can be observed.
             self._attr_assumed_state = True
@@ -328,14 +332,18 @@ class TellStickCover(TellStickEntity, CoverEntity):
                 self._device_uid,
             )
             return
-        raw_cmd = generic_rf_build_raw_command(timings, self._repeat_count)
+        raw_cmd = generic_rf_build_raw_command(
+            timings, self._repeat_count, self._pause_ms
+        )
         _LOGGER.info(
-            "Generic RF cover TX: uid=%s action=%s timings=%d bytes=%d repeat=%d",
+            "Generic RF cover TX: uid=%s action=%s timings=%d bytes=%d repeat=%d "
+            "pause_ms=%d",
             self._device_uid,
             action,
             len(timings),
             len(raw_cmd),
             self._repeat_count,
+            self._pause_ms,
         )
         result = await send_raw(raw_cmd)
         if result == -5:

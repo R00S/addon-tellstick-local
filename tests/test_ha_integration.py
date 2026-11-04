@@ -174,7 +174,7 @@ async def run_tests() -> None:
         from custom_components.tellstick_local.cover import _is_cover
 
         timings = poc_blind.timings_for_button("up", "a")
-        report("PoC timings length", len(timings) == 82, f"{len(timings)}")
+        report("PoC timings length", len(timings) == 84, f"{len(timings)}")
         report(
             "PoC cover routes to cover",
             _is_cover("generic_rf", {"device_type": "cover"}),
