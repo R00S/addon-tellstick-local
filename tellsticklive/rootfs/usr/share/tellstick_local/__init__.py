@@ -8,6 +8,8 @@ import pathlib
 import time
 from typing import Any
 
+import voluptuous as vol
+
 from homeassistant.components.persistent_notification import (
     async_create as pn_async_create,
     async_dismiss as pn_async_dismiss,
@@ -24,7 +26,8 @@ from homeassistant.config_entries import (
 )
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST, EVENT_HOMEASSISTANT_STARTED, EVENT_HOMEASSISTANT_STOP
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
@@ -69,6 +72,12 @@ from .const import (
     SIGNAL_NEW_DEVICE,
     SIGNAL_RTL433_READING,
     build_device_uid,
+)
+from .poc_blind import (
+    BIT_VARIANTS,
+    POC_BLIND_PAYLOADS,
+    SERVICE_POC_SEND_BLIND,
+    build_poc_command,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -1070,6 +1079,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 _import_err,
             )
 
+    _async_register_poc_services(hass)
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     _remove_stale_device_cards(hass, entry)
 
@@ -1245,6 +1256,95 @@ async def _async_setup_rtl433_mqtt(
 
 
 
+# ---------------------------------------------------------------------------
+# PoC: replay the issue #100 blind remote (Duo only)
+#
+# Exposed as a service rather than an entity so no fake device enters the
+# switch/light/cover platforms while the protocol is still unconfirmed.
+# Delete together with poc_blind.py once real cover support lands.
+# ---------------------------------------------------------------------------
+
+_POC_SEND_BLIND_SCHEMA = vol.Schema(
+    {
+        vol.Required("button"): vol.In(sorted(POC_BLIND_PAYLOADS)),
+        vol.Optional("variant", default="a"): vol.In(sorted(BIT_VARIANTS)),
+        vol.Optional("repeat", default=10): vol.All(int, vol.Range(min=1, max=50)),
+        vol.Optional("entry_id"): str,
+    }
+)
+
+
+def _poc_pick_controller(hass: HomeAssistant, entry_id: str | None) -> Any:
+    """Return a controller able to send raw pulse trains (Duo), if any."""
+    entries = hass.data.get(DOMAIN, {})
+    if entry_id:
+        candidates = [entries.get(entry_id)]
+    else:
+        candidates = list(entries.values())
+    for entry_data in candidates:
+        if not isinstance(entry_data, dict):
+            continue
+        controller = entry_data.get(ENTRY_TELLSTICK_CONTROLLER)
+        if controller is not None and hasattr(controller, "send_raw_command"):
+            return controller
+    return None
+
+
+def _async_register_poc_services(hass: HomeAssistant) -> None:
+    """Register the blind replay service once per Home Assistant instance."""
+    if hass.services.has_service(DOMAIN, SERVICE_POC_SEND_BLIND):
+        return
+
+    async def _async_send_blind_frame(call: ServiceCall) -> dict[str, Any]:
+        """Transmit one captured frame of the issue #100 curtain remote."""
+        button: str = call.data["button"]
+        variant: str = call.data["variant"]
+        repeat_count = int(call.data["repeat"])
+
+        controller = _poc_pick_controller(hass, call.data.get("entry_id"))
+        if controller is None:
+            raise HomeAssistantError(
+                "poc_send_blind needs a TellStick Duo entry: a Net/ZNet cannot "
+                "send raw pulse trains through the local UDP API"
+            )
+
+        payload = POC_BLIND_PAYLOADS[button]
+        command = build_poc_command(payload, variant, repeat_count)
+        result = await controller.send_raw_command(command)
+        _LOGGER.info(
+            "PoC blind replay: button=%s payload=%s variant=%s repeat=%d "
+            "bytes=%d result=%s",
+            button,
+            payload,
+            variant,
+            repeat_count,
+            len(command),
+            result,
+        )
+        return {
+            "button": button,
+            "payload": payload,
+            "variant": variant,
+            "repeat": repeat_count,
+            "command_bytes": len(command),
+            "command_hex": command.hex(),
+            "result": result,
+        }
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_POC_SEND_BLIND,
+        _async_send_blind_frame,
+        schema=_POC_SEND_BLIND_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+    _LOGGER.warning(
+        "PoC service %s.%s registered (issue #100 blind replay, Duo only)",
+        DOMAIN,
+        SERVICE_POC_SEND_BLIND,
+    )
+
+
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
@@ -1278,6 +1378,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 rtl433_unsub()
             except Exception:  # noqa: BLE001
                 _LOGGER.debug("Error cancelling rtl_433 MQTT subscription on unload (non-fatal)", exc_info=True)
+        # Drop the PoC service when the last entry goes away so a stale handler
+        # never survives an unload/reload cycle.
+        remaining = [
+            key for key in hass.data.get(DOMAIN, {}) if key != "_pending_mirrors"
+        ]
+        if not remaining and hass.services.has_service(DOMAIN, SERVICE_POC_SEND_BLIND):
+            hass.services.async_remove(DOMAIN, SERVICE_POC_SEND_BLIND)
     return ok
 
 
