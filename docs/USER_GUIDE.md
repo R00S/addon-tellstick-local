@@ -237,6 +237,12 @@ replayed instead.
   re-add the device with `b`, then `c`, and so on — or run the
   `tellstick_local.poc_sweep_blind` action (Developer Tools → Actions) with
   `button: down` to transmit all eight variants in turn.
+- **Actions:** `tellstick_local.poc_send_blind` transmits one variant
+  (`button`, `variant`, `repeat`, `pause_ms`) and
+  `tellstick_local.poc_sweep_blind` transmits all eight in sequence
+  (`button`, `repeat`, `pause_ms`, and `gap` — the pause in seconds between
+  variants). Both return the payload and variant they sent so the log shows
+  what the motor heard last.
 - This is a **test device**. It will be replaced by real cover support once the
   payloads are confirmed on hardware.
 
