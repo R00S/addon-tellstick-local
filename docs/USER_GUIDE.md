@@ -513,6 +513,16 @@ buttons are pressed. Look for `TellStick Local is ready!` at startup.
 Go to **Settings → Developer tools → Restart** and restart Home Assistant to load the
 newly installed integration version. The notification dismisses itself after restart.
 
+### "All sensors unavailable after updating Home Assistant (RTL-433)"
+
+TellStick Local versions before **v3.3.1.19** cannot set up their sensor platform on
+**Home Assistant 2026.11 or later** when RTL-433 battery or voltage sensors are
+enabled — the integration used a helper that Home Assistant moved in 2026.11.
+Switches, lights and covers keep working; only sensors go unavailable, and new
+RTL-433 sensors stop appearing.
+
+**Fix:** update TellStick Local to v3.3.1.19 or later, then restart Home Assistant.
+
 ### "No setup prompt appeared after installing the app"
 
 Go to **Settings → Devices & Services → Add Integration**, search **TellStick Local**
