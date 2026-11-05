@@ -22,10 +22,8 @@ from custom_components.tellstick_local.poc_blind import (  # noqa: E402
     PREAMBLE_GAP_US,
     PREAMBLE_MARK_BURST_US,
     PREAMBLE_MARK_SOLO_US,
-    POC_BLIND_PREFIX,
     build_frame_timings,
     build_poc_command,
-    candidate_down_payloads,
     normalize_payload,
     payload_for_button,
     payload_to_bits,
@@ -196,22 +194,16 @@ def main() -> int:
         lambda: normalize_payload("6c82050ezz"),
     )
 
-    # -- Down was never captured; the candidates are doubled nibbles ----------
-    candidates = candidate_down_payloads()
-    check("14 down candidates (16 nibbles minus up and stop)", len(candidates) == 14, len(candidates))
+    # -- All three codes are the ones confirmed on the bench ------------------
     check(
-        "candidates keep the captured device prefix",
-        all(p.startswith(POC_BLIND_PREFIX) and len(p) == 10 for p in candidates),
+        "down is the code found on the bench",
+        POC_BLIND_PAYLOADS["down"] == "6c82050ecc",
+        POC_BLIND_PAYLOADS["down"],
     )
     check(
-        "candidates skip the confirmed up and stop codes",
-        not ({POC_BLIND_PAYLOADS["up"], POC_BLIND_PAYLOADS["stop"]} & set(candidates)),
-    )
-    check("candidates are doubled nibbles", all(p[-2] == p[-1] for p in candidates))
-    check("candidate cc is present", "6c82050ecc" in candidates, candidates)
-    check(
-        "every candidate builds a valid burst command",
-        all(len(build_poc_command(p)) == 90 for p in candidates),
+        "every confirmed code ends in a doubled nibble",
+        all(p[-2] == p[-1] for p in POC_BLIND_PAYLOADS.values()),
+        POC_BLIND_PAYLOADS,
     )
 
     check_raises("short payload rejected", lambda: payload_to_bits("6c82"))

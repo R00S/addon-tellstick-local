@@ -35,11 +35,12 @@ and two more long gaps — consistent only with 1 = short mark + long gap.  Bit
 40 bits, and ``e``-``h`` repeat the same four readings with the clipped 1460 us
 start mark, in case the short value was real after all.
 
-Payloads (last byte = button), as labelled by the reporter in issue #100:
-``eee`` = up (the only one confirmed to move the motor), ``aa`` = stop, and
-``e1``, which appeared once after three ``eee`` frames inside the "up" capture
-and is therefore probably that press's tail/release frame.  **No down press was
-ever captured**, so the "down" entry is a placeholder, not a down code.
+Payloads (last byte = button), each confirmed on hardware with variant ``a``,
+five frames and a 17 ms gap: ``eee`` = up, ``aa`` = stop and ``cc`` = down.
+No down press was ever captured in issue #100, so the down code was found on the
+bench by transmitting the doubled-nibble family (``6c82050e00`` …
+``6c82050eff``, which is where up and stop live too) one code at a time until
+the motor started moving.
 
 Deliberately standalone and disposable — delete this module once real cover
 support for these motors lands.
@@ -52,13 +53,12 @@ from .const import generic_rf_build_raw_command
 POC_BLIND_PAYLOADS: dict[str, str] = {
     # Confirmed on hardware (variant a, 5 frames, 17 ms): the blind moves up.
     "up": "6c82050eee",
-    # The capture the reporter themselves labelled "stop" in issue #100.
+    # The capture the reporter themselves labelled "stop" in issue #100;
+    # confirmed on hardware to stop the motor.
     "stop": "6c82050eaa",
-    # PLACEHOLDER — no down press was ever captured.  This frame appeared once
-    # after three "up" frames inside the up capture, so it is probably that
-    # press's tail frame.  It exists only so a cover device has a down code;
-    # replace it with a real down capture.
-    "down": "6c82050ee1",
+    # Not in issue #100 at all — no down press was ever captured.  Found on the
+    # bench by sending the doubled-nibble family one code at a time.
+    "down": "6c82050ecc",
 }
 
 #: Home Assistant service that transmits one frame variant (Duo only).
@@ -66,13 +66,6 @@ SERVICE_POC_SEND_BLIND = "poc_send_blind"
 
 #: Home Assistant service that walks every frame variant in one go (Duo only).
 SERVICE_POC_SWEEP_BLIND = "poc_sweep_blind"
-
-#: Home Assistant service that transmits every plausible "down" code (Duo only).
-SERVICE_POC_DOWN_SWEEP = "poc_down_sweep_blind"
-
-#: 32-bit device prefix shared by every frame captured in issue #100; only the
-#: final byte (the button) changes.
-POC_BLIND_PREFIX = "6c82050e"
 
 #: Label shown in the integration's "Add device" menu.
 POC_DEVICE_LABEL = "Kjell & Co / Tuya curtain motor (issue #100, test device)"
@@ -118,23 +111,6 @@ def payload_to_bits(hex_payload: str) -> str:
             f"expected 10 hex characters (40 bits), got {hex_payload!r}"
         )
     return "".join(f"{int(char, 16):04b}" for char in cleaned)
-
-
-def candidate_down_payloads() -> list[str]:
-    """Return every plausible "down" payload for the issue #100 remote.
-
-    ``up`` (``6c82050eee``) and ``stop`` (``6c82050eaa``) both end in a doubled
-    nibble, so the down code is most likely the missing member of that family.
-    No down press was ever captured, so all fourteen remaining doubled nibbles
-    are candidates: the sweep transmits them one at a time and the tester notes
-    which one starts the motor.  Ordered so the sweep is repeatable.
-    """
-    known = set(POC_BLIND_PAYLOADS.values())
-    return [
-        candidate
-        for nibble in "0123456789abcdef"
-        if (candidate := f"{POC_BLIND_PREFIX}{nibble * 2}") not in known
-    ]
 
 
 def normalize_payload(hex_payload: str) -> str:
