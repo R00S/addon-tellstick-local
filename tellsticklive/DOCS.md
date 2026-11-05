@@ -498,6 +498,6 @@ decoder is missing or the deduplication window is suppressing repeated signals.
 GNU General Public License v3.0 or later
 
 Copyright (c) 2019–2024 Erik Hilton
-Copyright (c) 2024–2026 R00S
+Copyright (c) 2025–2027 R00S — <https://github.com/R00S>
 
 [issue]: https://github.com/R00S/addon-tellstick-local/issues

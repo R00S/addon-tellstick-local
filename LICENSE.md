@@ -3,7 +3,7 @@
 Version 3, 29 June 2007
 
 Copyright (C) 2019-2024 Erik Hilton  
-Copyright (C) 2024-2025 R00S (roosfork modifications)
+Copyright (C) 2025-2027 R00S <https://github.com/R00S> (roosfork modifications)
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
