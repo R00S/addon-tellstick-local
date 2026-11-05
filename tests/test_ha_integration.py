@@ -153,9 +153,11 @@ async def run_tests() -> None:
     for mod in [
         "client",
         "const",
+        "cover",
         "entity",
         "switch",
         "light",
+        "tuya_curtain",
         "sensor",
         "device_trigger",
     ]:
@@ -164,6 +166,39 @@ async def run_tests() -> None:
             report(f"Import {mod}", True)
         except Exception as e:
             report(f"Import {mod}", False, str(e))
+
+    # -- Test 7: Tuya-MOES curtain motor (self-learning generic RF cover) --
+    print("\n=== Test 7: Tuya-MOES curtain motor ===")
+    try:
+        from custom_components.tellstick_local import tuya_curtain
+        from custom_components.tellstick_local.cover import _is_cover
+
+        timings = tuya_curtain.timings_for_button("up", "a")
+        report("reference timings length", len(timings) == 84, f"{len(timings)}")
+
+        identity = tuya_curtain.mint_identity()
+        stored = tuya_curtain.timings_for_identity(identity, "a")
+        report(
+            "minted identity gives three frames",
+            sorted(stored) == ["down", "stop", "up"]
+            and all(len(value) == 84 for value in stored.values()),
+            str({key: len(value) for key, value in stored.items()}),
+        )
+        report(
+            "captured base code reuses its identity",
+            tuya_curtain.parse_base_code("6c82050eee") == "6c82050e",
+        )
+        report(
+            "curtain cover routes to cover",
+            _is_cover("generic_rf", {"device_type": "cover"}),
+        )
+        report(
+            "Generic RF switch is not a cover",
+            not _is_cover("generic_rf", {"device_type": "switch"}),
+        )
+        report("Hasta still routes to cover", _is_cover("hasta"))
+    except Exception as e:
+        report("Tuya-MOES curtain motor", False, str(e))
 
     print(f"\n{'=' * 50}")
     print(f"{'ALL TESTS PASSED' if ALL_PASS else 'SOME TESTS FAILED'}")

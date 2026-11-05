@@ -108,7 +108,7 @@
       },
       "mirror_setup": {
         "title": "Mirror / range extender",
-        "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#8-mirror-range-extender",
+        "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#8-mirror--range-extender",
         "description": "Would you like this TellStick to act as a **mirror / range extender** for an existing TellStick?\n\nA mirror replicates all commands sent to the primary TellStick's devices, extending RF coverage. It also forwards received RF signals back to the primary for device detection.\n\nThe mirror does not have its own devices — it shares the primary's.",
         "data": {
           "mirror_of": "Use as mirror of"
@@ -357,6 +357,24 @@
             "repeat_count": "More repeats improve reliability. 10 is a good default."
           }
         },
+        "tuya_curtain": {
+          "title": "Kjell / Tuya curtain motor",
+          "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#53-kjell--company--tuya-moes-curtain-motor-duo-only",
+          "description": "A self-learning 433 MHz curtain motor. Home Assistant mints its own remote code ({example_identity}) and the motor learns it when you pair it after adding it.\n\nNo RTL-SDR is needed. If you did capture your own remote with one, paste any of its three codes below and that remote's identity is reused instead — useful when the handset must keep working.\n\nOnly a TellStick Duo can send raw pulses.",
+          "data": {
+            "name": "Device name",
+            "base_code": "Captured code (optional)"
+          },
+          "data_description": {
+            "base_code": "10 hex characters captured from your own remote, e.g. 6c82050eee. Only the first 8 are used (the identity); the button bytes are fixed. Leave empty to let Home Assistant create a new code."
+          }
+        },
+        "tuya_curtain_pair": {
+          "title": "Pair the motor",
+          "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#53-kjell--company--tuya-moes-curtain-motor-duo-only",
+          "description": "**{name}** has been added, but the motor does not know it yet — pairing is a separate step, done with the motor's own button.\n\n1. Press and hold **Stop on the motor** until its Stop indicator flashes red.\n2. Press **Open** on the new cover.\n3. The **Up and Down** LEDs on the motor flash → paired. **Open**, **Stop** and **Close** now work.\n\nYou can pair now or later; the cover works as soon as the motor has learned it.",
+          "data": {}
+        },
         "generic_rf_listen_on": {
           "title": "Record ON signal",
           "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#52-self-learning-teach-add-device-button",
@@ -443,10 +461,12 @@
       "error": {
         "invalid_code": "Parameter values must not be empty.",
         "teach_failed": "Failed to send pairing signal. Check that the TellStick app is running.",
-        "no_signal": "No signal captured — make sure rtl_433 add-on is running and press the remote button again."
+        "no_signal": "No signal captured — make sure rtl_433 add-on is running and press the remote button again.",
+        "invalid_base_code": "The captured code must be 10 hex characters (40 bits), for example 6c82050eee."
       },
       "abort": {
-        "device_added": "Device paired successfully! It will appear in your device list shortly.",
+        "poc_requires_duo": "This curtain motor is driven by raw pulse trains, which only a TellStick Duo can transmit. Net/ZNet cannot.",
+        "device_added": "Device added. It will appear in your device list shortly.",
         "mirror_is_secondary": "This TellStick is a mirror — devices must be added through the primary hub entry."
       }
     }

@@ -35,6 +35,7 @@ from homeassistant.const import CONF_HOST
 from homeassistant.data_entry_flow import FlowResult
 
 from .client import RawDeviceEvent, SensorEvent, TellStickController
+from .tuya_curtain import BRAND_CATALOG_LABEL, PROTOCOL_CATALOG_LABEL
 from .const import (
     BACKEND_DUO,
     BACKEND_NET,
@@ -2181,13 +2182,15 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
 
 _SubentryBase = ConfigSubentryFlow if ConfigSubentryFlow is not None else config_entries.OptionsFlow
 
-
 class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
     """Handle adding a 433 MHz device via the 'Add device' button."""
 
     _device_type: str = ""
     _new_device: dict[str, Any] = {}
     _widget_id: int = 8  # populated by by_brand / by_protocol step
+    # Curtain motor: built by the Add form, persisted after the pairing screen
+    _curtain_device_data: dict[str, Any] | None = None
+    _curtain_uid_suffix: str = ""
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -2217,9 +2220,17 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
     async def async_step_by_brand(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
-        """Search by brand name (existing catalog)."""
+        """Search by brand name (existing catalog).
+
+        The Kjell / Tuya curtain motor appears here like any other brand, even
+        though it has its own flow — it speaks no telldusd protocol, so it is
+        not in the catalog map.
+        """
         if user_input is not None:
             self._device_type = user_input["device_type"]
+            if self._device_type == BRAND_CATALOG_LABEL:
+                self._new_device = {CONF_DEVICE_NAME: user_input["name"]}
+                return await self.async_step_tuya_curtain()
             protocol, model, widget = DEVICE_CATALOG_MAP[self._device_type]
             self._widget_id = widget
             self._new_device = {
@@ -2237,7 +2248,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                     vol.Required(
                         "device_type",
                         default=DEVICE_CATALOG_LABELS[0],
-                    ): vol.In(DEVICE_CATALOG_LABELS),
+                    ): vol.In([*DEVICE_CATALOG_LABELS, BRAND_CATALOG_LABEL]),
                 }
             ),
         )
@@ -2248,6 +2259,9 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         """Search by protocol name (Duo backend — all protocols work)."""
         if user_input is not None:
             self._device_type = user_input["device_type"]
+            if self._device_type == PROTOCOL_CATALOG_LABEL:
+                self._new_device = {CONF_DEVICE_NAME: user_input["name"]}
+                return await self.async_step_tuya_curtain()
             protocol, model, widget = PROTOCOL_MODEL_MAP[self._device_type]
             self._widget_id = widget
             self._new_device = {
@@ -2265,7 +2279,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                     vol.Required(
                         "device_type",
                         default=PROTOCOL_MODEL_LABELS[0],
-                    ): vol.In(PROTOCOL_MODEL_LABELS),
+                    ): vol.In([*PROTOCOL_MODEL_LABELS, PROTOCOL_CATALOG_LABEL]),
                 }
             ),
         )
@@ -3362,7 +3376,6 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 _LOGGER.debug("Error unsubscribing from rtl_433 MQTT (non-fatal)", exc_info=True)
             self._generic_rf_listen_unsub = None
 
-        entry = self._get_entry()
         import secrets as _secrets  # noqa: PLC0415
 
         # The device UID is built from protocol+model+house+unit by
@@ -3370,7 +3383,6 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         # no meaningful house/unit codes, so we use a random token as the
         # "house" field to create a unique UID: generic_rf_<token>.
         uid_suffix = _secrets.token_hex(4)
-        device_uid = f"generic_rf_{uid_suffix}"
 
         device_data = {
             CONF_DEVICE_NAME: self._generic_rf_name,
@@ -3395,6 +3407,131 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             device_data["timings_down"] = self._generic_rf_timings_down or []
             device_data["timings_stop"] = self._generic_rf_timings_stop
 
+        return await self._async_persist_generic_rf_device(device_data, uid_suffix)
+
+    async def async_step_tuya_curtain(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Add a Tuya-MOES / Kjell curtain motor as a self-learning cover.
+
+        Reached from "Add by brand" and "Add by protocol": the motor speaks no
+        telldusd protocol, so it shares the normal picker instead of having a
+        menu entry of its own.  The burst is fixed at what the captures show
+        (five frames, 17 ms apart) — there is nothing to tune.
+
+        The motor is self-learning: in pairing mode it stores whichever 40-bit
+        code arrives as a five-frame burst, so this flow mints a remote
+        identity of its own and the user pairs the motor afterwards.  A code
+        captured from the real remote can be supplied instead, which reuses
+        that remote's identity.
+        """
+        from .tuya_curtain import (  # noqa: PLC0415
+            BURST_FRAMES,
+            BURST_GAP_MS,
+            DEFAULT_DEVICE_NAME,
+            DEFAULT_VARIANT,
+            mint_identity,
+            parse_base_code,
+            payloads_for_identity,
+            timings_for_identity,
+        )
+
+        entry = self._get_entry()
+        if entry.data.get(CONF_BACKEND, BACKEND_DUO) != BACKEND_DUO:
+            return self.async_abort(reason="poc_requires_duo")
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            name = (user_input.get("name") or "").strip() or DEFAULT_DEVICE_NAME
+            base_code = (user_input.get("base_code") or "").strip()
+            identity = ""
+            try:
+                identity = parse_base_code(base_code) if base_code else mint_identity()
+            except ValueError:
+                errors["base_code"] = "invalid_base_code"
+
+            if not errors:
+                timings = timings_for_identity(identity, DEFAULT_VARIANT)
+                payloads = payloads_for_identity(identity)
+                uid_suffix = secrets.token_hex(4)
+                self._curtain_uid_suffix = uid_suffix
+                self._curtain_device_data = {
+                    CONF_DEVICE_NAME: name,
+                    CONF_DEVICE_PROTOCOL: PROTOCOL_GENERIC_RF,
+                    CONF_DEVICE_MODEL: "",
+                    CONF_DEVICE_HOUSE: uid_suffix,  # UID discriminator, see below
+                    CONF_DEVICE_UNIT: "",
+                    CONF_DEVICE_TYPE: GENERIC_RF_TYPE_COVER,
+                    "repeat_count": BURST_FRAMES,
+                    "pause_ms": BURST_GAP_MS,
+                    "timings_up": timings["up"],
+                    "timings_down": timings["down"],
+                    "timings_stop": timings["stop"],
+                    "curtain_identity": identity,
+                    "curtain_variant": DEFAULT_VARIANT,
+                }
+                _LOGGER.info(
+                    "Adding curtain cover %s (identity %s, %d frames, %d ms gap, "
+                    "codes up=%s stop=%s down=%s)",
+                    name,
+                    identity,
+                    BURST_FRAMES,
+                    BURST_GAP_MS,
+                    payloads["up"],
+                    payloads["stop"],
+                    payloads["down"],
+                )
+                # Pairing happens with the motor's own button and the new
+                # cover, so it gets a screen of its own instead of the flow's
+                # "device added" completion message pretending it is paired.
+                return self.async_show_form(
+                    step_id="tuya_curtain_pair",
+                    data_schema=vol.Schema({}),
+                    description_placeholders={"name": name},
+                )
+
+        default_name = self._new_device.get(CONF_DEVICE_NAME) or DEFAULT_DEVICE_NAME
+        return self.async_show_form(
+            step_id="tuya_curtain",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("name", default=default_name): str,
+                    vol.Optional("base_code", default=""): str,
+                }
+            ),
+            errors=errors,
+            description_placeholders={"example_identity": mint_identity()},
+        )
+
+    async def async_step_tuya_curtain_pair(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Explain how to pair the motor, then finish adding the cover.
+
+        Nothing here can pair it: the motor only accepts the new identity once
+        its own Stop button has put it in pairing mode and it hears an up
+        frame, which is the Open button on the cover created below.
+        """
+        if user_input is not None and self._curtain_device_data is not None:
+            return await self._async_persist_generic_rf_device(
+                self._curtain_device_data, self._curtain_uid_suffix
+            )
+        name = ""
+        if self._curtain_device_data:
+            name = self._curtain_device_data.get(CONF_DEVICE_NAME, "")
+        return self.async_show_form(
+            step_id="tuya_curtain_pair",
+            data_schema=vol.Schema({}),
+            description_placeholders={"name": name},
+        )
+
+    async def _async_persist_generic_rf_device(
+        self, device_data: dict[str, Any], uid_suffix: str
+    ) -> SubentryFlowResult:
+        """Store a Generic RF device and let its platform create the entity."""
+        entry = self._get_entry()
+        device_uid = f"generic_rf_{uid_suffix}"
+
         # Persist in entry.options[CONF_DEVICES]
         existing_devices = dict(entry.options.get(CONF_DEVICES, {}))
         existing_devices[device_uid] = device_data
@@ -3415,11 +3552,9 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         # Mark as discovered to avoid double-processing phantom events
         entry_data.setdefault("_discovered_uids", set()).add(device_uid)
 
-        # Dispatch synthetic RawDeviceEvent so switch.py creates the entity
-        # immediately.  We encode uid_suffix as "house" so device_id resolves
-        # to "generic_rf_<uid_suffix>" — matching the stored device_uid.
-        from .client import RawDeviceEvent  # noqa: PLC0415
-
+        # Dispatch a synthetic RawDeviceEvent so the platform for this device
+        # type creates the entity immediately.  uid_suffix is encoded as
+        # "house" so device_id resolves to "generic_rf_<uid_suffix>".
         synthetic = RawDeviceEvent(
             raw=(
                 f"class:command;protocol:{PROTOCOL_GENERIC_RF};model:;"

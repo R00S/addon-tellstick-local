@@ -8,6 +8,8 @@ import pathlib
 import time
 from typing import Any
 
+import voluptuous as vol
+
 from homeassistant.components.persistent_notification import (
     async_create as pn_async_create,
     async_dismiss as pn_async_dismiss,
@@ -24,7 +26,8 @@ from homeassistant.config_entries import (
 )
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST, EVENT_HOMEASSISTANT_STARTED, EVENT_HOMEASSISTANT_STOP
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
@@ -69,6 +72,16 @@ from .const import (
     SIGNAL_NEW_DEVICE,
     SIGNAL_RTL433_READING,
     build_device_uid,
+)
+from .tuya_curtain import (
+    BURST_FRAMES,
+    BURST_GAP_MS,
+    FRAME_VARIANTS,
+    REFERENCE_PAYLOADS,
+    SERVICE_POC_SEND_BLIND,
+    SERVICE_POC_SWEEP_BLIND,
+    build_curtain_command,
+    payload_for_button,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -304,6 +317,29 @@ def _migrate_entry_title(
 
 
 @callback
+def _remove_stale_device_cards(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove device cards left without entities by grouping or ungrouping."""
+    dev_reg = dr.async_get(hass)
+    ent_reg = er.async_get(hass)
+    devices: dict[str, Any] = entry.options.get(CONF_DEVICES, {})
+    groups = {cfg.get("group_uid") for cfg in devices.values()}
+    prefix = f"{entry.entry_id}_"
+    for device in dr.async_entries_for_config_entry(dev_reg, entry.entry_id):
+        ident = next((i[1] for i in device.identifiers if i[0] == DOMAIN), "")
+        uid = ident.removeprefix(prefix)
+        if uid.startswith("group_"):
+            stale = uid.removeprefix("group_") not in groups
+        else:
+            stale = bool(devices.get(uid, {}).get("group_uid"))
+        if stale and not er.async_entries_for_device(
+            ent_reg, device.id, include_disabled_entities=True
+        ):
+            dev_reg.async_update_device(
+                device.id, remove_config_entry_id=entry.entry_id
+            )
+
+
+@callback
 def _clear_orphaned_tombstones(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Remove stale entity and device registry tombstones at startup.
 
@@ -408,14 +444,25 @@ async def _import_app_configured_devices(
     }
 
     new_devices: dict[str, dict[str, Any]] = {}
+    # device_id_map holds integer telldusd ids for Duo devices but parameter
+    # dicts for Net devices, so only the ids belong in the lookup set (a plain
+    # set() over every value raises "unhashable type: 'dict'" and aborted the
+    # whole import).
+    registered_ids = {
+        value for value in device_id_map.values() if isinstance(value, int)
+    }
     for dev in all_devices:
         protocol = dev["protocol"]
         house = dev["house"]
         unit = dev["unit"]
+        code = dev.get("code", "")
         telldusd_id = dev["id"]
 
-        if not protocol:
+        if not protocol or telldusd_id in registered_ids:
             continue
+
+        if code and not house and not unit:
+            house = code
 
         # Sensor-only protocols: auto-discovered from TDSensorEvent, not here.
         if protocol in _APP_SENSOR_PROTOCOLS:
@@ -449,6 +496,8 @@ async def _import_app_configured_devices(
             CONF_DEVICE_UNIT: unit,
             "_telldusd_id": telldusd_id,
         }
+        if code:
+            new_devices[uid]["params"] = {"code": code}
 
     if not new_devices:
         return
@@ -513,7 +562,7 @@ async def _register_mirror_devices(
             try:
                 params = device_cfg.get("params")
                 if params:
-                    telldusd_id = await mirror_controller.add_device(
+                    telldusd_id = await mirror_controller.find_or_add_device_params(
                         name, protocol, model, params,
                     )
                 else:
@@ -652,6 +701,8 @@ async def _setup_mirror_entry(
         controller.add_raw_packet_callback(_mirror_raw_packet_callback)
 
     controller.start_event_listener()
+    if isinstance(controller, TellStickController):
+        _reload_when_telldusd_returns(hass, entry, controller)
 
     async def _on_hass_stop(_event: Any) -> None:
         await controller.disconnect()
@@ -661,16 +712,14 @@ async def _setup_mirror_entry(
     )
 
     # For Net/ZNet mirrors: re-send reglistener once HA has fully started.
+    # Same as the primary path: no async_on_unload wrapper (see note in
+    # async_setup_entry) — reconnect() is a no-op on a disconnected controller.
     if backend == BACKEND_NET:
 
         async def _on_hass_started_mirror(_event: Any) -> None:
             await controller.reconnect()
 
-        entry.async_on_unload(
-            hass.bus.async_listen_once(
-                EVENT_HOMEASSISTANT_STARTED, _on_hass_started_mirror
-            )
-        )
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _on_hass_started_mirror)
 
     # Register with the primary entry's data so entities can send
     # commands through the mirror.
@@ -754,6 +803,29 @@ async def _async_scan_for_net_devices(hass: HomeAssistant) -> None:
             )
     except Exception:  # noqa: BLE001
         _LOGGER.debug("Net UDP discovery scan failed (non-fatal)", exc_info=True)
+
+
+def _reload_when_telldusd_returns(
+    hass: HomeAssistant, entry: ConfigEntry, controller: TellStickController
+) -> None:
+    """Reload the entry once telldusd answers again after the event socket closed."""
+
+    async def _wait_and_reload() -> None:
+        delay = 5
+        while True:
+            await asyncio.sleep(delay)
+            if await controller.ping():
+                break
+            delay = min(delay * 2, 60)
+        hass.config_entries.async_schedule_reload(entry.entry_id)
+
+    @callback
+    def _on_disconnect() -> None:
+        entry.async_create_background_task(
+            hass, _wait_and_reload(), "tellstick_local_reconnect"
+        )
+
+    controller.on_disconnect = _on_disconnect
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -865,7 +937,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 # Prefer the "params" dict (new format) over house/unit (old format)
                 params = device_cfg.get("params")
                 if params:
-                    telldusd_id = await controller.add_device(
+                    telldusd_id = await controller.find_or_add_device_params(
                         device_cfg.get(CONF_DEVICE_NAME, device_uid),
                         device_cfg[CONF_DEVICE_PROTOCOL],
                         device_cfg.get(CONF_DEVICE_MODEL, ""),
@@ -958,6 +1030,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         controller.add_raw_packet_callback(_raw_packet_callback)
 
     controller.start_event_listener()
+    if isinstance(controller, TellStickController):
+        _reload_when_telldusd_returns(hass, entry, controller)
 
     async def _on_hass_stop(_event: Any) -> None:
         await controller.disconnect()
@@ -970,14 +1044,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # After a HAOS restart the initial reglistener (sent in connect()) may be
     # lost if the ZNet device is not yet reachable when HA boots.  Re-sending
     # once all integrations have loaded ensures reliable event registration.
+    #
+    # NOTE: deliberately NOT registered via entry.async_on_unload().  The
+    # one-time listener removes itself when it fires at HA startup; calling
+    # its remove callback again on a later reload logs
+    # "Unable to remove unknown job listener" (issue #115).  If the entry is
+    # unloaded before startup, the leftover listener is harmless:
+    # controller.reconnect() is a no-op once the controller is disconnected.
     if backend == BACKEND_NET:
 
         async def _on_hass_started(_event: Any) -> None:
             await controller.reconnect()
 
-        entry.async_on_unload(
-            hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _on_hass_started)
-        )
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _on_hass_started)
 
     # Listen for options changes (reload only when automatic_add changes)
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
@@ -1004,7 +1083,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 _import_err,
             )
 
+    _async_register_poc_services(hass)
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    _remove_stale_device_cards(hass, entry)
 
     # Attach any mirror entries that loaded before this primary.
     # Mirror entries store themselves in _pending_mirrors when their
@@ -1049,6 +1131,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     lines.append(f"  - Connection: {'OK ✅' if alive else 'FAILED ❌'}")
                 else:
                     lines.append("  - Connection: no ping available")
+
+                # Net/ZNet entries: surface when the last event packet was
+                # received, so a "Connection: OK" entry that is silently
+                # receiving nothing is visible in the report (issue #115).
+                if ctrl and hasattr(ctrl, "last_packet_at"):
+                    last = ctrl.last_packet_at
+                    if last:
+                        age = max(0, int(time.time() - last))
+                        lines.append(
+                            "  - Last packet received: "
+                            f"{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(last))} "
+                            f"({age}s ago, {ctrl.packets_received} total)"
+                        )
+                    else:
+                        lines.append("  - Last packet received: never (this session)")
 
                 stored = (
                     ce.options.get(CONF_DEVICES, {}) if ce else {}
@@ -1161,6 +1258,189 @@ async def _async_setup_rtl433_mqtt(
         _LOGGER.warning("RTL-433 MQTT subscription failed", exc_info=True)
 
 
+
+
+# ---------------------------------------------------------------------------
+# Debug replay services for Tuya-MOES curtain motors (Duo only)
+#
+# The real device is created from the Add-device menu (the ``tuya_curtain``
+# step) and stores its own timings, so these two services exist only for bench
+# work: transmit one frame of a known code, or walk every frame variant.  Their
+# names are historical and kept for existing automations.
+# ---------------------------------------------------------------------------
+
+_POC_SEND_BLIND_SCHEMA = vol.Schema(
+    {
+        vol.Required("button"): vol.In(sorted(REFERENCE_PAYLOADS)),
+        vol.Optional("variant", default="a"): vol.In(sorted(FRAME_VARIANTS)),
+        vol.Optional("repeat", default=BURST_FRAMES): vol.All(
+            int, vol.Range(min=1, max=50)
+        ),
+        vol.Optional("pause_ms", default=BURST_GAP_MS): vol.All(
+            int, vol.Range(min=1, max=255)
+        ),
+        vol.Optional("payload"): str,
+        vol.Optional("entry_id"): str,
+    }
+)
+
+_POC_SWEEP_BLIND_SCHEMA = vol.Schema(
+    {
+        vol.Required("button"): vol.In(sorted(REFERENCE_PAYLOADS)),
+        vol.Optional("repeat", default=BURST_FRAMES): vol.All(
+            int, vol.Range(min=1, max=50)
+        ),
+        vol.Optional("pause_ms", default=BURST_GAP_MS): vol.All(
+            int, vol.Range(min=1, max=255)
+        ),
+        vol.Optional("gap", default=1.5): vol.All(
+            vol.Coerce(float), vol.Range(min=0.2, max=10.0)
+        ),
+        vol.Optional("payload"): str,
+        vol.Optional("entry_id"): str,
+    }
+)
+
+
+def _poc_pick_controller(hass: HomeAssistant, entry_id: str | None) -> Any:
+    """Return a controller able to send raw pulse trains (Duo), if any."""
+    entries = hass.data.get(DOMAIN, {})
+    if entry_id:
+        candidates = [entries.get(entry_id)]
+    else:
+        candidates = list(entries.values())
+    for entry_data in candidates:
+        if not isinstance(entry_data, dict):
+            continue
+        controller = entry_data.get(ENTRY_TELLSTICK_CONTROLLER)
+        if controller is not None and hasattr(controller, "send_raw_command"):
+            return controller
+    return None
+
+
+def _async_register_poc_services(hass: HomeAssistant) -> None:
+    """Register the blind replay services once per Home Assistant instance."""
+    if not hass.services.has_service(DOMAIN, SERVICE_POC_SEND_BLIND):
+        _register_poc_send_service(hass)
+    if not hass.services.has_service(DOMAIN, SERVICE_POC_SWEEP_BLIND):
+        _register_poc_sweep_service(hass)
+
+
+def _register_poc_send_service(hass: HomeAssistant) -> None:
+    """Register ``tellstick_local.poc_send_blind``."""
+
+    async def _async_send_blind_frame(call: ServiceCall) -> dict[str, Any]:
+        """Transmit one captured frame of the issue #100 curtain remote."""
+        button: str = call.data["button"]
+        variant: str = call.data["variant"]
+        repeat_count = int(call.data["repeat"])
+        pause_ms = int(call.data["pause_ms"])
+
+        controller = _poc_pick_controller(hass, call.data.get("entry_id"))
+        if controller is None:
+            raise HomeAssistantError(
+                "poc_send_blind needs a TellStick Duo entry: a Net/ZNet cannot "
+                "send raw pulse trains through the local UDP API"
+            )
+
+        try:
+            payload = payload_for_button(button, call.data.get("payload"))
+        except ValueError as err:
+            raise HomeAssistantError(str(err)) from err
+        command = build_curtain_command(payload, variant, repeat_count, pause_ms)
+        result = await controller.send_raw_command(command)
+        _LOGGER.info(
+            "PoC blind replay: button=%s payload=%s variant=%s repeat=%d "
+            "pause_ms=%d bytes=%d result=%s",
+            button,
+            payload,
+            variant,
+            repeat_count,
+            pause_ms,
+            len(command),
+            result,
+        )
+        return {
+            "button": button,
+            "payload": payload,
+            "variant": variant,
+            "repeat": repeat_count,
+            "pause_ms": pause_ms,
+            "command_bytes": len(command),
+            "command_hex": command.hex(),
+            "result": result,
+        }
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_POC_SEND_BLIND,
+        _async_send_blind_frame,
+        schema=_POC_SEND_BLIND_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+    _LOGGER.warning(
+        "PoC service %s.%s registered (issue #100 blind replay, Duo only)",
+        DOMAIN,
+        SERVICE_POC_SEND_BLIND,
+    )
+
+
+def _register_poc_sweep_service(hass: HomeAssistant) -> None:
+    """Register ``tellstick_local.poc_sweep_blind`` (walk every frame variant)."""
+
+    async def _async_sweep_blind_frames(call: ServiceCall) -> dict[str, Any]:
+        """Transmit every frame variant once, in order, for a pairing test."""
+        import asyncio  # noqa: PLC0415
+
+        button: str = call.data["button"]
+        repeat_count = int(call.data["repeat"])
+        pause_ms = int(call.data["pause_ms"])
+        gap_seconds = float(call.data["gap"])
+
+        controller = _poc_pick_controller(hass, call.data.get("entry_id"))
+        if controller is None:
+            raise HomeAssistantError(
+                "poc_sweep_blind needs a TellStick Duo entry: a Net/ZNet cannot "
+                "send raw pulse trains through the local UDP API"
+            )
+
+        try:
+            payload = payload_for_button(button, call.data.get("payload"))
+        except ValueError as err:
+            raise HomeAssistantError(str(err)) from err
+        sent: list[str] = []
+        for variant in sorted(FRAME_VARIANTS):
+            command = build_curtain_command(payload, variant, repeat_count, pause_ms)
+            result = await controller.send_raw_command(command)
+            _LOGGER.info(
+                "PoC blind sweep: button=%s payload=%s variant=%s repeat=%d "
+                "pause_ms=%d bytes=%d result=%s",
+                button,
+                payload,
+                variant,
+                repeat_count,
+                pause_ms,
+                len(command),
+                result,
+            )
+            sent.append(variant)
+            await asyncio.sleep(gap_seconds)
+        return {"button": button, "payload": payload, "variants": sent}
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_POC_SWEEP_BLIND,
+        _async_sweep_blind_frames,
+        schema=_POC_SWEEP_BLIND_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+    _LOGGER.warning(
+        "PoC service %s.%s registered (issue #100 variant sweep, Duo only)",
+        DOMAIN,
+        SERVICE_POC_SWEEP_BLIND,
+    )
+
+
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
@@ -1194,6 +1474,18 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 rtl433_unsub()
             except Exception:  # noqa: BLE001
                 _LOGGER.debug("Error cancelling rtl_433 MQTT subscription on unload (non-fatal)", exc_info=True)
+        # Drop the PoC service when the last entry goes away so a stale handler
+        # never survives an unload/reload cycle.
+        remaining = [
+            key for key in hass.data.get(DOMAIN, {}) if key != "_pending_mirrors"
+        ]
+        if not remaining:
+            for poc_service in (
+                SERVICE_POC_SEND_BLIND,
+                SERVICE_POC_SWEEP_BLIND,
+            ):
+                if hass.services.has_service(DOMAIN, poc_service):
+                    hass.services.async_remove(DOMAIN, poc_service)
     return ok
 
 

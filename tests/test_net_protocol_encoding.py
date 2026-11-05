@@ -126,6 +126,7 @@ def run_tests() -> None:
     print("\n=== Test 3: Arctech encoder ===")
     try:
         from custom_components.tellstick_local.net_client import (
+            _TURNON,
             _encode_arctech_command,
         )
 
@@ -138,9 +139,17 @@ def run_tests() -> None:
             # Unit should be 0-indexed (1-1=0)
             report("unit=0 (0-indexed)", result.get("unit") == 0, f"unit={result.get('unit')}")
 
-        # Raw bytes for dim
+        # Dim goes out as a native dict, not raw pulses: handleSend() does not
+        # forward the level, so the firmware's TURNON -> DIM(255) workaround is
+        # used instead of an S-key pulse train.
         result = _encode_arctech_command("selflearning-dimmer", "12345", "1", "dim", 128)
-        report("dim returns bytes (raw pulse)", isinstance(result, bytes), f"type={type(result)}")
+        report("dim returns native dict", isinstance(result, dict), f"type={type(result)}")
+        if isinstance(result, dict):
+            report(
+                "dim model=selflearning-dimmer",
+                result.get("model") == "selflearning-dimmer",
+            )
+            report("dim sent as TURNON (firmware DIM(255))", result.get("method") == _TURNON)
 
         # Unsupported method
         result = _encode_arctech_command("selflearning-switch", "12345", "1", "invalid")
