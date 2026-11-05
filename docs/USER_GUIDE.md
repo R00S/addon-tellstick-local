@@ -633,7 +633,18 @@ happens, run `TellStick Local: Debug connection` and check **Last packet
 received** for each entry: a unit with no packets for minutes has a network
 problem (check that UDP port 42314 is not blocked and the unit's IP is correct).
 
-### "Add device shows 'This TellStick is a mirror' message"
+### "All sensors unavailable after updating Home Assistant (RTL-433)"
+
+Home Assistant **2026.11.0** removed `EntityCategory` from
+`homeassistant.components.sensor`. Versions before **v3.3.2.3** imported it from
+there when creating RTL-433 **battery** and **voltage** entities, so a stored
+battery or voltage entity made the sensor platform fail to import — every
+sensor from this integration became unavailable, while switch, light and cover
+entities kept working.
+
+Update to **v3.3.2.3** or later and restart Home Assistant. If the sensors stay
+unavailable, check the HA log for `ImportError` mentioning
+`homeassistant.components.sensor`.
 
 This is correct — mirror entries inherit their devices from the primary. Click
 **+ Add 433 MHz device** from the **primary** TellStick hub entry instead.
