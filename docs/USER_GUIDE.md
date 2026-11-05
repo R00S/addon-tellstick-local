@@ -244,6 +244,14 @@ replayed instead.
   (`button`, `repeat`, `pause_ms`, and `gap` — the pause in seconds between
   variants). Both return the payload and variant they sent so the log shows
   what the motor heard last.
+- **Finding the missing down code.** `tellstick_local.poc_down_sweep_blind`
+  (`variant`, `repeat`, `pause_ms`, and `gap` — seconds between candidates)
+  transmits fourteen candidate down payloads one after another and logs each
+  one as `PoC down-code sweep 3/14: payload=6c82050ecc variant=a …`. Stand next
+  to the motor and watch which number starts it moving; that payload is the
+  down code. The candidates are `6c82050e` followed by a doubled hex nibble
+  (`00`, `11`, … `ff`) minus the known `up` (`ee`) and `stop` (`aa`), because
+  both captured codes have exactly that shape.
 - **Sending a different code.** Both actions accept an optional `payload`
   (10 hex characters) that overrides the button's own code, e.g.
   `payload: 6c82050eaa`. That matters here because **no down press was ever

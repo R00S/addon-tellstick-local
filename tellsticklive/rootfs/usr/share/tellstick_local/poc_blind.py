@@ -67,6 +67,13 @@ SERVICE_POC_SEND_BLIND = "poc_send_blind"
 #: Home Assistant service that walks every frame variant in one go (Duo only).
 SERVICE_POC_SWEEP_BLIND = "poc_sweep_blind"
 
+#: Home Assistant service that transmits every plausible "down" code (Duo only).
+SERVICE_POC_DOWN_SWEEP = "poc_down_sweep_blind"
+
+#: 32-bit device prefix shared by every frame captured in issue #100; only the
+#: final byte (the button) changes.
+POC_BLIND_PREFIX = "6c82050e"
+
 #: Label shown in the integration's "Add device" menu.
 POC_DEVICE_LABEL = "Kjell & Co / Tuya curtain motor (issue #100, test device)"
 
@@ -111,6 +118,23 @@ def payload_to_bits(hex_payload: str) -> str:
             f"expected 10 hex characters (40 bits), got {hex_payload!r}"
         )
     return "".join(f"{int(char, 16):04b}" for char in cleaned)
+
+
+def candidate_down_payloads() -> list[str]:
+    """Return every plausible "down" payload for the issue #100 remote.
+
+    ``up`` (``6c82050eee``) and ``stop`` (``6c82050eaa``) both end in a doubled
+    nibble, so the down code is most likely the missing member of that family.
+    No down press was ever captured, so all fourteen remaining doubled nibbles
+    are candidates: the sweep transmits them one at a time and the tester notes
+    which one starts the motor.  Ordered so the sweep is repeatable.
+    """
+    known = set(POC_BLIND_PAYLOADS.values())
+    return [
+        candidate
+        for nibble in "0123456789abcdef"
+        if (candidate := f"{POC_BLIND_PREFIX}{nibble * 2}") not in known
+    ]
 
 
 def normalize_payload(hex_payload: str) -> str:

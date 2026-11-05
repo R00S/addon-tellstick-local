@@ -80,7 +80,9 @@ from .poc_blind import (
     POC_BLIND_PAYLOADS,
     SERVICE_POC_SEND_BLIND,
     SERVICE_POC_SWEEP_BLIND,
+    SERVICE_POC_DOWN_SWEEP,
     build_poc_command,
+    candidate_down_payloads,
     payload_for_button,
 )
 
@@ -1301,6 +1303,23 @@ _POC_SWEEP_BLIND_SCHEMA = vol.Schema(
 )
 
 
+_POC_DOWN_SWEEP_SCHEMA = vol.Schema(
+    {
+        vol.Optional("variant", default="a"): vol.In(sorted(FRAME_VARIANTS)),
+        vol.Optional("repeat", default=BURST_FRAMES): vol.All(
+            int, vol.Range(min=1, max=50)
+        ),
+        vol.Optional("pause_ms", default=BURST_GAP_MS): vol.All(
+            int, vol.Range(min=1, max=255)
+        ),
+        vol.Optional("gap", default=2.0): vol.All(
+            vol.Coerce(float), vol.Range(min=0.5, max=10.0)
+        ),
+        vol.Optional("entry_id"): str,
+    }
+)
+
+
 def _poc_pick_controller(hass: HomeAssistant, entry_id: str | None) -> Any:
     """Return a controller able to send raw pulse trains (Duo), if any."""
     entries = hass.data.get(DOMAIN, {})
@@ -1323,6 +1342,8 @@ def _async_register_poc_services(hass: HomeAssistant) -> None:
         _register_poc_send_service(hass)
     if not hass.services.has_service(DOMAIN, SERVICE_POC_SWEEP_BLIND):
         _register_poc_sweep_service(hass)
+    if not hass.services.has_service(DOMAIN, SERVICE_POC_DOWN_SWEEP):
+        _register_poc_down_sweep_service(hass)
 
 
 def _register_poc_send_service(hass: HomeAssistant) -> None:
@@ -1440,6 +1461,60 @@ def _register_poc_sweep_service(hass: HomeAssistant) -> None:
     )
 
 
+def _register_poc_down_sweep_service(hass: HomeAssistant) -> None:
+    """Register ``tellstick_local.poc_down_sweep_blind`` (find the down code)."""
+
+    async def _async_sweep_down_codes(call: ServiceCall) -> dict[str, Any]:
+        """Transmit every plausible down payload, one at a time."""
+        import asyncio  # noqa: PLC0415
+
+        variant: str = call.data["variant"]
+        repeat_count = int(call.data["repeat"])
+        pause_ms = int(call.data["pause_ms"])
+        gap_seconds = float(call.data["gap"])
+
+        controller = _poc_pick_controller(hass, call.data.get("entry_id"))
+        if controller is None:
+            raise HomeAssistantError(
+                "poc_down_sweep_blind needs a TellStick Duo entry: a Net/ZNet "
+                "cannot send raw pulse trains through the local UDP API"
+            )
+
+        candidates = candidate_down_payloads()
+        sent: list[str] = []
+        for index, payload in enumerate(candidates, start=1):
+            command = build_poc_command(payload, variant, repeat_count, pause_ms)
+            result = await controller.send_raw_command(command)
+            # Warning level keeps the sequence visible in the normal HA log.
+            _LOGGER.warning(
+                "PoC down-code sweep %d/%d: payload=%s variant=%s frames=%d "
+                "gap=%d ms result=%s",
+                index,
+                len(candidates),
+                payload,
+                variant,
+                repeat_count,
+                pause_ms,
+                result,
+            )
+            sent.append(payload)
+            await asyncio.sleep(gap_seconds)
+        return {"payloads": sent, "variant": variant}
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_POC_DOWN_SWEEP,
+        _async_sweep_down_codes,
+        schema=_POC_DOWN_SWEEP_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+    _LOGGER.warning(
+        "PoC service %s.%s registered (issue #100 down-code sweep, Duo only)",
+        DOMAIN,
+        SERVICE_POC_DOWN_SWEEP,
+    )
+
+
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
@@ -1482,6 +1557,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             for poc_service in (
                 SERVICE_POC_SEND_BLIND,
                 SERVICE_POC_SWEEP_BLIND,
+                SERVICE_POC_DOWN_SWEEP,
             ):
                 if hass.services.has_service(DOMAIN, poc_service):
                     hass.services.async_remove(DOMAIN, poc_service)
