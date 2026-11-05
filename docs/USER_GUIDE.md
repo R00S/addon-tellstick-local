@@ -210,7 +210,9 @@ replayed instead.
 
 > **There is no pairing step.** The payloads were captured from the remote this
 > motor is **already paired with**, so the motor knows the code. If it ignores a
-> replay, the transmission is wrong — not the pairing.
+> replay, the transmission is wrong — not the pairing. The one exception is a
+> motor that was factory-reset: it forgets the remote, and nothing the TellStick
+> sends makes it remember it again. See [Section 5.4](#54-pairing-factory-reset-and-end-positions-the-motors-own-buttons).
 
 1. Go to **Settings → Devices & Services → TellStick Local**
 2. Click **Add device** (the button on the integration card)
@@ -254,6 +256,64 @@ replayed instead.
   you test it without a rebuild.
 - This is a **test device**. It will be replaced by real cover support once the
   payloads are confirmed on hardware.
+
+### 5.4 Pairing, factory reset and end positions (the motor's own buttons)
+
+These three procedures are performed on the motor and its remote, not in Home
+Assistant. They are repeated from the motor's manual because they decide whether
+a replay can work at all — a factory reset makes the motor forget the very
+remote whose codes §5.3 replays, and no TellStick command can undo that.
+
+**Pair a remote with a motor.** A remote only controls a motor it has been
+paired with.
+
+1. Press and hold **Stop** on the motor (the main unit) until the Stop
+   indicator flashes red.
+2. Press **Up** on the remote.
+3. The pairing is successful when the **Up and Down** LEDs on the motor flash.
+
+Step 2 is *press Up*: while the motor is in pairing mode it stores whatever
+identity it hears on an **up** frame.
+
+**Reset to factory settings.** Press and hold **Up and Down on the motor** — not
+on the remote — for about 12 seconds, until the corresponding indicators flash
+red, blue and green two to three times. Press **Stop** to finish. The motor
+disconnects from the app and forgets its paired remote.
+
+> A factory reset is the one thing that permanently breaks the §5.3 replay: the
+> motor no longer knows `6c82050eee`, so it ignores every replay. Pair a remote
+> again before expecting the test device to move anything.
+
+**Set the open and close positions**
+
+1. Press **Up** until the blind reaches the position you want as open, then
+   press **Stop**.
+2. Press and hold **Stop** for about 5 seconds, until the indicator above the
+   Stop button starts to flash red.
+3. Press **Down** until the blind reaches the position you want as closed, then
+   press **Stop**.
+
+The motor stores both limits itself. The TellStick can neither set nor read them,
+because nothing receives this remote (see the limits in §5.3).
+
+#### Can Home Assistant generate a code that a motor will pair with?
+
+Not proven — nobody has tried it yet. What is known: a frame is a 40-bit
+identity (`6c82050e` for the issue #100 remote) plus one button byte, and the
+encoder already emits any 40-bit frame you give it, so a *different* identity is
+just a different payload — e.g. `tellstick_local.poc_send_blind` with
+`payload: 6c8205f1ee` for open, `6c8205f1aa` for stop and `6c8205f1cc` for close.
+What is unknown is whether the motor accepts a synthesized identity at all:
+whether it validates the first four bytes, how many remotes it stores, and
+whether it requires the identity to have been transmitted by a real remote.
+
+The pairing procedure above makes the experiment cheap, since the motor listens
+for an **up** frame — exactly what the replay sends. Put a motor in pairing mode,
+send an `up` payload of your own choosing, and watch for the Up/Down LEDs: if
+they flash, the TellStick can mint its own remote identity (and a genuine
+`Learn` device option becomes possible); if not, this motor only obeys code it
+was taught by a physical remote, and the captured-remote replay of §5.3 is the
+only way in.
 
 ---
 
