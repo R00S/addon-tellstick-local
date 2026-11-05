@@ -244,11 +244,14 @@ replayed instead.
   (`button`, `repeat`, `pause_ms`, and `gap` — the pause in seconds between
   variants). Both return the payload and variant they sent so the log shows
   what the motor heard last.
-- **Sending an unlabelled code.** Both actions accept an optional `payload`
-  (10 hex characters) that overrides the button's own code — for example
-  `payload: 6c82050ee1`. The button labels in issue #100 were never confirmed,
-  so this is how you find out which capture is really `down` and which is
-  `stop` without re-adding anything.
+- **Sending a different code.** Both actions accept an optional `payload`
+  (10 hex characters) that overrides the button's own code, e.g.
+  `payload: 6c82050eaa`. That matters here because **no down press was ever
+  captured**: the issue only has `up` (`6c82050eee`, confirmed to move the
+  motor) and `stop` (`6c82050eaa`). `down` is a placeholder until a real down
+  capture is recorded — press **Down** on the remote while rtl_433 is running
+  with `analyze_pulses`, and the log prints
+  `pulse_slicer_pwm: Analyzer Device codes [{40}6c82050…]`.
 - This is a **test device**. It will be replaced by real cover support once the
   payloads are confirmed on hardware.
 

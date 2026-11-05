@@ -35,9 +35,11 @@ and two more long gaps — consistent only with 1 = short mark + long gap.  Bit
 40 bits, and ``e``-``h`` repeat the same four readings with the clipped 1460 us
 start mark, in case the short value was real after all.
 
-Payloads (last byte = button): aa = down, ee = up, e1 = stop.  The labels in the
-issue contradict each other ("stop" repeats the first capture's payload), so the
-mapping is probable, not proven.
+Payloads (last byte = button), as labelled by the reporter in issue #100:
+``eee`` = up (the only one confirmed to move the motor), ``aa`` = stop, and
+``e1``, which appeared once after three ``eee`` frames inside the "up" capture
+and is therefore probably that press's tail/release frame.  **No down press was
+ever captured**, so the "down" entry is a placeholder, not a down code.
 
 Deliberately standalone and disposable — delete this module once real cover
 support for these motors lands.
@@ -48,9 +50,15 @@ from .const import generic_rf_build_raw_command
 
 #: Button name -> 40-bit payload captured with rtl_433.
 POC_BLIND_PAYLOADS: dict[str, str] = {
-    "down": "6c82050eaa",
+    # Confirmed on hardware (variant a, 5 frames, 17 ms): the blind moves up.
     "up": "6c82050eee",
-    "stop": "6c82050ee1",
+    # The capture the reporter themselves labelled "stop" in issue #100.
+    "stop": "6c82050eaa",
+    # PLACEHOLDER — no down press was ever captured.  This frame appeared once
+    # after three "up" frames inside the up capture, so it is probably that
+    # press's tail frame.  It exists only so a cover device has a down code;
+    # replace it with a real down capture.
+    "down": "6c82050ee1",
 }
 
 #: Home Assistant service that transmits one frame variant (Duo only).

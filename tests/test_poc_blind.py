@@ -181,8 +181,8 @@ def main() -> int:
     )
     check(
         "payload override replaces a wrong button label",
-        build_poc_command(payload_for_button("down", "6c82050ee1"))
-        == build_poc_command(POC_BLIND_PAYLOADS["stop"]),
+        build_poc_command(payload_for_button("down", "6c82050eee"))
+        == build_poc_command(POC_BLIND_PAYLOADS["up"]),
     )
     check(
         "normalize lower-cases and trims",
