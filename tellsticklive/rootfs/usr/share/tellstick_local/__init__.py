@@ -73,14 +73,14 @@ from .const import (
     SIGNAL_RTL433_READING,
     build_device_uid,
 )
-from .poc_blind import (
+from .tuya_curtain import (
     BURST_FRAMES,
     BURST_GAP_MS,
     FRAME_VARIANTS,
-    POC_BLIND_PAYLOADS,
+    REFERENCE_PAYLOADS,
     SERVICE_POC_SEND_BLIND,
     SERVICE_POC_SWEEP_BLIND,
-    build_poc_command,
+    build_curtain_command,
     payload_for_button,
 )
 
@@ -1261,16 +1261,17 @@ async def _async_setup_rtl433_mqtt(
 
 
 # ---------------------------------------------------------------------------
-# PoC: replay the issue #100 blind remote (Duo only)
+# Debug replay services for Tuya-MOES curtain motors (Duo only)
 #
-# Exposed as a service rather than an entity so no fake device enters the
-# switch/light/cover platforms while the protocol is still unconfirmed.
-# Delete together with poc_blind.py once real cover support lands.
+# The real device is created from the Add-device menu (the ``tuya_curtain``
+# step) and stores its own timings, so these two services exist only for bench
+# work: transmit one frame of a known code, or walk every frame variant.  Their
+# names are historical and kept for existing automations.
 # ---------------------------------------------------------------------------
 
 _POC_SEND_BLIND_SCHEMA = vol.Schema(
     {
-        vol.Required("button"): vol.In(sorted(POC_BLIND_PAYLOADS)),
+        vol.Required("button"): vol.In(sorted(REFERENCE_PAYLOADS)),
         vol.Optional("variant", default="a"): vol.In(sorted(FRAME_VARIANTS)),
         vol.Optional("repeat", default=BURST_FRAMES): vol.All(
             int, vol.Range(min=1, max=50)
@@ -1285,7 +1286,7 @@ _POC_SEND_BLIND_SCHEMA = vol.Schema(
 
 _POC_SWEEP_BLIND_SCHEMA = vol.Schema(
     {
-        vol.Required("button"): vol.In(sorted(POC_BLIND_PAYLOADS)),
+        vol.Required("button"): vol.In(sorted(REFERENCE_PAYLOADS)),
         vol.Optional("repeat", default=BURST_FRAMES): vol.All(
             int, vol.Range(min=1, max=50)
         ),
@@ -1346,7 +1347,7 @@ def _register_poc_send_service(hass: HomeAssistant) -> None:
             payload = payload_for_button(button, call.data.get("payload"))
         except ValueError as err:
             raise HomeAssistantError(str(err)) from err
-        command = build_poc_command(payload, variant, repeat_count, pause_ms)
+        command = build_curtain_command(payload, variant, repeat_count, pause_ms)
         result = await controller.send_raw_command(command)
         _LOGGER.info(
             "PoC blind replay: button=%s payload=%s variant=%s repeat=%d "
@@ -1409,7 +1410,7 @@ def _register_poc_sweep_service(hass: HomeAssistant) -> None:
             raise HomeAssistantError(str(err)) from err
         sent: list[str] = []
         for variant in sorted(FRAME_VARIANTS):
-            command = build_poc_command(payload, variant, repeat_count, pause_ms)
+            command = build_curtain_command(payload, variant, repeat_count, pause_ms)
             result = await controller.send_raw_command(command)
             _LOGGER.info(
                 "PoC blind sweep: button=%s payload=%s variant=%s repeat=%d "

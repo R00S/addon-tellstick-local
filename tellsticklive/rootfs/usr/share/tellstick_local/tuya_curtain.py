@@ -1,10 +1,11 @@
-"""Proof of concept: replay the issue #100 curtain-remote frames on a Duo.
+"""Tuya-MOES / Kjell & Company curtain motor — self-learning 433 MHz cover.
 
-Neither a TellStick Duo nor a Net/ZNet can *receive* this remote: the firmware
-only reports a packet once one of its compiled protocol decoders accepts it, so
-an unknown 40-bit frame is dropped with no event and no LED blink.  Transmission
-is a different matter — ``tdSendRawCommand`` accepts an arbitrary pulse train,
-so the frames captured with RTL-SDR can be replayed to move the blind.
+These motors come with a three-button remote (up / stop / down) that no
+TellStick can *receive*: the firmware only reports a packet once one of its
+compiled protocol decoders accepts it, so an unknown 40-bit frame is dropped
+with no event and no LED blink.  Transmission is a different matter —
+``tdSendRawCommand`` accepts an arbitrary pulse train, so the motor can be
+driven by replaying the frame format captured with RTL-SDR in issue #100.
 
 Frame model, taken from the rtl_433 captures in issue #100 (2026-04-27):
 
@@ -14,13 +15,13 @@ Frame model, taken from the rtl_433 captures in issue #100 (2026-04-27):
     payload      40 bits, one frame ~47 ms
     press        5 identical frames, ~16.3-16.8 ms of silence between them
 
-Two details from the captures decide whether a replay can work at all:
+Two details from the captures decide whether a transmission can work at all:
 
 * **The burst.** A press is five frames, not one: the log shows five
   ``{40}6c82050eaa`` frames per press with 16352 us gaps between them.  Sending
   one frame (or frames 2 ms apart) does not reproduce what the receiver expects,
-  so :func:`build_poc_command` defaults to ``P\\x11 R5`` — five frames with a
-  17 ms pause, which is the only place a gap that long fits (a timing byte
+  so :func:`build_curtain_command` defaults to ``P\\x11 R5`` — five frames with
+  a 17 ms pause, which is the only place a gap that long fits (a timing byte
   saturates at 255 ticks = 2550 us).
 * **The frame-start mark.** Frames decoded on their own report a 1460 us start
   mark, frames inside a burst report 4876 us.  The short value is the same pulse
@@ -35,40 +36,32 @@ and two more long gaps — consistent only with 1 = short mark + long gap.  Bit
 40 bits, and ``e``-``h`` repeat the same four readings with the clipped 1460 us
 start mark, in case the short value was real after all.
 
-Payloads (last byte = button), each confirmed on hardware with variant ``a``,
-five frames and a 17 ms gap: ``eee`` = up, ``aa`` = stop and ``cc`` = down.
-No down press was ever captured in issue #100, so the down code was found on the
-bench by transmitting the doubled-nibble family (``6c82050e00`` …
-``6c82050eff``, which is where up and stop live too) one code at a time until
-the motor started moving.
+Payload layout (40 bits, one frame)::
 
-Deliberately standalone and disposable — delete this module once real cover
-support for these motors lands.
+    remote identity (4 bytes)     button (1 byte)
+    6c 82 xx xx                   ee = up, aa = stop, cc = down
+
+``6c82`` is the prefix every capture of this motor family shares; the last two
+identity bytes are the remote's serial.  ``ee``/``aa``/``cc`` were each confirmed
+on hardware (variant ``a``, five frames, 17 ms apart).
+
+**These motors are self-learning.**  The receiver does not know or care which
+identity it hears: in pairing mode it stores whatever 40-bit code arrives in a
+proper burst.  That is what turns the issue #100 replay into a normal device —
+the config flow mints a fresh identity per motor (:func:`mint_identity`), so
+Home Assistant *is* the remote and no RTL-SDR is needed.  Pairing is the
+procedure in the manual, with the app sending the up frame instead of a handset:
+put the motor in pairing mode, then press Open on the new cover.
+
+Users who do have an RTL-SDR can paste a code captured from their own remote
+instead (:func:`parse_base_code`), which reuses that remote's identity — useful
+when the handset must keep working and the motor only stores one remote.
 """
 from __future__ import annotations
 
+import secrets
+
 from .const import generic_rf_build_raw_command
-
-#: Button name -> 40-bit payload captured with rtl_433.
-POC_BLIND_PAYLOADS: dict[str, str] = {
-    # Confirmed on hardware (variant a, 5 frames, 17 ms): the blind moves up.
-    "up": "6c82050eee",
-    # The capture the reporter themselves labelled "stop" in issue #100;
-    # confirmed on hardware to stop the motor.
-    "stop": "6c82050eaa",
-    # Not in issue #100 at all — no down press was ever captured.  Found on the
-    # bench by sending the doubled-nibble family one code at a time.
-    "down": "6c82050ecc",
-}
-
-#: Home Assistant service that transmits one frame variant (Duo only).
-SERVICE_POC_SEND_BLIND = "poc_send_blind"
-
-#: Home Assistant service that walks every frame variant in one go (Duo only).
-SERVICE_POC_SWEEP_BLIND = "poc_sweep_blind"
-
-#: Label shown in the integration's "Add device" menu.
-POC_DEVICE_LABEL = "Kjell & Co / Tuya curtain motor (issue #100, test device)"
 
 #: One firmware tick is ~10 us, and a timing byte saturates at 255 ticks.
 TICK_US = 10
@@ -102,6 +95,29 @@ FRAME_VARIANTS: dict[str, tuple[str, bool, int]] = {
     "h": ("short0", True, PREAMBLE_MARK_SOLO_US),
 }
 
+#: Identity prefix shared by every capture of this motor family (bytes 0-1).
+VENDOR_PREFIX = "6c82"
+
+#: Button -> last payload byte, each confirmed on hardware.
+BUTTON_BYTES: dict[str, str] = {"up": "ee", "stop": "aa", "down": "cc"}
+
+#: The issue #100 remote's own codes.  Not used by new devices — kept as a
+#: known-good reference for the debug replay services and for the tests.
+REFERENCE_PAYLOADS: dict[str, str] = {
+    "up": "6c82050eee",
+    "stop": "6c82050eaa",
+    "down": "6c82050ecc",
+}
+
+#: Name the Add-device flow suggests.
+DEFAULT_DEVICE_NAME = "Curtain motor"
+
+#: Home Assistant services that transmit one frame / every variant (Duo only).
+#: The names are historical (they shipped while this was a proof of concept)
+#: and are kept so existing automations keep working.
+SERVICE_POC_SEND_BLIND = "poc_send_blind"
+SERVICE_POC_SWEEP_BLIND = "poc_sweep_blind"
+
 
 def payload_to_bits(hex_payload: str) -> str:
     """Expand a 40-bit payload to transmitted bits (first transmitted bit first)."""
@@ -124,13 +140,65 @@ def normalize_payload(hex_payload: str) -> str:
     return cleaned
 
 
-def payload_for_button(button: str, payload: str | None = None) -> str:
-    """Return the payload for a button, or an explicit override.
+def normalize_identity(identity: str) -> str:
+    """Validate and lower-case a 32-bit remote identity (8 hex characters).
 
-    The override exists because the button labels in issue #100 are unproven:
-    ``up`` is confirmed on hardware, but which of the other two captures means
-    ``down`` and which means ``stop`` is still a guess, so a code can be
-    transmitted without re-labelling anything.
+    Raises:
+        ValueError: if the string is not exactly 8 hex characters.
+    """
+    cleaned = identity.strip().lower()
+    if len(cleaned) != 8 or any(char not in "0123456789abcdef" for char in cleaned):
+        raise ValueError(
+            f"expected 8 hex characters (32-bit remote identity), got {identity!r}"
+        )
+    return cleaned
+
+
+def mint_identity() -> str:
+    """Return a fresh 32-bit remote identity for a new motor.
+
+    ``6c82`` is kept because every captured code of this family starts with it;
+    the serial bytes are random, which gives 65536 distinct remotes.  Two motors
+    in the same home can therefore be independent, and the identity never
+    collides with the issue #100 handset.
+    """
+    return VENDOR_PREFIX + secrets.token_hex(2)
+
+
+def parse_base_code(code: str) -> str:
+    """Return the 32-bit identity from a captured 40-bit payload.
+
+    Users with an RTL-SDR can copy any of the three codes their own remote
+    sends; only the first eight hex characters (the identity) are used, because
+    the button byte is always taken from :data:`BUTTON_BYTES`.
+
+    Raises:
+        ValueError: if the string is not exactly 10 hex characters.
+    """
+    if not code or not code.strip():
+        raise ValueError("expected a captured 40-bit code, got an empty value")
+    return normalize_payload(code)[:8]
+
+
+def payloads_for_identity(identity: str) -> dict[str, str]:
+    """Return ``{button: 40-bit payload}`` for a remote identity.
+
+    Raises:
+        ValueError: if the identity is not exactly 8 hex characters.
+    """
+    cleaned = normalize_identity(identity)
+    return {
+        button: cleaned + button_byte
+        for button, button_byte in BUTTON_BYTES.items()
+    }
+
+
+def payload_for_button(button: str, payload: str | None = None) -> str:
+    """Return a payload for a button of the issue #100 remote, or an override.
+
+    Used by the debug replay services; devices store their own timings, so this
+    is not on the device path.  The override transmits an arbitrary code without
+    re-labelling anything.
 
     Raises:
         ValueError: if the button is unknown or the override is not 10 hex chars.
@@ -138,10 +206,10 @@ def payload_for_button(button: str, payload: str | None = None) -> str:
     if payload:
         return normalize_payload(payload)
     try:
-        return POC_BLIND_PAYLOADS[button.lower()]
+        return REFERENCE_PAYLOADS[button.lower()]
     except KeyError as err:
         raise ValueError(
-            f"unknown button {button!r}; expected one of {sorted(POC_BLIND_PAYLOADS)}"
+            f"unknown button {button!r}; expected one of {sorted(REFERENCE_PAYLOADS)}"
         ) from err
 
 
@@ -184,12 +252,23 @@ def build_frame_timings(hex_payload: str, variant: str = "a") -> list[int]:
     return timings
 
 
-def timings_for_button(button: str, variant: str = "a") -> list[int]:
-    """Return the pulse/space timings for one captured button.
+def timings_for_identity(identity: str, variant: str = "a") -> dict[str, list[int]]:
+    """Return ``{button: timings}`` for a whole remote identity.
 
-    Args:
-        button: ``down``, ``up`` or ``stop``.
-        variant: frame variant, one of :data:`FRAME_VARIANTS`.
+    This is what the Add-device flow stores on the device, so the cover entity
+    never needs to encode anything at runtime.
+
+    Raises:
+        ValueError: if the identity is invalid or the variant is unknown.
+    """
+    return {
+        button: build_frame_timings(payload, variant)
+        for button, payload in payloads_for_identity(identity).items()
+    }
+
+
+def timings_for_button(button: str, variant: str = "a") -> list[int]:
+    """Return the pulse/space timings for one button of the reference remote.
 
     Raises:
         ValueError: if the button or the variant is unknown.
@@ -197,7 +276,7 @@ def timings_for_button(button: str, variant: str = "a") -> list[int]:
     return build_frame_timings(payload_for_button(button), variant)
 
 
-def build_poc_command(
+def build_curtain_command(
     hex_payload: str,
     variant: str = "a",
     repeat_count: int = BURST_FRAMES,

@@ -157,7 +157,7 @@ async def run_tests() -> None:
         "entity",
         "switch",
         "light",
-        "poc_blind",
+        "tuya_curtain",
         "sensor",
         "device_trigger",
     ]:
@@ -167,16 +167,29 @@ async def run_tests() -> None:
         except Exception as e:
             report(f"Import {mod}", False, str(e))
 
-    # -- Test 7: issue #100 PoC device (generic RF cover) --
-    print("\n=== Test 7: Issue #100 test device ===")
+    # -- Test 7: Tuya-MOES curtain motor (self-learning generic RF cover) --
+    print("\n=== Test 7: Tuya-MOES curtain motor ===")
     try:
-        from custom_components.tellstick_local import poc_blind
+        from custom_components.tellstick_local import tuya_curtain
         from custom_components.tellstick_local.cover import _is_cover
 
-        timings = poc_blind.timings_for_button("up", "a")
-        report("PoC timings length", len(timings) == 84, f"{len(timings)}")
+        timings = tuya_curtain.timings_for_button("up", "a")
+        report("reference timings length", len(timings) == 84, f"{len(timings)}")
+
+        identity = tuya_curtain.mint_identity()
+        stored = tuya_curtain.timings_for_identity(identity, "a")
         report(
-            "PoC cover routes to cover",
+            "minted identity gives three frames",
+            sorted(stored) == ["down", "stop", "up"]
+            and all(len(value) == 84 for value in stored.values()),
+            str({key: len(value) for key, value in stored.items()}),
+        )
+        report(
+            "captured base code reuses its identity",
+            tuya_curtain.parse_base_code("6c82050eee") == "6c82050e",
+        )
+        report(
+            "curtain cover routes to cover",
             _is_cover("generic_rf", {"device_type": "cover"}),
         )
         report(
@@ -185,7 +198,7 @@ async def run_tests() -> None:
         )
         report("Hasta still routes to cover", _is_cover("hasta"))
     except Exception as e:
-        report("Issue #100 test device", False, str(e))
+        report("Tuya-MOES curtain motor", False, str(e))
 
     print(f"\n{'=' * 50}")
     print(f"{'ALL TESTS PASSED' if ALL_PASS else 'SOME TESTS FAILED'}")

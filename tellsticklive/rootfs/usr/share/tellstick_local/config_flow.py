@@ -2223,7 +2223,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             )
         return self.async_show_menu(
             step_id="user",
-            menu_options=["by_brand", "by_protocol", "poc_blind"],
+            menu_options=["by_brand", "by_protocol", "tuya_curtain"],
         )
 
     async def async_step_by_brand(
@@ -3407,67 +3407,85 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
 
         return await self._async_persist_generic_rf_device(device_data, uid_suffix)
 
-    async def async_step_poc_blind(
+    async def async_step_tuya_curtain(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
-        """Add the issue #100 curtain motor as a cover, without recording.
+        """Add a Tuya-MOES / Kjell curtain motor as a self-learning cover.
 
-        No TellStick can receive this remote, so the three pulse trains
-        captured with RTL-SDR are replayed as a generic_rf cover instead of
-        asking telldusd to encode a protocol it does not implement.
+        The motor is self-learning: in pairing mode it stores whichever 40-bit
+        code arrives as a five-frame burst, so this flow mints a remote
+        identity of its own and the user pairs the motor by pressing Open.
+        A code captured from the real remote can be supplied instead, which
+        reuses that remote's identity.
         """
-        from .poc_blind import (  # noqa: PLC0415
+        from .tuya_curtain import (  # noqa: PLC0415
             BURST_FRAMES,
             BURST_GAP_MS,
-            POC_BLIND_PAYLOADS,
-            timings_for_button,
+            DEFAULT_DEVICE_NAME,
+            mint_identity,
+            parse_base_code,
+            payloads_for_identity,
+            timings_for_identity,
         )
 
         entry = self._get_entry()
         if entry.data.get(CONF_BACKEND, BACKEND_DUO) != BACKEND_DUO:
             return self.async_abort(reason="poc_requires_duo")
 
+        errors: dict[str, str] = {}
         if user_input is not None:
-            name = (user_input.get("name") or "").strip() or "Kjell curtain motor"
+            name = (user_input.get("name") or "").strip() or DEFAULT_DEVICE_NAME
             variant = str(user_input.get("variant", "a"))
             repeat_count = int(user_input.get("repeat_count", BURST_FRAMES))
             pause_ms = int(user_input.get("pause_ms", BURST_GAP_MS))
-            timings = {
-                button: timings_for_button(button, variant)
-                for button in POC_BLIND_PAYLOADS
-            }
-            uid_suffix = secrets.token_hex(4)
-            device_data = {
-                CONF_DEVICE_NAME: name,
-                CONF_DEVICE_PROTOCOL: PROTOCOL_GENERIC_RF,
-                CONF_DEVICE_MODEL: "",
-                CONF_DEVICE_HOUSE: uid_suffix,  # UID discriminator, see below
-                CONF_DEVICE_UNIT: "",
-                CONF_DEVICE_TYPE: GENERIC_RF_TYPE_COVER,
-                "repeat_count": repeat_count,
-                "pause_ms": pause_ms,
-                "timings_up": timings["up"],
-                "timings_down": timings["down"],
-                "timings_stop": timings["stop"],
-                "poc_variant": variant,
-            }
-            _LOGGER.info(
-                "Adding issue #100 test cover %s (variant %s, frames %d, gap %d ms)",
-                name,
-                variant,
-                repeat_count,
-                pause_ms,
-            )
-            return await self._async_persist_generic_rf_device(device_data, uid_suffix)
+            base_code = (user_input.get("base_code") or "").strip()
+            try:
+                identity = parse_base_code(base_code) if base_code else mint_identity()
+            except ValueError:
+                identity = ""
+                errors["base_code"] = "invalid_base_code"
 
-        payload_text = ", ".join(
-            f"`{button}`={payload}" for button, payload in POC_BLIND_PAYLOADS.items()
-        )
+            if not errors:
+                payloads = payloads_for_identity(identity)
+                timings = timings_for_identity(identity, variant)
+                uid_suffix = secrets.token_hex(4)
+                device_data = {
+                    CONF_DEVICE_NAME: name,
+                    CONF_DEVICE_PROTOCOL: PROTOCOL_GENERIC_RF,
+                    CONF_DEVICE_MODEL: "",
+                    CONF_DEVICE_HOUSE: uid_suffix,  # UID discriminator, see below
+                    CONF_DEVICE_UNIT: "",
+                    CONF_DEVICE_TYPE: GENERIC_RF_TYPE_COVER,
+                    "repeat_count": repeat_count,
+                    "pause_ms": pause_ms,
+                    "timings_up": timings["up"],
+                    "timings_down": timings["down"],
+                    "timings_stop": timings["stop"],
+                    "curtain_identity": identity,
+                    "curtain_variant": variant,
+                }
+                _LOGGER.info(
+                    "Adding curtain cover %s (identity %s, variant %s, frames %d, "
+                    "gap %d ms, codes up=%s stop=%s down=%s)",
+                    name,
+                    identity,
+                    variant,
+                    repeat_count,
+                    pause_ms,
+                    payloads["up"],
+                    payloads["stop"],
+                    payloads["down"],
+                )
+                return await self._async_persist_generic_rf_device(
+                    device_data, uid_suffix
+                )
+
         return self.async_show_form(
-            step_id="poc_blind",
+            step_id="tuya_curtain",
             data_schema=vol.Schema(
                 {
-                    vol.Required("name", default="Kjell curtain motor"): str,
+                    vol.Required("name", default=DEFAULT_DEVICE_NAME): str,
+                    vol.Optional("base_code", default=""): str,
                     vol.Required("variant", default="a"): vol.In(_POC_VARIANT_LABELS),
                     vol.Optional("repeat_count", default=BURST_FRAMES): vol.All(
                         int, vol.Range(min=1, max=50)
@@ -3477,7 +3495,8 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                     ),
                 }
             ),
-            description_placeholders={"payloads": payload_text},
+            errors=errors,
+            description_placeholders={"example_identity": mint_identity()},
         )
 
     async def _async_persist_generic_rf_device(
