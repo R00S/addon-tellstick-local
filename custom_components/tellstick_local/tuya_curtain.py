@@ -112,6 +112,16 @@ REFERENCE_PAYLOADS: dict[str, str] = {
 #: Name the Add-device flow suggests.
 DEFAULT_DEVICE_NAME = "Curtain motor"
 
+#: The frame reading the device always transmits.  The flow used to offer all
+#: eight variants because it was a bench experiment; a real motor answers one.
+DEFAULT_VARIANT = "a"
+
+#: Labels that put the motor in the ordinary "Add by brand" / "Add by protocol"
+#: pickers.  It is not a telldusd protocol device, so it has no menu entry of
+#: its own.
+BRAND_CATALOG_LABEL = "Kjell & Company — Tuya curtain motor (self-learning, Duo only)"
+PROTOCOL_CATALOG_LABEL = "generic_rf — Tuya curtain motor (self-learning, Duo only)"
+
 #: Home Assistant services that transmit one frame / every variant (Duo only).
 #: The names are historical (they shipped while this was a proof of concept)
 #: and are kept so existing automations keep working.

@@ -215,10 +215,13 @@ instead so the handset and Home Assistant share one identity.
 
 1. Go to **Settings → Devices & Services → TellStick Local**
 2. Click **Add device** (the button on the integration card)
-3. Choose **Add — Kjell / Tuya curtain motor (self-learning, Duo only)**
-4. Enter a name, leave **Captured code** empty, **variant a**, **frames 5** and
-   **gap 17 ms**, click **Submit**
-5. A cover appears with **Open**, **Stop** and **Close** — it is not paired yet
+3. Choose **Add by brand** → **Kjell & Company — Tuya curtain motor
+   (self-learning, Duo only)**, or **Add by protocol** → the same entry under
+   `generic_rf`. It has no line of its own on the Add-device menu, because it
+   is a brand/protocol choice like any other
+4. Enter a name, leave **Captured code** empty, click **Submit**
+5. The next screen explains pairing — the cover is added, but the motor does
+   not know its code yet
 6. Put the motor in pairing mode: press and hold **Stop on the motor** until its
    Stop indicator flashes red
 7. Press **Open** on the new cover
@@ -248,16 +251,16 @@ only one remote, or when the physical remote should stay authoritative.
   state; there is no position and no "it worked" confirmation.
 - **The burst matters.** A real button press is five identical 40-bit frames
   with ~16.3–16.8 ms of silence between them, and each frame starts with a
-  ~4.9 ms mark. The replay reproduces exactly that: `frames 5` with a `gap` of
-  17 ms between them. One frame on its own, or frames a couple of milliseconds
-  apart, is ignored by the receiver.
-- **Variant** decides how a pulse pair is read as a bit. `a` is the reading
-  derived from the captures; `c`/`d` reverse the 40 bits (bit order cannot be
-  read off the pulse counts) and `e`–`h` repeat the four readings with the
-  1.46 ms frame start that single-frame decodes report. If `a` is ignored,
-  re-add the device with `b`, then `c`, and so on — or run the
-  `tellstick_local.poc_sweep_blind` action (Developer Tools → Actions) with
-  `button: down` to transmit all eight variants in turn.
+  ~4.9 ms mark. The replay reproduces exactly that — five frames, 17 ms apart.
+  Both values are fixed rather than settings: this motor has only ever answered
+  this burst, so there is nothing to tune. One frame on its own, or frames a
+  couple of milliseconds apart, is ignored by the receiver.
+- **Variant** only matters to the debug actions below; the device itself always
+  transmits `a`, the reading derived from the captures. `c`/`d` reverse the 40
+  bits (bit order cannot be read off the pulse counts) and `e`–`h` repeat the
+  four readings with the 1.46 ms frame start that single-frame decodes report.
+  `tellstick_local.poc_sweep_blind` (Developer Tools → Actions, `button: down`)
+  transmits all eight in turn so the log shows which one a motor answered.
 - **Actions:** `tellstick_local.poc_send_blind` transmits one variant
   (`button`, `variant`, `repeat`, `pause_ms`) and
   `tellstick_local.poc_sweep_blind` transmits all eight in sequence

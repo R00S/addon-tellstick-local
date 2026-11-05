@@ -279,8 +279,7 @@
             "by_protocol_raw": "Add by protocol (raw pulse)",
             "by_protocol_native": "Add by protocol (TellStick native — unit-1 fix)",
             "by_protocol_native_nofix": "Add by protocol (TellStick native — no unit fix)",
-            "generic_rf": "Add Generic RF device (record from remote)",
-            "tuya_curtain": "Add — Kjell / Tuya curtain motor (self-learning, Duo only)"
+            "generic_rf": "Add Generic RF device (record from remote)"
           }
         },
         "by_brand": {
@@ -359,22 +358,22 @@
           }
         },
         "tuya_curtain": {
-          "title": "Add — Kjell / Tuya curtain motor",
+          "title": "Kjell / Tuya curtain motor",
           "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#53-kjell--company--tuya-moes-curtain-motor-duo-only",
-          "description": "A self-learning 433 MHz curtain motor. Home Assistant mints its own remote code ({example_identity}) and the motor learns it: put the motor in pairing mode (**hold Stop on the motor until its indicator flashes red**), then press **Open** on the new cover. The Up and Down LEDs flash when it is paired.\n\nNo RTL-SDR is needed. If you did capture your own remote with one, paste any of its three codes below and that remote's identity is reused instead — useful when the handset must keep working.\n\nOnly a TellStick Duo can send raw pulses.",
+          "description": "A self-learning 433 MHz curtain motor. Home Assistant mints its own remote code ({example_identity}) and the motor learns it when you pair it after adding it.\n\nNo RTL-SDR is needed. If you did capture your own remote with one, paste any of its three codes below and that remote's identity is reused instead — useful when the handset must keep working.\n\nOnly a TellStick Duo can send raw pulses.",
           "data": {
             "name": "Device name",
-            "base_code": "Captured code (optional)",
-            "variant": "Frame variant",
-            "repeat_count": "Frames per command",
-            "pause_ms": "Gap between frames (ms)"
+            "base_code": "Captured code (optional)"
           },
           "data_description": {
-            "base_code": "10 hex characters captured from your own remote, e.g. 6c82050eee. Only the first 8 are used (the identity); the button bytes are fixed. Leave empty to let Home Assistant create a new code.",
-            "variant": "a is the frame read straight off the captures. c/d reverse the 40 bits; e-h use the 1.46 ms frame start.",
-            "repeat_count": "A real button press is 5 frames.",
-            "pause_ms": "Silence between frames. The captures show about 16-17 ms; 17 is the default."
+            "base_code": "10 hex characters captured from your own remote, e.g. 6c82050eee. Only the first 8 are used (the identity); the button bytes are fixed. Leave empty to let Home Assistant create a new code."
           }
+        },
+        "tuya_curtain_pair": {
+          "title": "Pair the motor",
+          "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#53-kjell--company--tuya-moes-curtain-motor-duo-only",
+          "description": "**{name}** has been added, but the motor does not know it yet — pairing is a separate step, done with the motor's own button.\n\n1. Press and hold **Stop on the motor** until its Stop indicator flashes red.\n2. Press **Open** on the new cover.\n3. The **Up and Down** LEDs on the motor flash → paired. **Open**, **Stop** and **Close** now work.\n\nYou can pair now or later; the cover works as soon as the motor has learned it.",
+          "data": {}
         },
         "generic_rf_listen_on": {
           "title": "Record ON signal",
@@ -467,7 +466,7 @@
       },
       "abort": {
         "poc_requires_duo": "This curtain motor is driven by raw pulse trains, which only a TellStick Duo can transmit. Net/ZNet cannot.",
-        "device_added": "Device paired successfully! It will appear in your device list shortly.",
+        "device_added": "Device added. It will appear in your device list shortly.",
         "mirror_is_secondary": "This TellStick is a mirror — devices must be added through the primary hub entry."
       }
     }

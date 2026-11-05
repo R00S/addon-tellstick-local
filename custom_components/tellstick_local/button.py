@@ -65,6 +65,12 @@ async def async_setup_entry(
 
         model = device_cfg.get(CONF_DEVICE_MODEL, "")
 
+        # A self-learning curtain motor has no learn signal to send: pairing is
+        # done with the motor's Stop button and nothing else (see
+        # tuya_curtain.py), so the flow adds it without a Learn button.
+        if device_cfg.get("curtain_identity"):
+            continue
+
         # EF test "sequence ALL" markers → create the appropriate sequence button
         # Maps model → (variants_list, translation_key, protocol, uid_prefix)
         _SEQ_MODELS: dict[str, tuple[list[tuple[str, str]], str, str, str]] = {
@@ -119,6 +125,8 @@ async def async_setup_entry(
             return
         known.add(uid)
         stored = entry.options.get(CONF_DEVICES, {}).get(uid, {})
+        if stored.get("curtain_identity"):
+            return
         name = stored.get(CONF_DEVICE_NAME) or f"TellStick {uid}"
         entity = TellStickLearnButton(
             entry_id=entry.entry_id,
