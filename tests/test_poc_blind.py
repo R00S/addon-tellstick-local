@@ -24,6 +24,8 @@ from custom_components.tellstick_local.poc_blind import (  # noqa: E402
     PREAMBLE_MARK_SOLO_US,
     build_frame_timings,
     build_poc_command,
+    normalize_payload,
+    payload_for_button,
     payload_to_bits,
     split_long_mark,
 )
@@ -170,6 +172,26 @@ def main() -> int:
     check(
         "pause above 255 clamps to 255",
         build_poc_command(POC_BLIND_PAYLOADS["up"], "a", 5, 300)[1] == 255,
+    )
+
+    check(
+        "payload override wins over the button",
+        payload_for_button("down", "6C82050EAA") == "6c82050eaa",
+        payload_for_button("down", "6C82050EAA"),
+    )
+    check(
+        "payload override replaces a wrong button label",
+        build_poc_command(payload_for_button("down", "6c82050ee1"))
+        == build_poc_command(POC_BLIND_PAYLOADS["stop"]),
+    )
+    check(
+        "normalize lower-cases and trims",
+        normalize_payload("  6C82050EEE ") == "6c82050eee",
+    )
+    check_raises("payload override rejects short input", lambda: normalize_payload("6c82"))
+    check_raises(
+        "payload override rejects non-hex input",
+        lambda: normalize_payload("6c82050ezz"),
     )
 
     check_raises("short payload rejected", lambda: payload_to_bits("6c82"))

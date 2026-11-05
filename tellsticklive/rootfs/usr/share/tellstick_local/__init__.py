@@ -81,6 +81,7 @@ from .poc_blind import (
     SERVICE_POC_SEND_BLIND,
     SERVICE_POC_SWEEP_BLIND,
     build_poc_command,
+    payload_for_button,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -1277,6 +1278,7 @@ _POC_SEND_BLIND_SCHEMA = vol.Schema(
         vol.Optional("pause_ms", default=BURST_GAP_MS): vol.All(
             int, vol.Range(min=1, max=255)
         ),
+        vol.Optional("payload"): str,
         vol.Optional("entry_id"): str,
     }
 )
@@ -1293,6 +1295,7 @@ _POC_SWEEP_BLIND_SCHEMA = vol.Schema(
         vol.Optional("gap", default=1.5): vol.All(
             vol.Coerce(float), vol.Range(min=0.2, max=10.0)
         ),
+        vol.Optional("payload"): str,
         vol.Optional("entry_id"): str,
     }
 )
@@ -1339,7 +1342,10 @@ def _register_poc_send_service(hass: HomeAssistant) -> None:
                 "send raw pulse trains through the local UDP API"
             )
 
-        payload = POC_BLIND_PAYLOADS[button]
+        try:
+            payload = payload_for_button(button, call.data.get("payload"))
+        except ValueError as err:
+            raise HomeAssistantError(str(err)) from err
         command = build_poc_command(payload, variant, repeat_count, pause_ms)
         result = await controller.send_raw_command(command)
         _LOGGER.info(
@@ -1397,7 +1403,10 @@ def _register_poc_sweep_service(hass: HomeAssistant) -> None:
                 "send raw pulse trains through the local UDP API"
             )
 
-        payload = POC_BLIND_PAYLOADS[button]
+        try:
+            payload = payload_for_button(button, call.data.get("payload"))
+        except ValueError as err:
+            raise HomeAssistantError(str(err)) from err
         sent: list[str] = []
         for variant in sorted(FRAME_VARIANTS):
             command = build_poc_command(payload, variant, repeat_count, pause_ms)

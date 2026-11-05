@@ -244,6 +244,11 @@ replayed instead.
   (`button`, `repeat`, `pause_ms`, and `gap` — the pause in seconds between
   variants). Both return the payload and variant they sent so the log shows
   what the motor heard last.
+- **Sending an unlabelled code.** Both actions accept an optional `payload`
+  (10 hex characters) that overrides the button's own code — for example
+  `payload: 6c82050ee1`. The button labels in issue #100 were never confirmed,
+  so this is how you find out which capture is really `down` and which is
+  `stop` without re-adding anything.
 - This is a **test device**. It will be replaced by real cover support once the
   payloads are confirmed on hardware.
 

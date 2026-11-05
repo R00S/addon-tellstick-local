@@ -105,6 +105,38 @@ def payload_to_bits(hex_payload: str) -> str:
     return "".join(f"{int(char, 16):04b}" for char in cleaned)
 
 
+def normalize_payload(hex_payload: str) -> str:
+    """Validate and lower-case a 40-bit payload for transmission.
+
+    Raises:
+        ValueError: if the string is not exactly 10 hex characters.
+    """
+    cleaned = hex_payload.strip().lower()
+    payload_to_bits(cleaned)  # raises with a clear message
+    return cleaned
+
+
+def payload_for_button(button: str, payload: str | None = None) -> str:
+    """Return the payload for a button, or an explicit override.
+
+    The override exists because the button labels in issue #100 are unproven:
+    ``up`` is confirmed on hardware, but which of the other two captures means
+    ``down`` and which means ``stop`` is still a guess, so a code can be
+    transmitted without re-labelling anything.
+
+    Raises:
+        ValueError: if the button is unknown or the override is not 10 hex chars.
+    """
+    if payload:
+        return normalize_payload(payload)
+    try:
+        return POC_BLIND_PAYLOADS[button.lower()]
+    except KeyError as err:
+        raise ValueError(
+            f"unknown button {button!r}; expected one of {sorted(POC_BLIND_PAYLOADS)}"
+        ) from err
+
+
 def split_long_mark(mark_us: int) -> list[int]:
     """Split a mark that exceeds the firmware's 2550 us tick limit.
 
@@ -154,13 +186,7 @@ def timings_for_button(button: str, variant: str = "a") -> list[int]:
     Raises:
         ValueError: if the button or the variant is unknown.
     """
-    try:
-        payload = POC_BLIND_PAYLOADS[button.lower()]
-    except KeyError as err:
-        raise ValueError(
-            f"unknown button {button!r}; expected one of {sorted(POC_BLIND_PAYLOADS)}"
-        ) from err
-    return build_frame_timings(payload, variant)
+    return build_frame_timings(payload_for_button(button), variant)
 
 
 def build_poc_command(
