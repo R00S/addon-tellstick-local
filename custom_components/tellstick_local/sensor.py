@@ -11,7 +11,15 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import DEGREE, PERCENTAGE, UnitOfLength, UnitOfSpeed, UnitOfTemperature, UnitOfVolumetricFlux
+from homeassistant.const import (
+    DEGREE,
+    PERCENTAGE,
+    EntityCategory,
+    UnitOfLength,
+    UnitOfSpeed,
+    UnitOfTemperature,
+    UnitOfVolumetricFlux,
+)
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import DeviceInfo
@@ -418,7 +426,6 @@ class Rtl433Sensor(SensorEntity):
 
         # Battery and voltage are diagnostic entities
         if dc_str in ("battery", "voltage"):
-            from homeassistant.components.sensor import EntityCategory  # noqa: PLC0415
             self._attr_entity_category = EntityCategory.DIAGNOSTIC
 
         # Group all fields from the same physical sensor under one HA device
