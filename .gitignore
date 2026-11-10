@@ -3,3 +3,4 @@ __pycache__/
 *.pyo
 node_modules
 .venv/
+znet-decompile/

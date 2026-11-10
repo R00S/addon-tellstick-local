@@ -148,6 +148,8 @@ Nothing about this is provable in CI; each protocol needs a receiver.
   split into multiple `send` packets (as the Duo path already does).
 - v1 `learn` via raw is theoretically a one-bit frame, but unverified on
   hardware; treat as its own port with its own probe.
-- The stale "raw S bytes work on real Net/ZNet hardware" paragraph near the end
-  of [`docs/ZNET_FIRMWARE_ANALYSIS.md`](ZNET_FIRMWARE_ANALYSIS.md) contradicts
-  this document and the decompiled handler; this document is authoritative.
+- ~~Stale "raw S bytes work on v2/ZNet" claim~~ — resolved 2026-11-10:
+  [`docs/ZNET_FIRMWARE_ANALYSIS.md`](ZNET_FIRMWARE_ANALYSIS.md) was rewritten from
+  a fresh decompile and now states the verified behaviour (`KeyError` on S-only,
+  `S` ignored when `protocol` is present, `prefixes={}` hardcoded, level always
+  `None`).

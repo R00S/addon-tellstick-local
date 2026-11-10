@@ -101,3 +101,24 @@ directories identical (ignoring `__pycache__`).
 - Recruiting more Net v1 owners as testers is part of that plan: they are the
   only people who can unlock per-protocol TX support, and the #130 report shows
   they are still active.
+
+## Session — 2026-11-10 — ZNet firmware decompile (TX path verified)
+
+**Trigger:** the v2/ZNet raw-send question could not be settled from the old
+notes, which contradicted each other.
+
+**Done:** added `tools/decompile_znet_firmware.py` (SquashFS at `0x130ad8` → `.pyc`
+→ `uncompyle6`), decompiled the `productiontest`, `rf433` and `telldus` module
+roots (35 `.pyc`, 32 decompiled) and replaced the speculative TX section of
+`docs/ZNET_FIRMWARE_ANALYSIS.md` with quoted code.
+
+**Findings:** `handleSend()` raises an uncaught `KeyError('protocol')` on S-only
+packets, ignores `S` when `protocol` is present, hardcodes `prefixes={}` and
+passes `None` as the dim level; `DeviceNode._command()` (vendor-gated API) does
+support `P`/`R` and real levels. So v2/ZNet raw TX over UDP is impossible, not
+merely unproven — which is why the v1 raw path on this branch is the only
+firmware-free route to Duo-level protocol support.
+
+**Not done:** no attempt to decompile the whole rootfs, no vendor source
+committed. `morluto/rea` was evaluated and rejected: it targets native, JS,
+.NET and Android binaries (via Ghidra/IDA/Hopper), not Python 2.7 bytecode.

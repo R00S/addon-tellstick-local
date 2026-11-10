@@ -198,61 +198,99 @@ iptables -A input_wan_rule -p udp --dport 42314 -j ACCEPT    # commands/events
 iptables -A input_wan_rule -p udp -m udp --sport 1900 -j ACCEPT   # UPnP
 ```
 
-## Why Raw S Bytes Is the Correct Approach
+## TX path — verified decompile (2026-11-10)
 
-The firmware's `handleSend()` ultimately calls:
-```python
-CommandHandler.rf433.dev.queue(RF433Msg('S', msg['S'], {}))
-```
+A fresh extraction and decompile of the same image (SquashFS superblock at
+`0x130ad8`, `PySquashfsImage` 0.9.0, `uncompyle6` 3.9.3) settles the questions the
+earlier version of this file left open. Reproduce with
+`python3 tools/decompile_znet_firmware.py`. The code below is quoted from
+`productiontest/Server.py` and supersedes the speculation that used to end this
+document.
 
-This sends raw pulse-train bytes to the RF chip.  When we generate raw `S` bytes
-ourselves and send them via `encode_packet("send", S=raw_bytes)`, the firmware
-path is:
+### `CommandHandler.handle()` / `handleSend()`
 
-1. `CommandHandler.handle()` receives our packet
-2. `LiveMessage.fromByteArray(data)` decodes it
-3. `msg.name() == 'send'` → calls `handleSend(msg.argument(0).toNative())`
-4. But our dict has `S` key, not `protocol` — so `msg['protocol']` fails...
-
-**Wait — this means raw S bytes DON'T go through handleSend()!**
-
-Looking more carefully at the firmware code:
 ```python
 def handle(self):
     data = self.request[0].strip()
+    self.socket = self.request[1]
     if data == 'B:reglistener':
-        ...
+        server = Server(CommandHandler.context)
+        server.reglistener(self.socket, self.client_address)
     msg = LiveMessage.fromByteArray(data)
     if msg.name() == 'send':
         self.handleSend(msg.argument(0).toNative())
+    return
+
+@staticmethod
+def handleSend(msg):
+    protocol = Protocol.protocolInstance(msg['protocol'])
+    if not protocol:
+        logging.warning('Unknown protocol %s', msg['protocol'])
+        return
+    protocol.setModel(msg['model'])
+    protocol.setParameters({'house': msg['house'], 'unit': msg['unit'] + 1})
+    msg = protocol.stringForMethod(msg['method'], None)
+    if msg is None:
+        logging.error('Could not encode rf-data')
+        return
+    CommandHandler.rf433.dev.queue(RF433Msg('S', msg['S'], {}))
 ```
 
-When we send `encode_packet("send", S=raw_bytes)`, the decoded dict is
-`{'S': raw_bytes}`.  `handleSend()` tries `msg['protocol']` which raises
-`KeyError`.  The firmware has no `try/except` around this...
+What this proves, line by line:
 
-**Actually:** The `Protocol.protocolInstance(msg['protocol'])` returns `None` for
-missing key, and the `if not protocol: return` guard catches it.  So the raw S
-bytes are **silently dropped** by `handleSend()`.
+1. **`S`-only packets cannot work.** `msg['protocol']` is a plain dict lookup, so
+   a dict without a `protocol` key raises `KeyError` *inside* `handleSend()`
+   before any RF code runs. Earlier text here claimed `protocolInstance()` returns
+   `None`; that is wrong — the exception happens one line earlier, and there is no
+   `try`/`except` around it.
+2. **`S` next to `protocol` is ignored.** The `S` that reaches the radio is
+   `msg['S']` *after* `msg = protocol.stringForMethod(...)`, i.e. the firmware's
+   own encoder output. Our bytes are replaced, not used.
+3. **`P`/`R` cannot be set over UDP.** `RF433Msg` supports a `prefixes` dict and
+   `commandString()` expands it to `R<n>S…+` for the serial line, but
+   `handleSend()` hardcodes `{}`.
+4. **No dim level.** `stringForMethod(method, None)`, and `ProtocolArctech`
+   computes `newLevel = level / 16`, so a `DIM` method raises `TypeError`
+   (`None / 16`). The only dim-ish path is the encoder's own
+   `TURNON` + `selflearning-dimmer` → `DIM(255)` redirect.
+5. **`unit + 1` is applied by the firmware**, confirming the compensation in
+   `_encode_generic_command()`.
+6. **`send` is the only TX verb** on the unauthenticated socket: `handle()` acts
+   on `send` and `B:reglistener` only.
 
-This means raw S bytes must be sent differently on v2/ZNet — they need to go
-through a different code path.  Let me check the Adapter class...
+### The path that does support raw bytes and prefixes
 
-**Update:** After further analysis, the `molobrakos/tellsticknet` reference
-implementation (which works with real Net/ZNet hardware) sends raw S bytes via the
-same `send` command.  The `LiveMessage` encoding handles the `S` key as a
-top-level parameter in the send dict, not nested inside a protocol dict.
+`rf433/RF433.pyc :: DeviceNode._command()` does what `handleSend()` should have
+done:
 
-The firmware's `CommandHandler.handle()` method does `msg.argument(0).toNative()`
-which extracts the first argument as a native dict.  When the dict contains `S`
-as a key, `handleSend()` tries to access `msg['protocol']` and gets `KeyError`
-(not `None`).  However, the `try/except` in the calling code may catch this.
+```python
+protocol.setParameters(self._protocolParams)
+msg = protocol.stringForMethod(action, value)      # real value -> real dim level
+...
+prefixes = {}
+if 'P' in msg: prefixes['P'] = msg['P']
+if 'R' in msg: prefixes['R'] = msg['R']
+if 'S' in msg:
+    self.controller.queue(RF433Msg('S', msg['S'], prefixes, ...))
+```
 
-**Practical conclusion:** Our raw S bytes approach works on real hardware because
-`molobrakos/tellsticknet 0.1.2` has been tested and confirmed working with Net/ZNet.
-The exact firmware code path may involve an uncaught exception that still results
-in the RF chip receiving the data through a different mechanism (possibly the
-`RF433Msg` queue processes `S` bytes directly).
+This is the device-manager path behind the local REST API
+(`/api/device/command|dim`), which is vendor-gated — see
+[`docs/ZNET_LOCAL_ACCESS_RESEARCH.md`](ZNET_LOCAL_ACCESS_RESEARCH.md). The firmware
+*can* send arbitrary encoded frames with repeats and real levels; it just never
+exposes that to the unauthenticated UDP socket.
 
-This remains under investigation.  The key fact is: **raw S bytes work on real
-Net/ZNet hardware** (confirmed by molobrakos users and our own testing).
+### Consequences
+
+- Raw `S` TX on v2/ZNet over UDP is **impossible**, not merely unproven: no packet
+  shape reaches `queue()` with our bytes. The v1's `S` playback branch has no ZNet
+  counterpart.
+- The only routes to raw TX on v2/ZNet remain a patched `handleSend()` in the
+  writable overlay (root shell per unit) or a Duo. See
+  [`docs/NET_V1_RAW_TX_PLAN.md`](NET_V1_RAW_TX_PLAN.md) for what raw TX unlocks and
+  [`docs/ZNET_LOCAL_ACCESS_RESEARCH.md`](ZNET_LOCAL_ACCESS_RESEARCH.md) for access.
+- The old conclusion here — "raw S bytes work on real Net/ZNet hardware" — was a
+  v1 observation generalised to v2/ZNet. It was wrong and has been removed.
+
+The decompiler output is Telldus' Python 2.7 source. Keep it out of the repo
+(`znet-decompile/` is git-ignored).
