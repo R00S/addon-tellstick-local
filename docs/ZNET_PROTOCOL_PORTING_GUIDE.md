@@ -112,7 +112,7 @@ The only reliable approach for each version is:
 
 | Protocol       | Net/ZNet TX Status | Method Used                                    | Source                                         |
 | -------------- | ----------------- | ---------------------------------------------- | ---------------------------------------------- |
-| `arctech`      | ✅ Working        | Native dict (on/off/learn); DIM→full brightness via TURNON+selflearning-dimmer model. On **TellStick Net v1** dim is raw `S` bytes instead (see below). **Confirmed:** raw S-only packets (no `protocol` key) silently dropped — `handleSend()` raises `KeyError('protocol')` before RF chip is reached. | `tellstick-server/ProtocolArctech.py` |
+| `arctech`      | ✅ Working        | Native dict (on/off/learn); DIM→full brightness via TURNON+selflearning-dimmer model. On **TellStick Net v1** dim is raw `S` bytes instead (see below). **Confirmed (2026-11 decompile):** S-only packets raise an uncaught `KeyError('protocol')` in `handleSend()` before the RF chip, and `S` sent alongside `protocol` is ignored (the firmware re-encodes). | `tellstick-server/ProtocolArctech.py` |
 | `comen`        | ✅ Working        | Native dict via arctech with house shift transformation: `(house << 2) + 2` | `tellstick-server/ProtocolComen.py`¹           |
 | `everflourish` | 🔬 Testing²       | Native dict variants (ef_n*); raw S-only variants have no proven success | `tellstick-server/ProtocolEverflourish.py` |
 | `fuhaote`      | ❌ **Needs port** | Falls through to generic dict (BROKEN) | `tellstick-server/ProtocolFuhaote.py`          |
@@ -161,6 +161,13 @@ So our integration maps any dim-to-level request to TURNON with
 `model="selflearning-dimmer"`, which makes the receiver go to **full brightness**.
 The brightness slider in HA moves, but the physical device always goes to 100%
 (level 255) for any non-zero brightness value.  TURNOFF (level 0) works correctly.
+
+> **The firmware can do more than the UDP socket allows.**
+> `rf433/RF433.pyc :: DeviceNode._command()` passes the real value as the DIM
+> level and forwards `P`/`R` prefixes; only the unauthenticated `handleSend()`
+> path drops both (it hardcodes `prefixes={}`). That path belongs to the
+> vendor-gated local REST API — see
+> [`docs/ZNET_FIRMWARE_ANALYSIS.md`](ZNET_FIRMWARE_ANALYSIS.md).
 
 ### Arctech dim on TellStick Net v1 — raw `S` bytes
 
