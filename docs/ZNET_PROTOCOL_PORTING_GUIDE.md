@@ -112,7 +112,7 @@ The only reliable approach for each version is:
 
 | Protocol       | Net/ZNet TX Status | Method Used                                    | Source                                         |
 | -------------- | ----------------- | ---------------------------------------------- | ---------------------------------------------- |
-| `arctech`      | ✅ Working        | Native dict (on/off/learn); DIM→full brightness via TURNON+selflearning-dimmer model. **Confirmed:** raw S-only packets (no `protocol` key) silently dropped — `handleSend()` raises `KeyError('protocol')` before RF chip is reached. | `tellstick-server/ProtocolArctech.py` |
+| `arctech`      | ✅ Working        | Native dict (on/off/learn); DIM→full brightness via TURNON+selflearning-dimmer model. On **TellStick Net v1** dim is raw `S` bytes instead (see below). **Confirmed:** raw S-only packets (no `protocol` key) silently dropped — `handleSend()` raises `KeyError('protocol')` before RF chip is reached. | `tellstick-server/ProtocolArctech.py` |
 | `comen`        | ✅ Working        | Native dict via arctech with house shift transformation: `(house << 2) + 2` | `tellstick-server/ProtocolComen.py`¹           |
 | `everflourish` | 🔬 Testing²       | Native dict variants (ef_n*); raw S-only variants have no proven success | `tellstick-server/ProtocolEverflourish.py` |
 | `fuhaote`      | ❌ **Needs port** | Falls through to generic dict (BROKEN) | `tellstick-server/ProtocolFuhaote.py`          |
@@ -161,6 +161,28 @@ So our integration maps any dim-to-level request to TURNON with
 `model="selflearning-dimmer"`, which makes the receiver go to **full brightness**.
 The brightness slider in HA moves, but the physical device always goes to 100%
 (level 255) for any non-zero brightness value.  TURNOFF (level 0) works correctly.
+
+### Arctech dim on TellStick Net v1 — raw `S` bytes
+
+The v1 C firmware (`tellsticknet.c :: send()`) checks `protocol` first and, when it
+is `arctech`, requires `model == "selflearning"` exactly before calling
+`sendArctechSelflearning()`; it returns without looking at `S`. So:
+
+- A `model="selflearning-dimmer"` packet is **dropped before RF** (no blink, no
+  effect) — this was issue #130.
+- The native handler only has on/nothing (`method == 1` → one-frame, else
+  zero-frame), so even the right model cannot dim.
+
+Dim on v1 therefore uses the `S` playback path, which `rfSend()` replays
+regardless of protocol. The packet must contain **only** `S` (no `protocol` key),
+and `P`/`R` are optional (firmware defaults apply). `_arctech_dim_pulse_train()`
+in `net_client.py` builds the 147-byte train (26-bit house, group bit, dim
+indicator, 4-bit unit, 4-bit level = `level // 16`), a port of
+molobrakos/tellsticknet `protocols/arctech.py`.
+
+The controller picks the path from the UDP discovery product name
+(`TellStickNet` = v1, `TellstickNetV2`/`TellstickZnet` = Python firmware), so
+v2/ZNet keep the native `TURNON → DIM(255)` behaviour.
 
 ## How to Port a Protocol — Step by Step
 

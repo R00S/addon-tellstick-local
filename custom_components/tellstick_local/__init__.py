@@ -868,7 +868,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         from .net_client import TellStickNetController  # noqa: PLC0415
 
         mac = entry.data.get("mac", "")
-        controller: Any = TellStickNetController(host=host, mac=mac)
+        controller: Any = TellStickNetController(
+            host=host, mac=mac, product=entry.data.get("product", "")
+        )
         try:
             await asyncio.wait_for(controller.connect(), timeout=10)
         except (asyncio.TimeoutError, OSError) as err:

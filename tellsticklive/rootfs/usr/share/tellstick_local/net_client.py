@@ -1168,10 +1168,18 @@ _METHOD_INT: dict[str, int] = {
 def _arctech_dim_pulse_train(house: int, unit0: int, level: int) -> bytes:
     """Build raw arctech selflearning dim pulse train (unit is 0-indexed).
 
-    NOTE: This function is no longer called.  Raw S-byte payloads sent via the
-    ZNet UDP "send" command are silently dropped: ``handleSend()`` crashes with
-    a KeyError on the missing ``house`` key before the RF chip is ever reached.
-    Kept for reference only.  See docs/ZNET_PROTOCOL_PORTING_GUIDE.md.
+    Used only for **TellStick Net v1** (C firmware).  Its native ``send``
+    handler only implements on/off and rejects any model other than
+    ``selflearning``, so a dimmer frame must be played back as raw pulses via
+    the ``S`` key (``rfSend()``), with no ``protocol`` key in the same packet.
+
+    Port of molobrakos/tellsticknet ``protocols/arctech.py`` encode(), which in
+    turn mirrors telldus-core ``ProtocolArctech::stringSelflearningForCode()``.
+    Level is 0-255 and is quantised to the receiver's 16 hardware steps.
+
+    Not used on v2/ZNet: there ``handleSend()`` ignores ``S`` when a
+    ``protocol`` key is present and crashes with ``KeyError('protocol')`` when
+    it is absent.  See docs/ZNET_PROTOCOL_PORTING_GUIDE.md.
     """
     code = _SHORT + bytes([255])
     for i in range(25, -1, -1):
@@ -1187,11 +1195,12 @@ def _arctech_dim_pulse_train(house: int, unit0: int, level: int) -> bytes:
 
 
 def _encode_arctech_command(
-    model: str, house: Any, unit: Any, method_name: str, param: Any = None
+    model: str, house: Any, unit: Any, method_name: str, param: Any = None,
+    *, net_v1: bool = False,
 ) -> dict | None:
-    """Encode an arctech RF command as a native firmware dict.
+    """Encode an arctech RF command for the Net/ZNet ``send`` command.
 
-    Returns an OrderedDict for the ZNet ``handleSend()`` path, or None if the
+    Returns an OrderedDict for the firmware ``send`` handler, or None if the
     combination is not supported.
 
     Variable-level dimming is NOT supported via the ZNet UDP interface:
@@ -1201,6 +1210,12 @@ def _encode_arctech_command(
     sending TURNON with ``model="selflearning-dimmer"``: the ZNet firmware's
     built-in workaround converts that to ``DIM(255)`` (full brightness).
     DIM(0) is mapped to TURNOFF above.
+
+    TellStick Net v1 (``net_v1=True``) cannot use that workaround at all: its
+    C ``send()`` requires ``model == "selflearning"`` and only checks
+    ``method == 1``, so a dimmer-model packet is dropped before RF and a DIM
+    method would be sent as an OFF frame.  On v1 dim is therefore returned as a
+    raw pulse-train dict (``S`` key only, no ``protocol`` key).  Issue #130.
     """
     method_int = _METHOD_INT.get(method_name)
     if method_int is None:
@@ -1233,6 +1248,24 @@ def _encode_arctech_command(
             house=house_val,
             unit=unit0,
             method=method_int,
+        )
+    if method_int == _DIM and net_v1:
+        # TellStick Net v1: raw pulse playback is the only dim path (see the
+        # docstring).  The dict must NOT carry a protocol key, otherwise the C
+        # handler takes the native arctech branch and returns before "S" is
+        # looked at.
+        if not isinstance(house_val, int):
+            _LOGGER.warning(
+                "Arctech dim (Net v1): non-integer house %r; codeswitch "
+                "does not support dim", house,
+            )
+            return None
+        try:
+            level = max(0, min(255, int(param)))
+        except (TypeError, ValueError):
+            level = 255
+        return OrderedDict(
+            S=_arctech_dim_pulse_train(house_val, unit0, level)
         )
     if method_int == _DIM:
         # Variable-level dimming is impossible via ZNet UDP (handleSend does not
@@ -2928,17 +2961,24 @@ class TellStickNetController:
     - Incoming "7:RawData" packets are decoded with protocol-specific decoders
       and dispatched as RawDeviceEvent / SensorEvent objects.
     - Arctech selflearning on/off uses native firmware dict encoding.
-      Dim uses raw pulse-train bytes (S key), matching molobrakos behaviour.
+      Dim is encoding-dependent: v2/ZNet get the native TURNON→DIM(255) dict,
+      TellStick Net v1 gets a raw pulse train (S key) because its firmware
+      rejects the dimmer model outright (issue #130).
     """
 
     host: str
     mac: str = ""
+    # Product name from UDP discovery: "TellStickNet" (v1 C firmware),
+    # "TellstickNetV2" or "TellstickZnet" (Python firmware).  Empty until
+    # known — see _ensure_product().
+    product: str = ""
 
     _hub: _NetUdpHub | None = field(default=None, init=False, repr=False)
     _reregister_task: asyncio.Task | None = field(
         default=None, init=False, repr=False
     )
     _started: bool = field(default=False, init=False, repr=False)
+    _product_checked: bool = field(default=False, init=False, repr=False)
     _pending_raw: list[bytes] = field(default_factory=list, init=False, repr=False)
     # Diagnostics: wall-clock time of the last event packet received for this
     # entry and a running count (surfaced by the debug_connection service).
@@ -2976,6 +3016,33 @@ class TellStickNetController:
         if self._hub is not None:
             await self._hub.unsubscribe(self)
             self._hub = None
+
+    async def _ensure_product(self) -> str:
+        """Return this unit's product name, discovering it once if unknown.
+
+        Entries created before the product was stored in the config entry have
+        no product name, so a single UDP discovery broadcast is sent the first
+        time it is needed (a v1-only dim decision).  Failure is non-fatal: an
+        empty result keeps the v2/ZNet behaviour.
+        """
+        if self.product or self._product_checked:
+            return self.product
+        self._product_checked = True
+        try:
+            async for ip, mac, product in discover(timeout=2.0):
+                if ip == self.host or (
+                    self.mac and mac and mac.lower() == self.mac.lower()
+                ):
+                    self.product = product
+                    _LOGGER.debug(
+                        "Net: %s identified as %s", self.host, product
+                    )
+                    break
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug(
+                "Net: product discovery failed for %s: %s", self.host, err
+            )
+        return self.product
 
     def start_event_listener(self) -> None:
         """Process buffered packets and start the re-registration heartbeat.
@@ -3124,9 +3191,15 @@ class TellStickNetController:
                 )
             )
         elif protocol == "arctech":
-            # Arctech-specific encoder.  Always returns a native firmware dict
-            # (protocol/model/house/unit/method) for all methods including dim.
-            arctech_dict = _encode_arctech_command(model, house, unit, method_name, param)
+            # Arctech-specific encoder.  On/off/learn are always a native
+            # firmware dict; dim is a native TURNON→DIM(255) on v2/ZNet but a
+            # raw S pulse train on TellStick Net v1 (issue #130).
+            net_v1 = False
+            if method_name == "dim" and int(param or 0) > 0:
+                net_v1 = (await self._ensure_product()) == "TellStickNet"
+            arctech_dict = _encode_arctech_command(
+                model, house, unit, method_name, param, net_v1=net_v1
+            )
             if arctech_dict is None:
                 _LOGGER.warning(
                     "Net arctech: unsupported method=%s model=%s", method_name, model
