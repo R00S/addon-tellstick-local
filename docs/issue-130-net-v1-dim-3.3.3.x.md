@@ -89,6 +89,15 @@ directories identical (ignoring `__pycache__`).
 
 ### Not done / next steps
 
-- Ask the #130 reporter to test a 3.3.3.1 build on the dev channel.
-- If v1 dim works, consider gating on/off/learn to raw as well (v1 native
-  LEARN currently transmits an OFF frame — pre-existing, separate issue).
+- Ask the #130 reporter to test a 3.3.3.1 build on the dev channel. **This is
+  the decision gate for the follow-on work below.**
+- If v1 dim is confirmed on hardware: implement **raw-first TX for TellStick Net
+  v1** — the v1 firmware replays arbitrary `S` pulse bytes, so every protocol
+  the Duo can transmit becomes reachable on v1 (and stays unreachable on
+  v2/ZNet). Plan, protocol table and verification steps:
+  [`docs/NET_V1_RAW_TX_PLAN.md`](NET_V1_RAW_TX_PLAN.md).
+- Raw-first also fixes v1 `learn` (the native dict currently transmits an OFF
+  frame — pre-existing, separate issue).
+- Recruiting more Net v1 owners as testers is part of that plan: they are the
+  only people who can unlock per-protocol TX support, and the #130 report shows
+  they are still active.

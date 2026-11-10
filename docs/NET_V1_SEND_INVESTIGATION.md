@@ -307,3 +307,24 @@ v2 Python firmware pushes `RawData` to `self.clientAddress` (the `reglistener`
 source) — neither requires the client to bind 42314. The current 42314 bind
 exists only to catch hypothetical broadcasts, and on v1 it is precisely what
 causes the collision.
+
+## Resolution (2026-11)
+
+Hypothesis 1 above is **disproven**: production v1 firmware (firmware 17) does
+implement local `send`. Confirmed on hardware in issue #130 — after the #114
+listener fix, arctech selflearning on/off via the native dict blinks the LED and
+the receiver responds.
+
+What stays different from v2/ZNet is the *scope* of each path:
+
+- Native dict on v1 accepts only `protocol=arctech` + `model=selflearning` and
+  can only transmit on/off. Dimmer models are dropped before RF.
+- Raw `S` playback on v1 accepts any pulse train (199-byte limit) and supports
+  `P`/`R`, so it is the equivalent of the Duo's raw command path. v2/ZNet has
+  no such path: `handleSend()` ignores `S`.
+
+Dim now uses the raw path on v1 (3.3.3.1). The plan for using the same path to
+bring Duo-level protocol support to v1 — and why that workload is reusable for
+v2/ZNet only if someone applies the overlay patch described in
+`docs/ZNET_LOCAL_ACCESS_RESEARCH.md` — is in
+[`docs/NET_V1_RAW_TX_PLAN.md`](NET_V1_RAW_TX_PLAN.md).

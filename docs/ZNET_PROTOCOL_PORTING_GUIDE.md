@@ -184,6 +184,12 @@ The controller picks the path from the UDP discovery product name
 (`TellStickNet` = v1, `TellstickNetV2`/`TellstickZnet` = Python firmware), so
 v2/ZNet keep the native `TURNON → DIM(255)` behaviour.
 
+> **Wider implication:** because v1 replays arbitrary `S` bytes, raw-first TX on
+> v1 can reach every protocol the Duo supports, including the ones marked
+> "Needs port" below. Plan and protocol status table:
+> [`docs/NET_V1_RAW_TX_PLAN.md`](NET_V1_RAW_TX_PLAN.md). This does **not** apply
+> to v2/ZNet, whose handler ignores `S`.
+
 ## How to Port a Protocol — Step by Step
 
 ### Step 1: Find the Net/ZNet Firmware Source
