@@ -483,7 +483,9 @@ learn-signal options.
 > appear automatically as sensor entities.
 
 > **Arctech dimmer note:** Variable-brightness dimming (`selflearning-dimmer`) works fully
-> on **TellStick Duo** only. On **TellStick Net / ZNet**, dimmers are limited to on/off.
+> on **TellStick Duo**. It also works on an original **TellStick Net (v1)** from v3.3.3.1
+> (dim frames are sent as raw pulse bytes there). On **ZNet / Net v2** the firmware
+> ignores the level, so any brightness above 0 goes to full brightness.
 
 > **Sartano note:** Sartano/codeswitch auto-detection is **off by default** because
 > `telldusd` often falsely decodes arctech signals as sartano. Enable the
@@ -663,13 +665,18 @@ the correct one for your device brand. For the false-positive ones, check
 
 ## 15. Known limitations
 
-### Arctech dimmers on TellStick Net / ZNet — on/off only
+### Arctech dimmers on ZNet / Net v2 — on/off only
 
-The **TellStick Net / ZNet** firmware cannot perform variable-brightness dimming for
-arctech `selflearning-dimmer` devices. Dimmer entities still appear in HA, but the
-brightness slider has no effect on ZNet.
+The **ZNet / TellStick Net v2** Python firmware cannot perform variable-brightness
+dimming for arctech `selflearning-dimmer` devices: the level is ignored, so any
+brightness above 0 goes to full brightness.
 
-**Workaround:** Use a **TellStick Duo** (USB) as your primary device, and add the
+An original **TellStick Net (v1, C firmware)** *can* dim — since v3.3.3.1 those
+dimmer frames are sent as raw pulse bytes, and the brightness slider works. If a
+v1 dimmer still does not dim, the unit's product name could not be detected;
+check the log and report it in a GitHub issue.
+
+**Workaround (ZNet / Net v2):** Use a **TellStick Duo** (USB) as your primary device, and add the
 Net/ZNet as a **mirror/range extender** — the Duo handles all dimming while the
 Net/ZNet relays on/off commands.
 

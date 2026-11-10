@@ -780,6 +780,9 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             CONF_BACKEND: BACKEND_NET,
                             CONF_HOST: self._host,
                             "mac": self._net_mac,
+                            # Product decides the TX encoding on this firmware
+                            # family (TellStick Net v1 vs v2/ZNet), see #130.
+                            "product": self._net_product,
                         },
                         options={CONF_DEVICES: {}},
                     )

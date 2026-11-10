@@ -151,6 +151,52 @@ def run_tests() -> None:
             )
             report("dim sent as TURNON (firmware DIM(255))", result.get("method") == _TURNON)
 
+        # Dim on TellStick Net v1: raw S pulse train, no protocol key, because
+        # the v1 C send() handler only accepts model="selflearning" and drops
+        # everything else before RF (issue #130).
+        train = _encode_arctech_command(
+            "selflearning-dimmer", "12345", "1", "dim", 128, net_v1=True
+        )
+        report("dim (Net v1) returns dict", isinstance(train, dict), f"type={type(train)}")
+        if isinstance(train, dict):
+            report("dim (Net v1) is S-only", list(train) == ["S"], f"keys={list(train)}")
+            pulses = train.get("S")
+            report("dim (Net v1) S is bytes", isinstance(pulses, bytes), f"type={type(pulses)}")
+            report(
+                "dim (Net v1) pulse train is 147 bytes",
+                isinstance(pulses, bytes) and len(pulses) == 147,
+                f"len={len(pulses) if isinstance(pulses, bytes) else '?'}",
+            )
+            report(
+                "dim (Net v1) train starts 18ff and ends 18",
+                isinstance(pulses, bytes)
+                and pulses[:2] == b"\x18\xff"
+                and pulses[-1:] == b"\x18",
+            )
+            level_hi = _encode_arctech_command(
+                "selflearning-dimmer", "12345", "1", "dim", 255, net_v1=True
+            )
+            level_lo = _encode_arctech_command(
+                "selflearning-dimmer", "12345", "1", "dim", 16, net_v1=True
+            )
+            report(
+                "dim (Net v1) level changes the frame",
+                isinstance(level_hi, dict)
+                and isinstance(level_lo, dict)
+                and level_hi.get("S") != pulses
+                and level_lo.get("S") != level_hi.get("S"),
+            )
+
+        # v1 dim at level 0 is still TURNOFF via the native dict
+        level_zero = _encode_arctech_command(
+            "selflearning-dimmer", "12345", "1", "dim", 0, net_v1=True
+        )
+        report(
+            "dim (Net v1) level 0 -> TURNOFF",
+            isinstance(level_zero, dict) and level_zero.get("method") == 2,
+            f"result={level_zero}",
+        )
+
         # Unsupported method
         result = _encode_arctech_command("selflearning-switch", "12345", "1", "invalid")
         report("invalid method returns None", result is None)
