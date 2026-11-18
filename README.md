@@ -603,7 +603,7 @@ brightness slider has no effect.
 If you have both a Duo and a Net/ZNet, add the Net/ZNet as a **mirror/range extender**
 so it only relays on/off commands and the Duo handles all dimming.
 
-### Luxorparts / Cleverio 50969, 50970, 50972 — Beta (Duo only)
+### Luxorparts / Cleverio 50969, 50970, 50972 — Beta (Duo / Net v1)
 
 These Luxorparts / Cleverio 1000W remote-controlled sockets work on
 **TellStick Duo** and on an original **TellStick Net (v1)** from v3.4.0.0, using raw RF
