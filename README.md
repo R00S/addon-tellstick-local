@@ -10,10 +10,25 @@ Home assistant support for tellsticks (duo, net, znet) without no need for Telld
 > decoding work for all major protocols. A wide range of scenarios has been tested, but
 > edge cases may remain. Feedback and bug reports are very welcome.
 
+> [!NOTE]
+> **🧪 TellStick Net (v1) — full Duo protocol support is in testing on the dev channel**
+> An original **TellStick Net (v1)** replays arbitrary raw RF pulse trains, so the dev build
+> `3.4.0.1.20261118140136` sends *every* TX protocol the Duo supports: arctech (on/off, **dim**,
+> learn, bell, code switch), comen, everflourish, fuhaote, brateck, hasta (v1 + v2), ikea,
+> risingsun, sartano, silvanchip, upm, waveman, x10 and yidong — plus Luxorparts, Generic RF
+> replay and the Tuya/Kjell curtain motor. **This is not in a stable release yet** (newest
+> stable is `3.3.3.0`). To test it, add the dev repository
+> `https://github.com/R00S/addon-tellsticklive-roosfork` under **Settings → Apps → ⋮ →
+> Repositories** and install the version shown there. Status, honestly: only arctech on/off
+> and dim are confirmed on real v1 hardware so far; the other protocols are packet-level
+> ports of the Duo's own encoders and still need a receiver check. Please report what works —
+> and what does not — in [#130](https://github.com/R00S/addon-tellstick-local/issues/130).
+
 > [!CAUTION]
-> **🟡 Luxorparts / Cleverio 50969, 50970, 50972 — Release candidate (Duo only)** – On/off works
-> on TellStick Duo using raw RF pulse encoding with pre-captured Telldus Live codes
-> (LPD 1–24). Not yet available on TellStick Net/ZNet. See [details below](#known-limitations).
+> **🟡 Luxorparts / Cleverio 50969, 50970, 50972 — Release candidate (Duo / Net v1)** – On/off
+> works on TellStick Duo, and on an original TellStick Net (v1) in the dev build above, using
+> raw RF pulse encoding with pre-captured Telldus Live codes (LPD 1–24). Not available on
+> ZNet / Net v2. See [details below](#known-limitations).
 
 ![Project Stage][project-stage-shield]
 
@@ -53,8 +68,9 @@ Live account, and no YAML file editing.
 >   major protocols (arctech, everflourish, waveman, sartano, x10, hasta, brateck). Sensor
 >   decoding works for fineoffset, mandolyn, and oregon. Some edge cases may remain.
 >   No Telldus Live account needed — the integration talks to the Net/ZNet via local UDP.
->   **Note:** arctech dimmers (`selflearning-dimmer`) only support on/off on Net/ZNet —
->   variable-brightness dimming requires a **TellStick Duo**.
+>   **Note:** arctech dimmers (`selflearning-dimmer`) only support on/off on ZNet / Net v2 —
+>   variable-brightness dimming requires a **TellStick Duo**, or an original **TellStick Net
+>   (v1)** running the dev build described at the top of this page.
 > - **Mixing Duo and Net/ZNet:** If you have both, use the **Duo as your primary device**
 >   and add the Net/ZNet as a mirror/range extender. The Duo supports full dimming; the
 >   Net/ZNet does not.
