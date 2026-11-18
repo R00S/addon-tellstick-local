@@ -1341,8 +1341,9 @@ def _register_poc_send_service(hass: HomeAssistant) -> None:
         controller = _poc_pick_controller(hass, call.data.get("entry_id"))
         if controller is None:
             raise HomeAssistantError(
-                "poc_send_blind needs a TellStick Duo entry: a Net/ZNet cannot "
-                "send raw pulse trains through the local UDP API"
+                "poc_send_blind needs a TellStick Duo or TellStick Net v1 "
+                "entry: ZNet / Net v2 cannot send raw pulse trains through "
+                "the local UDP API"
             )
 
         try:
@@ -1402,8 +1403,9 @@ def _register_poc_sweep_service(hass: HomeAssistant) -> None:
         controller = _poc_pick_controller(hass, call.data.get("entry_id"))
         if controller is None:
             raise HomeAssistantError(
-                "poc_sweep_blind needs a TellStick Duo entry: a Net/ZNet cannot "
-                "send raw pulse trains through the local UDP API"
+                "poc_sweep_blind needs a TellStick Duo or TellStick Net v1 "
+                "entry: ZNet / Net v2 cannot send raw pulse trains through "
+                "the local UDP API"
             )
 
         try:

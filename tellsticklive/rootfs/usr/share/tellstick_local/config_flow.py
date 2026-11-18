@@ -3440,7 +3440,15 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         )
 
         entry = self._get_entry()
-        if entry.data.get(CONF_BACKEND, BACKEND_DUO) != BACKEND_DUO:
+        backend = entry.data.get(CONF_BACKEND, BACKEND_DUO)
+        # Raw pulse TX needs a Duo, or an original TellStick Net (v1): its C
+        # firmware replays S packets, which is exactly what the curtain frames
+        # are.  ZNet / Net v2 drop them, so they still abort.
+        net_v1 = (
+            backend == BACKEND_NET
+            and entry.data.get("product", "") == "TellStickNet"
+        )
+        if backend != BACKEND_DUO and not net_v1:
             return self.async_abort(reason="poc_requires_duo")
 
         errors: dict[str, str] = {}

@@ -2636,6 +2636,665 @@ from .const import (  # noqa: E402 — grouped with the block that uses them
 # PPM: t_pulse ≈ 390 µs → 39 ticks, t_gap_short ≈ 350 µs → 35 ticks,
 # t_gap_long ≈ 1110 µs → 111 ticks, inter-packet gap ≈ 2250 µs → 225 ticks.
 
+# ---------------------------------------------------------------------------
+# Net v1 raw pulse-train encoders — full Duo protocol parity
+#
+# The original TellStick Net (product "TellStickNet", C firmware) replays any
+# S-only packet byte-for-byte on the RF chip via rfSend(), exactly like a Duo
+# does with tdSendRawCommand.  Its native dict handler understands arctech
+# selflearning on/off only, so every other protocol — and arctech dim — has to
+# be sent as raw pulses.
+#
+# Every encoder below is a port of the telldus-core C++ implementation the Duo
+# path uses (service/Protocol*.cpp, telldus-core 2.1.3-beta1, shipped in this
+# repo as telldus-core_2.1.3-beta1.orig.tar.gz).  The telldus transport markers
+# are removed: the leading 'S' (raw-send opcode) and the trailing '+' (frame
+# terminator) are Duo wire syntax, not RF timing bytes.
+#
+# arctech follows molobrakos/tellsticknet protocols/nexa.py, the layout already
+# confirmed on real v1 hardware in issue #130 (dim) and probe variant D (raw S
+# on/off).
+#
+# Each encoder returns send arguments (S plus R/P where the protocol needs
+# them) or None when the method/model is unsupported.  The v1 firmware copies
+# the train into sendPacket[200], so frames over 199 bytes are refused rather
+# than truncated.
+#
+# v2/ZNet never takes this path: handleSend() ignores S when a protocol key is
+# present and raises KeyError when it is absent.
+# ---------------------------------------------------------------------------
+
+_NET_V1_MAX_PULSES = 199
+
+
+# arctech code-switch framing (telldus-core ProtocolNexa::getCodeSwitchTuple).
+# The timing values are printable ASCII on the wire: '$' = 36, 'k' = 107.
+_NEXA_TUPLE_ONE = b"$kk$"
+_NEXA_TUPLE_ZERO = b"$k$k"
+
+
+def _pulse_int(value: Any, default: int = 0) -> int:
+    """Best-effort int conversion for house/unit/level values."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _s_only(pulses: bytes | None, **extra: Any) -> dict[str, Any] | None:
+    """Wrap a raw train in send arguments, refusing oversized frames."""
+    if not pulses:
+        return None
+    if len(pulses) > _NET_V1_MAX_PULSES:
+        _LOGGER.warning(
+            "Net v1: raw frame is %d bytes (limit %d); refusing to send",
+            len(pulses), _NET_V1_MAX_PULSES,
+        )
+        return None
+    return dict(S=pulses, **extra)
+
+
+def _nexa_tuple(value: int) -> bytes:
+    """Port of ProtocolNexa::getCodeSwitchTuple (4 bits, LSB first)."""
+    out = b""
+    for _ in range(4):
+        out += _NEXA_TUPLE_ONE if value & 1 else _NEXA_TUPLE_ZERO
+        value >>= 1
+    return out
+
+
+def _arctech_selflearning_train(
+    house: int, unit0: int, method_name: str, param: Any = None
+) -> bytes | None:
+    """Raw arctech selflearning train (molobrakos nexa.encode, hardware-proven)."""
+    code = _SHORT + bytes([255])
+    for i in range(25, -1, -1):
+        code += _ONE if house & (1 << i) else _ZERO
+    code += _ZERO                                    # group bit = 0
+    if method_name == "dim":
+        code += _SHORT + _SHORT + _SHORT + _SHORT    # dim indicator
+        level = max(0, min(255, _pulse_int(param, 255))) // 16
+    elif method_name == "turnoff":
+        code += _ZERO
+        level = 0
+    elif method_name in ("turnon", "bell", "learn"):
+        # LEARN is a plain ON frame in telldus-core (ProtocolNexa).
+        code += _ONE
+        level = 0
+    else:
+        return None
+    for i in range(3, -1, -1):
+        code += _ONE if unit0 & (1 << i) else _ZERO
+    if method_name == "dim":
+        for i in range(3, -1, -1):
+            code += _ONE if level & (1 << i) else _ZERO
+    return code + _SHORT
+
+
+def _arctech_codeswitch_train(
+    house: Any, unit: Any, method_name: str, *, bell: bool = False
+) -> bytes | None:
+    """Raw arctech code-switch (and bell) train — ProtocolNexa."""
+    house_str = str(house or "").strip().upper()
+    if not house_str or not house_str[0].isalpha():
+        return None
+    int_house = max(0, min(15, ord(house_str[0]) - ord("A")))
+    if bell:
+        unit_seven = _nexa_tuple(7)
+        return (
+            _nexa_tuple(int_house) + _nexa_tuple(int_house)
+            + unit_seven + unit_seven
+            + b"$kk$$kk$$kk$$kk$$k"
+        )
+    unit0 = max(0, min(15, _pulse_int(unit, 1) - 1))
+    code = _nexa_tuple(int_house) + _nexa_tuple(unit0)
+    if method_name == "turnon":
+        code += b"$k$k$kk$$kk$$kk$$k"
+    elif method_name == "turnoff":
+        code += b"$k$k$kk$$kk$$k$k$k"
+    else:
+        return None
+    return code
+
+
+def _waveman_train(house: Any, unit: Any, method_name: str) -> bytes | None:
+    """Raw waveman train — ProtocolWaveman (arctech framing, own OFF code).
+
+    ON reuses ProtocolArctech::getStringCodeSwitch; ProtocolWaveman overrides
+    only getOffCode() with nine short pairs.
+    """
+    house_str = str(house or "").strip().upper()
+    if not house_str or not house_str[0].isalpha():
+        return None
+    int_house = max(0, min(15, ord(house_str[0]) - ord("A")))
+    unit0 = max(0, min(15, _pulse_int(unit, 1) - 1))
+    code = _nexa_tuple(int_house) + _nexa_tuple(unit0)
+    if method_name == "turnon":
+        return code + b"$k$k$kk$$kk$$kk$$k"
+    if method_name == "turnoff":
+        return code + b"$k" * 9
+    return None
+
+
+def _sartano_train(code_str: str, method_name: str) -> bytes | None:
+    """Raw sartano train — ProtocolSartano::getStringForCode."""
+    if not code_str or any(ch not in "01" for ch in code_str):
+        return None
+    out = b""
+    for ch in code_str:
+        out += b"$k$k" if ch == "1" else b"$kk$"
+    if method_name == "turnon":
+        out += b"$k$k$kk$$k"
+    elif method_name == "turnoff":
+        out += b"$kk$$k$k$k"
+    else:
+        return None
+    return out
+
+
+def _yidong_train(unit: Any, method_name: str) -> bytes | None:
+    """Raw yidong (Goobay) train — ProtocolYidong, sartano framing."""
+    patterns = {1: "0010", 2: "0001", 3: "0100", 4: "1000"}
+    unit1 = max(1, min(4, _pulse_int(unit, 1)))
+    return _sartano_train("111" + patterns[unit1] + "110", method_name)
+
+
+def _upm_train(house: Any, unit: Any, method_name: str) -> bytes | None:
+    """Raw upm train — ProtocolUpm::getStringForMethod."""
+    b1, b0, start = b"~;", b";~", b";"
+    code = _pulse_int(house)
+    house_part = b""
+    for _ in range(12):
+        house_part = (b1 if code & 1 else b0) + house_part
+        code >>= 1
+    if method_name in ("turnon", "learn"):
+        cmd = 2
+    elif method_name == "turnoff":
+        cmd = 0
+    else:
+        return None
+    cmd = (cmd << 2) + max(0, min(3, _pulse_int(unit, 1) - 1))
+
+    out = start + house_part
+    check1 = check2 = 0
+    for i in range(6):
+        if cmd & 1:
+            if i % 2 == 0:
+                check1 += 1
+            else:
+                check2 += 1
+            out += b1
+        else:
+            out += b0
+        cmd >>= 1
+    out += b0 if check1 % 2 == 0 else b1
+    out += b0 if check2 % 2 == 0 else b1
+    return out
+
+
+def _fuhaote_train(code_str: str, method_name: str) -> bytes | None:
+    """Raw fuhaote (HQ) train — ProtocolFuhaote::getStringForMethod."""
+    if not code_str or len(code_str) < 10 or any(
+        ch not in "01" for ch in code_str[:10]
+    ):
+        return None
+    b0 = bytes([19, 58, 58, 19])          # S L L S
+    b1 = bytes([58, 19, 58, 19])          # L S L S
+    unit_one = bytes([19, 58, 19, 58])    # S L S L
+    out = b""
+    for ch in code_str[:5]:
+        out += b0 if ch == "0" else b1
+    for ch in code_str[5:10]:
+        out += b0 if ch == "0" else unit_one
+    if method_name == "turnon":
+        out += bytes([19, 58, 58, 19, 19, 58, 19, 58])
+    elif method_name == "turnoff":
+        out += bytes([19, 58, 19, 58, 19, 58, 58, 19])
+    else:
+        return None
+    out += bytes([19])
+    return out
+
+
+def _brateck_train(house: Any, method_name: str) -> bytes | None:
+    """Raw brateck train — ProtocolBrateck::getStringForMethod."""
+    house_str = str(house or "")
+    if not house_str:
+        return None
+    s, l = ord("!"), ord("V")
+    b1 = bytes([l, s, l, s])
+    bx = bytes([s, l, l, s])
+    b0 = bytes([s, l, s, l])
+    up = bytes([l, s, l, s, s, l, s, l, s, l, s, l, s, l, s, l, s])
+    stop = bytes([s, l, s, l, l, s, l, s, s, l, s, l, s, l, s, l, s])
+    down = bytes([s, l, s, l, s, l, s, l, s, l, s, l, l, s, l, s, s])
+    out = b""
+    for ch in house_str:
+        if ch == "1":
+            out = b1 + out
+        elif ch == "-":
+            out = bx + out
+        elif ch == "0":
+            out = b0 + out
+    if method_name == "up":
+        return out + up
+    if method_name == "down":
+        return out + down
+    if method_name == "stop":
+        return out + stop
+    return None
+
+
+_RISINGSUN_ON = (
+    "110110", "001110", "100110", "010110",
+    "111001", "000101", "101001", "011001",
+    "110000", "001000", "100000", "010000",
+    "111100", "000010", "101100", "011100",
+)
+_RISINGSUN_OFF = (
+    "111110", "000001", "101110", "011110",
+    "110101", "001101", "100101", "010101",
+    "111000", "000100", "101000", "011000",
+    "110010", "001010", "100010", "010010",
+)
+
+
+def _risingsun_selflearning_train(
+    house: Any, unit: Any, method_name: str
+) -> bytes | None:
+    """Raw risingsun selflearning train — ProtocolRisingSun."""
+    int_house = max(0, min(33554431, _pulse_int(house, 1) - 1))
+    int_code = max(0, min(15, _pulse_int(unit, 1) - 1))
+    if method_name in ("turnon", "learn"):
+        bits = "10" + _RISINGSUN_ON[int_code]
+    elif method_name == "turnoff":
+        bits = "10" + _RISINGSUN_OFF[int_code]
+    else:
+        return None
+    for _ in range(25):
+        bits += "1" if int_house & 1 else "0"
+        int_house >>= 1
+    out = b""
+    for ch in bits:
+        out += bytes([120, 51]) if ch == "1" else bytes([51, 120])
+    return out
+
+
+def _risingsun_codeswitch_train(
+    house: Any, unit: Any, method_name: str
+) -> bytes | None:
+    """Raw risingsun code-switch train — ProtocolRisingSun."""
+    int_house = max(0, min(3, _pulse_int(house, 1) - 1))
+    int_unit = max(0, min(3, _pulse_int(unit, 1) - 1))
+
+    def _tuple(value: int) -> str:
+        return "".join(".e.e" if i == value else "e..e" for i in range(4))
+
+    out = ".e" + _tuple(int_house) + _tuple(int_unit)
+    if method_name == "turnon":
+        out += "e..ee..ee..ee..e"
+    elif method_name == "turnoff":
+        out += "e..ee..ee..e.e.e"
+    else:
+        return None
+    return out.encode("ascii")
+
+
+_X10_HOUSES = (6, 0xE, 2, 0xA, 1, 9, 5, 0xD, 7, 0xF, 3, 0xB, 0, 8, 4, 0xC)
+
+
+def _x10_train(house: Any, unit: Any, method_name: str) -> bytes | None:
+    """Raw X10 train — ProtocolX10::getStringForMethod."""
+    house_str = str(house or "").strip().upper()
+    if not house_str or not house_str[0].isalpha():
+        return None
+    idx = max(0, min(15, ord(house_str[0]) - ord("A")))
+    int_house = _X10_HOUSES[idx]
+    int_code = max(0, min(15, _pulse_int(unit, 1) - 1))
+    b0 = bytes([59, 59])
+    b1 = bytes([59, 169])
+    out = bytearray([255, 1, 255, 1, 255, 1, 100, 255, 1, 180])
+    comp = bytearray()
+
+    def _bit(value: int) -> None:
+        if value:
+            out.extend(b1)
+            comp.extend(b0)
+        else:
+            out.extend(b0)
+            comp.extend(b1)
+
+    for _ in range(4):
+        _bit(int_house & 1)
+        int_house >>= 1
+    _bit(0)
+    _bit(1 if int_code >= 8 else 0)
+    _bit(0)
+    _bit(0)
+    out.extend(comp)
+    comp.clear()
+    _bit(0)
+    _bit((int_code >> 2) & 1)
+    if method_name == "turnon":
+        _bit(0)
+    elif method_name == "turnoff":
+        _bit(1)
+    else:
+        return None
+    _bit(int_code & 1)
+    _bit((int_code >> 1) & 1)
+    for _ in range(3):
+        _bit(0)
+    out.extend(comp)
+    out.append(59)
+    return bytes(out)
+
+
+def _hasta_byte_v1(byte: int) -> bytes:
+    out = b""
+    for _ in range(8):
+        out += b"\x21\x11" if byte & 1 else b"\x11\x21"
+        byte >>= 1
+    return out
+
+
+def _hasta_byte_v2(byte: int) -> bytes:
+    out = b""
+    for _ in range(8):
+        out += b"\x3f\x23" if byte & 1 else b"\x23\x3f"
+        byte >>= 1
+    return out
+
+
+def _hasta_train(
+    model: str, house: Any, unit: Any, method_name: str
+) -> tuple[bytes, dict[str, Any]] | None:
+    """Raw hasta train — ProtocolHasta (v1 and selflearningv2)."""
+    house_i = max(1, min(65536, _pulse_int(house, 1)))
+    unit1 = max(1, min(15, _pulse_int(unit, 1)))
+    byte = unit1 & 0x0F
+
+    if model == "selflearningv2":
+        if method_name == "up":
+            byte |= 0xC0
+        elif method_name == "down":
+            byte |= 0x10
+        elif method_name == "stop":
+            byte |= 0x50
+        elif method_name == "learn":
+            byte |= 0x40
+        else:
+            return None
+        total = ((house_i >> 8) & 0xFF) + (house_i & 0xFF) + byte + 0x01
+        checksum = ((total // 256 + 1) * 256 + 1) - total
+        out = (
+            b"\xf5\x01\xf5\xf5\x3f\x01\x3f\x01\x23\x23"
+            + _hasta_byte_v2((house_i >> 8) & 0xFF)
+            + _hasta_byte_v2(house_i & 0xFF)
+            + _hasta_byte_v2(byte)
+            + _hasta_byte_v2(0x01)
+            + _hasta_byte_v2(checksum)
+            + b"\x3f\x23"
+        )
+        # No P/R: telldus-core's hasta string carries none, so the Duo
+        # transmits with the hardware defaults.  Match that exactly.
+        return out, {}
+
+    if method_name == "up":
+        byte |= 0x00
+    elif method_name == "down":
+        byte |= 0x10
+    elif method_name == "stop":
+        byte |= 0x50
+    elif method_name == "learn":
+        byte |= 0x40
+    else:
+        return None
+    out = (
+        b"\xa4\x01\xa4\x01\xa4\xa4"
+        + _hasta_byte_v1(house_i & 0xFF)
+        + _hasta_byte_v1((house_i >> 8) & 0xFF)
+        + _hasta_byte_v1(byte)
+        + _hasta_byte_v1(0x00)
+        + _hasta_byte_v1(0x00)
+    )
+    return out[:-1], {}
+
+
+def _ikea_train(
+    house: Any, unit: Any, method_name: str, param: Any = None
+) -> bytes | None:
+    """Raw IKEA Koppla train — ProtocolIkea::getStringForMethod."""
+    system = max(1, min(16, _pulse_int(house, 1))) - 1
+    units_str = str(unit or "")
+    if not units_str:
+        return None
+    int_units = 0
+    try:
+        for token in units_str.split(","):
+            int_unit = int(token.strip())
+            if int_unit == 10:
+                int_unit = 0
+            int_units |= 1 << (9 - int_unit)
+    except (TypeError, ValueError):
+        return None
+
+    if method_name == "turnon":
+        level = 255
+    elif method_name == "turnoff":
+        level = 0
+    elif method_name == "dim":
+        level = max(0, min(255, _pulse_int(param, 255)))
+    else:
+        return None
+
+    b1 = bytes([84, 84])
+    b0 = bytes([170])
+    out = b"\x54" * 6 + b"\xaa"
+
+    int_code = (system << 10) | int_units
+    checksum1 = checksum2 = 0
+    for i in range(13, -1, -1):
+        if (int_code >> i) & 1:
+            out += b1
+            if i % 2 == 0:
+                checksum2 += 1
+            else:
+                checksum1 += 1
+        else:
+            out += b0
+    out += b1 if checksum1 % 2 == 0 else b0
+    out += b1 if checksum2 % 2 == 0 else b0
+
+    if level <= 12:
+        int_level = 10
+    elif level <= 37:
+        int_level = 1
+    elif level <= 62:
+        int_level = 2
+    elif level <= 87:
+        int_level = 3
+    elif level <= 112:
+        int_level = 4
+    elif level <= 137:
+        int_level = 5
+    elif level <= 162:
+        int_level = 6
+    elif level <= 187:
+        int_level = 7
+    elif level <= 212:
+        int_level = 8
+    elif level <= 237:
+        int_level = 9
+    else:
+        int_level = 0
+
+    int_code = int_level | (1 << 4)  # instant fade
+    checksum1 = checksum2 = 0
+    for i in range(6):
+        if (int_code >> i) & 1:
+            out += b1
+            if i % 2 == 0:
+                checksum1 += 1
+            else:
+                checksum2 += 1
+        else:
+            out += b0
+    out += b1 if checksum1 % 2 == 0 else b0
+    out += b1 if checksum2 % 2 == 0 else b0
+    return out
+
+
+def _silvanchip_train(
+    model: str, house: Any, unit: Any, method_name: str
+) -> bytes | None:
+    """Raw silvanchip train — ProtocolSilvanChip (kp100/ecosavers)."""
+    house_i = max(1, min(1048575, _pulse_int(house, 1)))
+    if model == "kp100":
+        preamble = bytes([100] + [255, 1] * 12 + [100])
+        one = b"\xff\x01\x2e\x2e"
+        zero = b"\x2e\xff\x01\x2e"
+        buttons = {"up": 2, "down": 8, "stop": 4, "learn": 1}
+        button = buttons.get(method_name)
+        if button is None:
+            return None
+    elif model == "ecosavers":
+        preamble = bytes([0x25, 255, 1, 255, 1, 255, 1, 255, 1, 0x25])
+        one = b"\x69\x25"
+        zero = b"\x25\x69"
+        buttons = {1: 7, 2: 3, 3: 5, 4: 6}
+        unit1 = max(1, min(4, _pulse_int(unit, 1)))
+        button = buttons[unit1]
+        if method_name in ("turnon", "learn"):
+            button |= 8
+        elif method_name != "turnoff":
+            return None
+    else:
+        return None
+
+    out = preamble
+    for i in range(19, -1, -1):
+        out += one if house_i & (1 << i) else zero
+    for i in range(3, -1, -1):
+        out += one if button & (1 << i) else zero
+    return out + zero
+
+
+def _parse_duo_raw_command(
+    command: bytes,
+) -> tuple[bytes, int | None, int | None]:
+    """Split a Duo raw command into (pulses, pause_ms, repeats).
+
+    Our Duo-side protocol additions (luxorparts, generic_rf record & replay,
+    the Tuya/Kjell curtain motor) all build the telldusd wire form
+    ``P<pause> R<repeats> S<pulses> +``.  A TellStick Net v1 takes the same
+    information as UDP packet keys, so the markers are stripped and P/R are
+    returned separately.  A plain ``S<pulses>+`` command yields (pulses, None,
+    None) and keeps the firmware defaults.
+    """
+    pause: int | None = None
+    repeats: int | None = None
+    i = 0
+    while i + 1 < len(command) and command[i] in (ord("P"), ord("R")):
+        if command[i] == ord("P"):
+            pause = command[i + 1]
+        else:
+            repeats = command[i + 1]
+        i += 2
+    rest = command[i:]
+    if rest.startswith(b"S"):
+        rest = rest[1:]
+    if rest.endswith(b"+"):
+        rest = rest[:-1]
+    return rest, pause, repeats
+
+
+def _encode_net_v1_raw(
+    protocol: str,
+    model: str,
+    house: Any,
+    unit: Any,
+    method_name: str,
+    param: Any = None,
+) -> dict[str, Any] | None:
+    """Return S-only (plus R/P) send arguments for a TellStick Net v1.
+
+    None means "no raw encoder for this protocol/model/method" — the caller
+    then falls back to the firmware-dict path.
+    """
+    protocol = (protocol or "").lower()
+    model = (model or "").lower()
+
+    if protocol == "arctech":
+        if model == "codeswitch":
+            return _s_only(_arctech_codeswitch_train(house, unit, method_name))
+        if model == "bell":
+            return _s_only(_arctech_codeswitch_train(house, unit, method_name, bell=True))
+        house_i = _pulse_int(house, -1)
+        if house_i < 0:
+            return None
+        unit0 = max(0, _pulse_int(unit, 1) - 1)
+        return _s_only(_arctech_selflearning_train(house_i, unit0, method_name, param))
+
+    if protocol == "comen":
+        house_i = _pulse_int(house, -1)
+        if house_i < 0:
+            return None
+        unit0 = max(0, _pulse_int(unit, 1) - 1)
+        return _s_only(
+            _arctech_selflearning_train((house_i << 2) + 2, unit0, method_name, param)
+        )
+
+    if protocol == "everflourish":
+        return _s_only(_encode_everflourish_command(house, unit, method_name))
+
+    if protocol == "sartano":
+        return _s_only(_sartano_train(str(house or "").strip(), method_name))
+
+    if protocol == "yidong":
+        return _s_only(_yidong_train(unit, method_name))
+
+    if protocol in ("waveman",):
+        return _s_only(_waveman_train(house, unit, method_name))
+
+    if protocol == "upm":
+        return _s_only(_upm_train(house, unit, method_name))
+
+    if protocol == "fuhaote":
+        return _s_only(_fuhaote_train(str(house or "").strip(), method_name))
+
+    if protocol == "brateck":
+        return _s_only(_brateck_train(house, method_name))
+
+    if protocol == "risingsun":
+        if "selflearning" in model:
+            pulses = _risingsun_selflearning_train(house, unit, method_name)
+            if pulses is None:
+                return None
+            if method_name == "learn":
+                return _s_only(pulses, P=5, R=50)
+            return _s_only(pulses, P=5)
+        return _s_only(_risingsun_codeswitch_train(house, unit, method_name))
+
+    if protocol == "x10":
+        return _s_only(_x10_train(house, unit, method_name))
+
+    if protocol == "hasta":
+        result = _hasta_train(model, house, unit, method_name)
+        if result is None:
+            return None
+        pulses, extra = result
+        return _s_only(pulses, **extra)
+
+    if protocol == "ikea":
+        return _s_only(_ikea_train(house, unit, method_name, param))
+
+    if protocol == "silvanchip":
+        return _s_only(_silvanchip_train(model, house, unit, method_name))
+
+    return None
+
+
 def _encode_luxorparts_variant(
     house: Any, unit: Any, method_name: str, model_full: str,
 ) -> dict[str, Any] | None:
@@ -3118,6 +3777,54 @@ class TellStickNetController:
     async def learn(self, device: Any) -> int:
         return await self._send_rf(device, "learn")
 
+    async def send_raw_command(self, command: bytes, reserved: int = 0) -> int:
+        """Send a Duo-style raw pulse command over the v1 UDP API.
+
+        The platforms send raw commands for the protocols we added on top of
+        telldus-core — luxorparts, generic_rf record & replay and the Tuya/Kjell
+        curtain motor — in the Duo wire form ``P<pause> R<repeats> S<pulses> +``.
+        A TellStick Net **v1** replays exactly those pulses, so the markers are
+        translated into the ``S``/``P``/``R`` packet keys and the frame is sent
+        like any other v1 raw command.
+
+        On v2/ZNet this is impossible (``handleSend()`` drops S packets), so it
+        logs and returns -1 instead of pretending to transmit.
+        """
+        if (await self._ensure_product()) != "TellStickNet":
+            _LOGGER.warning(
+                "Net: raw pulse TX needs an original TellStick Net (v1); "
+                "%s is %r and cannot send it",
+                self.host, self.product or "unidentified",
+            )
+            return -1
+
+        pulses, pause, repeats = _parse_duo_raw_command(command)
+        if not pulses:
+            _LOGGER.warning("Net v1: empty raw command (%d bytes)", len(command))
+            return -1
+        if len(pulses) > _NET_V1_MAX_PULSES:
+            _LOGGER.warning(
+                "Net v1: raw command is %d bytes (limit %d); not sent",
+                len(pulses), _NET_V1_MAX_PULSES,
+            )
+            return -1
+
+        kwargs: dict[str, Any] = {"S": pulses}
+        if pause is not None:
+            kwargs["P"] = pause
+        if repeats is not None:
+            kwargs["R"] = repeats
+        try:
+            await self._send_raw(encode_packet("send", **kwargs))
+            _LOGGER.debug(
+                "Net v1 raw TX: %d pulses, R=%s P=%s",
+                len(pulses), repeats, pause,
+            )
+            return 0
+        except OSError as err:
+            _LOGGER.error("Net: raw send to %s failed: %s", self.host, err)
+            return -1
+
     async def ping(self) -> bool:
         try:
             await self._send_raw(encode_packet("reglistener"))
@@ -3174,7 +3881,26 @@ class TellStickNetController:
         unit = device.get("unit", "0")
         encoding = device.get("encoding", "")
 
-        if encoding == "native":
+        # TellStick Net v1 (C firmware): raw-first.  Its native handler only
+        # understands arctech selflearning on/off, so every other protocol —
+        # and arctech dim/learn — has to go out as an S-only pulse train.
+        # v2/ZNet keep the firmware-dict paths below unchanged.
+        net_v1_raw: dict[str, Any] | None = None
+        if encoding not in ("native", "native_nofix"):
+            if (await self._ensure_product()) == "TellStickNet":
+                net_v1_raw = _encode_net_v1_raw(
+                    protocol, model, house, unit, method_name, param
+                )
+                if net_v1_raw is None:
+                    _LOGGER.debug(
+                        "Net v1: no raw encoder for %s/%s %s; "
+                        "falling back to the firmware dict",
+                        protocol, model, method_name,
+                    )
+
+        if net_v1_raw is not None:
+            send_kwargs = net_v1_raw
+        elif encoding == "native":
             # Explicit native path: always use the firmware's protocol stack.
             # Compensates for the ZNet unit+1 bug.  Works for all protocols
             # but only passes house/unit — code/system/fade are lost.
@@ -3251,11 +3977,31 @@ class TellStickNetController:
                 _encode_generic_command(protocol, model, house, unit, method_name)
             )
 
+        # S-only invariant: the v1 C handler returns before RF when a
+        # "protocol" key is present, silently dropping the packet.
+        pulses = send_kwargs.get("S")
+        if isinstance(pulses, bytes):
+            if len(pulses) > _NET_V1_MAX_PULSES:
+                _LOGGER.warning(
+                    "Net: raw frame for %s/%s is %d bytes (limit %d); not sent",
+                    protocol, model, len(pulses), _NET_V1_MAX_PULSES,
+                )
+                return -1
+            if net_v1_raw is not None and (
+                "protocol" in send_kwargs or "model" in send_kwargs
+            ):
+                _LOGGER.error(
+                    "Net v1 bug: raw packet for %s/%s carries a protocol key; "
+                    "the firmware would drop it", protocol, model,
+                )
+                return -1
+
         try:
             await self._send_raw(encode_packet("send", **send_kwargs))
             _LOGGER.debug(
-                "Net send: %s %s/%s h=%s u=%s",
+                "Net send: %s %s/%s h=%s u=%s raw=%s",
                 method_name, protocol, model, house, unit,
+                "v1" if net_v1_raw is not None else "firmware-dict",
             )
             return 0
         except OSError as err:

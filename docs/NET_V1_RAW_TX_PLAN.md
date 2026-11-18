@@ -1,10 +1,11 @@
 # TellStick Net v1 — raw pulse TX (the route to Duo-level protocol support)
 
-> **Status:** plan only. **Nothing here is implemented beyond the #130 dim frame.**
-> **Decision gate:** implement only after the issue #130 reporter confirms that a
-> dimmer actually changes brightness on a real v1 with 3.3.3.1. If that test
-> fails, the whole premise (v1 replays arbitrary `S` pulse bytes) is wrong and
-> this document should be reverted rather than extended.
+> **Status:** implemented in **3.4.0.0** — see
+> [`docs/5fe97fc32425f971ae084741-3.4.0.x.md`](5fe97fc32425f971ae084741-3.4.0.x.md).
+> **Decision gate (passed):** the issue #130 reporter confirmed on 2026-11-17
+> that dimming works on a real v1 with 3.3.3.1, so the premise — a v1 replays
+> arbitrary `S` pulse bytes — holds. Every protocol in the table below now has
+> a raw encoder; this document is kept as the design record.
 
 ---
 
@@ -52,10 +53,10 @@ thing that ever reaches `rf433`.
 
 | Area                       | Status                                                        |
 | -------------------------- | ------------------------------------------------------------- |
-| arctech on/off             | ✅ Native dict, confirmed on hardware (reporter, 3.3.3.0)      |
-| arctech learn              | ⚠️ Native dict sends an OFF frame (pre-existing v1 quirk)      |
-| arctech dim                | 🔬 Raw `S` train in 3.3.3.1 — **awaiting hardware confirmation** |
-| every other protocol       | ❌ Native dict is dropped by the v1 firmware before RF         |
+| arctech on/off             | ✅ Raw `S` train; on/off confirmed natively on hardware, raw proven by probe D |
+| arctech learn              | ✅ Raw ON frame (the native dict path sent an OFF frame)        |
+| arctech dim                | ✅ Raw `S` train (147 bytes) — confirmed on hardware, 3.3.3.1   |
+| every other TX protocol    | ✅ Raw `S` train from telldus-core ports — awaiting per-protocol hardware checks |
 
 ## What raw-first TX would unlock
 
@@ -63,27 +64,47 @@ If the dim test passes, then on a v1 **any protocol we can encode as pulses
 works** — the full Duo TX list — plus correct learn and per-packet repeat/pause.
 v2/ZNet stays where it is; nothing here changes their code paths.
 
-| Protocol       | Net/ZNet today | Encoder for v1 raw                                  |
-| -------------- | -------------- | --------------------------------------------------- |
-| `arctech`      | on/off + DIM(255) | ✅ done — raw on/off proven by probe D, dim in 3.3.3.1 |
-| `comen`        | native dict    | 🟢 cheap — arctech selflearning frame with `(house << 2) + 2` |
-| `everflourish` | testing        | 🟢 20 raw variants (`ef_r*`) already in `net_client.py`, written for the ZNet `S` path; needs v1 verification |
-| `kangtai`      | none           | 🟡 needs port (Clas Ohlson dimmer; no Net encoder exists) |
-| `waveman`      | none           | 🟡 needs port — reuse arctech code-switch framing      |
-| `yidong`       | none           | 🟡 needs port — reuses sartano framing                 |
-| `hasta`        | broken         | 🔴 needs port — UP/DOWN/STOP, needs `R=10 P=25`        |
-| `brateck`      | broken         | 🔴 needs port — UP/DOWN/STOP only                      |
-| `ikea`         | broken         | 🔴 needs port — system + units + level                 |
-| `risingsun`    | broken         | 🔴 needs port                                          |
-| `sartano`      | broken         | 🔴 needs port — code + system                          |
-| `silvanchip`   | broken         | 🔴 needs port                                          |
-| `upm`          | broken         | 🔴 needs port                                          |
-| `x10`          | broken         | 🔴 needs port                                          |
-| `fuhaote`      | broken         | 🔴 needs port — code switch                            |
+| Protocol       | Net/ZNet (v2) | Net v1 raw encoder                                            |
+| -------------- | ------------- | ------------------------------------------------------------ |
+| `arctech`      | on/off + DIM(255) | ✅ selflearning on/off/dim/learn/bell + code-switch + bell |
+| `comen`        | native dict   | ✅ arctech selflearning frame with `(house << 2) + 2`         |
+| `everflourish` | testing       | ✅ `_encode_everflourish_command` (108-byte frame)            |
+| `kangtai`      | none          | ❌ not in telldus-core — the Duo cannot send it either         |
+| `waveman`      | none          | ✅ arctech code-switch framing, waveman OFF code              |
+| `yidong`       | none          | ✅ sartano framing with the Goobay unit code                 |
+| `hasta`        | broken        | ✅ v1 + selflearningv2, Duo defaults (no R/P)                 |
+| `brateck`      | broken        | ✅ UP/DOWN/STOP                                              |
+| `ikea`         | broken        | ✅ Koppla system + units + level                             |
+| `risingsun`    | broken        | ✅ selflearning (`P=5`, `R=50` learn) + code-switch          |
+| `sartano`      | broken        | ✅ code + system                                             |
+| `silvanchip`   | broken        | ✅ KP100 + Ecosavers                                         |
+| `upm`          | broken        | ✅ 12-bit house + unit + parity checks                       |
+| `x10`          | broken        | ✅ house table + complement frames                           |
+| `fuhaote`      | broken        | ✅ code switch                                               |
 
 Encoder sources are the telldus-core `Protocol*.cpp` `stringForMethod()`
 implementations; the porting pattern is already documented in
 [`docs/ZNET_PROTOCOL_PORTING_GUIDE.md`](ZNET_PROTOCOL_PORTING_GUIDE.md).
+
+All of the above are implemented in the "Net v1 raw pulse-train encoders"
+section of `net_client.py` as of 3.4.0.0, gated on the discovery product name
+`TellStickNet`. Frame lengths and leading timings are asserted in
+`tests/test_net_protocol_encoding.py` (Test 3b).
+
+### Project additions (not in telldus-core)
+
+Three raw protocols exist only in our own Duo path. They reach a v1 through
+`TellStickNetController.send_raw_command()`, which translates the Duo wire form
+`P<pause> R<repeats> S<pulses> +` into the v1 packet keys `S`/`P`/`R`:
+
+| Device | Duo builder | v1 status |
+| ------ | ----------- | --------- |
+| Luxorparts LPD 1–24 | `luxorparts_build_raw_command()` | ✅ same pulses |
+| Generic RF record & replay | `generic_rf_build_raw_command()` | ✅ same pulses |
+| Tuya / Kjell curtain motor | `build_curtain_command()` | ✅ same pulses |
+
+On ZNet / Net v2 the method logs and returns `-1` — their firmware discards
+S packets, which is why these were Duo-only before 3.4.0.0.
 
 ## Design sketch
 

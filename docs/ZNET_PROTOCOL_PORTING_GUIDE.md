@@ -103,14 +103,21 @@ raises `KeyError`.  When `protocol` and `model` keys are included alongside `S`,
 stack (crashing later at `msg['house']` if house/unit are absent, or at
 `None / 16` if a DIM level is missing).
 
-The only reliable approach for each version is:
-- **v1 (C firmware)**: Native arctech selflearning dict only
-- **v2/ZNet (Python firmware)**: Native dict through `handleSend()` (with unit-1
+The reliable approach per version is:
+- **v1 (C firmware)**: raw S-only packets — implemented for every Duo protocol
+  since 3.4.0.0 (`_encode_net_v1_raw()`); native dict only for plain arctech
+  on/off, and only as a fallback when discovery could not identify the unit
+- **v2/ZNet (Python firmware)**: native dict through `handleSend()` (with unit-1
   compensation for the `unit + 1` bug)
 
 ## Current Status of Each TX Protocol
 
-| Protocol       | Net/ZNet TX Status | Method Used                                    | Source                                         |
+> **TellStick Net v1 since 3.4.0.0:** every protocol in this table has a raw
+> pulse-train encoder in `net_client.py` and works on a v1 — see
+> [`docs/NET_V1_RAW_TX_PLAN.md`](NET_V1_RAW_TX_PLAN.md). The statuses below
+> describe the **v2/ZNet** native-dict path only, which is unchanged.
+
+| Protocol       | Net v2/ZNet TX Status | Method Used                                    | Source                                         |
 | -------------- | ----------------- | ---------------------------------------------- | ---------------------------------------------- |
 | `arctech`      | ✅ Working        | Native dict (on/off/learn); DIM→full brightness via TURNON+selflearning-dimmer model. On **TellStick Net v1** dim is raw `S` bytes instead (see below). **Confirmed (2026-11 decompile):** S-only packets raise an uncaught `KeyError('protocol')` in `handleSend()` before the RF chip, and `S` sent alongside `protocol` is ignored (the firmware re-encodes). | `tellstick-server/ProtocolArctech.py` |
 | `comen`        | ✅ Working        | Native dict via arctech with house shift transformation: `(house << 2) + 2` | `tellstick-server/ProtocolComen.py`¹           |
