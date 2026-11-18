@@ -270,8 +270,10 @@ class TellStickCover(TellStickEntity, CoverEntity):
 
     async def async_open_cover(self, **kwargs: Any) -> None:
         """Open the cover (send UP command)."""
+        raw_sent = False
         if self._protocol.lower() == PROTOCOL_GENERIC_RF:
             await self._send_generic_rf_raw("up", self._timings_up)
+            raw_sent = True
         elif self._telldusd_device_id is not None:
             await self._controller.up(self._telldusd_device_id)
         else:
@@ -279,14 +281,17 @@ class TellStickCover(TellStickEntity, CoverEntity):
                 "Cannot send up command for %s: no telldusd device ID",
                 self._device_uid,
             )
-        await self._async_mirror_command("up")
+        if not raw_sent:
+            await self._async_mirror_command("up")
         self._attr_is_closed = False
         self.async_write_ha_state()
 
     async def async_close_cover(self, **kwargs: Any) -> None:
         """Close the cover (send DOWN command)."""
+        raw_sent = False
         if self._protocol.lower() == PROTOCOL_GENERIC_RF:
             await self._send_generic_rf_raw("down", self._timings_down)
+            raw_sent = True
         elif self._telldusd_device_id is not None:
             await self._controller.down(self._telldusd_device_id)
         else:
@@ -294,14 +299,17 @@ class TellStickCover(TellStickEntity, CoverEntity):
                 "Cannot send down command for %s: no telldusd device ID",
                 self._device_uid,
             )
-        await self._async_mirror_command("down")
+        if not raw_sent:
+            await self._async_mirror_command("down")
         self._attr_is_closed = True
         self.async_write_ha_state()
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
         """Stop the cover."""
+        raw_sent = False
         if self._protocol.lower() == PROTOCOL_GENERIC_RF:
             await self._send_generic_rf_raw("stop", self._timings_stop)
+            raw_sent = True
         elif self._telldusd_device_id is not None:
             await self._controller.stop(self._telldusd_device_id)
         else:
@@ -309,7 +317,8 @@ class TellStickCover(TellStickEntity, CoverEntity):
                 "Cannot send stop command for %s: no telldusd device ID",
                 self._device_uid,
             )
-        await self._async_mirror_command("stop")
+        if not raw_sent:
+            await self._async_mirror_command("stop")
 
     async def _send_generic_rf_raw(
         self, action: str, timings: list[int] | None
@@ -358,3 +367,5 @@ class TellStickCover(TellStickEntity, CoverEntity):
                 action,
                 result,
             )
+
+        await self._async_mirror_raw(raw_cmd)

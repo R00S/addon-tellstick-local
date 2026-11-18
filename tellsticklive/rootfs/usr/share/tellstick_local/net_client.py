@@ -3777,7 +3777,9 @@ class TellStickNetController:
     async def learn(self, device: Any) -> int:
         return await self._send_rf(device, "learn")
 
-    async def send_raw_command(self, command: bytes, reserved: int = 0) -> int:
+    async def send_raw_command(
+        self, command: bytes, reserved: int = 0, *, quiet: bool = False
+    ) -> int:
         """Send a Duo-style raw pulse command over the v1 UDP API.
 
         The platforms send raw commands for the protocols we added on top of
@@ -3789,9 +3791,13 @@ class TellStickNetController:
 
         On v2/ZNet this is impossible (``handleSend()`` drops S packets), so it
         logs and returns -1 instead of pretending to transmit.
+
+        ``quiet`` downgrades that message to debug.  Mirror dispatch uses it so
+        a ZNet mirror does not warn on every mirrored raw command.
         """
         if (await self._ensure_product()) != "TellStickNet":
-            _LOGGER.warning(
+            log = _LOGGER.debug if quiet else _LOGGER.warning
+            log(
                 "Net: raw pulse TX needs an original TellStick Net (v1); "
                 "%s is %r and cannot send it",
                 self.host, self.product or "unidentified",

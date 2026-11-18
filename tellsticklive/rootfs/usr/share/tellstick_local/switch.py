@@ -290,10 +290,13 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
             "turn_on: uid=%s controller=%s device_id=%r",
             self._device_uid, type(self._controller).__name__, self._telldusd_device_id,
         )
+        raw_sent = False
         if self._protocol == PROTOCOL_GENERIC_RF and hasattr(self._controller, "send_raw_command"):
             await self._send_generic_rf_raw("on")
+            raw_sent = True
         elif self._protocol == "luxorparts" and hasattr(self._controller, "send_raw_command"):
             await self._send_luxorparts_raw("on")
+            raw_sent = True
         elif self._telldusd_device_id is not None:
             await self._controller.turn_on(self._telldusd_device_id)
         else:
@@ -303,7 +306,10 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
             )
         self._attr_is_on = True
         self.async_write_ha_state()
-        await self._async_mirror_command("turn_on")
+        # A raw protocol already mirrored itself (the pulse train is the whole
+        # command); the per-device dispatch cannot carry those frames.
+        if not raw_sent:
+            await self._async_mirror_command("turn_on")
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the switch off."""
@@ -311,10 +317,13 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
             "turn_off: uid=%s controller=%s device_id=%r",
             self._device_uid, type(self._controller).__name__, self._telldusd_device_id,
         )
+        raw_sent = False
         if self._protocol == PROTOCOL_GENERIC_RF and hasattr(self._controller, "send_raw_command"):
             await self._send_generic_rf_raw("off")
+            raw_sent = True
         elif self._protocol == "luxorparts" and hasattr(self._controller, "send_raw_command"):
             await self._send_luxorparts_raw("off")
+            raw_sent = True
         elif self._telldusd_device_id is not None:
             await self._controller.turn_off(self._telldusd_device_id)
         else:
@@ -324,7 +333,8 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
             )
         self._attr_is_on = False
         self.async_write_ha_state()
-        await self._async_mirror_command("turn_off")
+        if not raw_sent:
+            await self._async_mirror_command("turn_off")
 
     async def _send_luxorparts_raw(self, action: str) -> None:
         """Send raw Luxorparts pulse data via tdSendRawCommand (Duo path).
@@ -369,6 +379,8 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
         else:
             _LOGGER.info("LX raw TX success: result=%d", result)
 
+        await self._async_mirror_raw(raw_cmd)
+
     async def _send_generic_rf_raw(self, action: str) -> None:
         """Send a Generic RF raw OOK pulse command via tdSendRawCommand (Duo path).
 
@@ -403,3 +415,5 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
             _LOGGER.warning("Generic RF raw TX failed: result=%d uid=%s", result, self._device_uid)
         else:
             _LOGGER.info("Generic RF raw TX success: result=%d uid=%s", result, self._device_uid)
+
+        await self._async_mirror_raw(raw_cmd)

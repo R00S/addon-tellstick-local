@@ -33,6 +33,62 @@ _LOGGER = logging.getLogger(__name__)
 _RF_MIRROR_DELAY_S = 0.7
 
 
+async def async_mirror_raw_command(
+    hass: Any,
+    entry_id: str,
+    raw_command: bytes,
+    device_uid: str = "",
+) -> None:
+    """Send a raw pulse command to every mirror controller of an entry.
+
+    The protocols this integration builds itself — Luxorparts, Generic RF
+    record & replay and the Tuya/Kjell curtain motor — are transmitted with
+    ``send_raw_command()``, which bypasses device registration entirely.  The
+    regular mirror dispatcher passes a telldusd id or a protocol/model/house/
+    unit dict, neither of which can carry them, so the pulse train is
+    replicated here instead.  It is device-independent: the frame already
+    contains everything the receiver needs.
+
+    A mirror that cannot transmit raw pulses (ZNet / Net v2) is skipped by its
+    own ``send_raw_command`` (called with ``quiet=True`` so a mirror on an
+    unsupported backend does not warn on every command).
+    """
+    if hass is None or not raw_command:
+        return
+    entry_data = hass.data.get(DOMAIN, {}).get(entry_id, {})
+    mirrors: list[dict[str, Any]] = entry_data.get(ENTRY_MIRRORS, [])
+    if not mirrors:
+        return
+    # Same RF collision window as the per-device mirror dispatch.
+    await asyncio.sleep(_RF_MIRROR_DELAY_S)
+    for mirror in mirrors:
+        controller = mirror.get("controller")
+        send_raw = getattr(controller, "send_raw_command", None)
+        if send_raw is None:
+            _LOGGER.debug(
+                "Mirror %s cannot send raw pulses; skipping %s",
+                mirror.get("entry_id", "?"),
+                device_uid or "raw device",
+            )
+            continue
+        try:
+            result = await send_raw(raw_command, quiet=True)
+        except Exception:  # noqa: BLE001 — one bad mirror must not break the rest
+            _LOGGER.warning(
+                "Mirror raw command failed for %s",
+                device_uid or "raw device",
+                exc_info=True,
+            )
+            continue
+        # -5 is the Duo's expected ACK timeout for a long raw transmission.
+        if result not in (0, -5):
+            _LOGGER.debug(
+                "Mirror raw TX for %s returned %s",
+                device_uid or "raw device",
+                result,
+            )
+
+
 class TellStickEntity(RestoreEntity):
     """Base entity for TellStick devices."""
 
@@ -133,3 +189,14 @@ class TellStickEntity(RestoreEntity):
                     command, self._device_uid,
                     exc_info=True,
                 )
+
+    async def _async_mirror_raw(self, raw_command: bytes) -> None:
+        """Send a raw pulse command to every mirror controller.
+
+        Used by the platforms that build their own pulse trains (Luxorparts,
+        Generic RF replay, curtain motor) instead of going through a protocol
+        registration — see :func:`async_mirror_raw_command`.
+        """
+        await async_mirror_raw_command(
+            self.hass, self._entry_id, raw_command, self._device_uid
+        )

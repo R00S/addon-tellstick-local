@@ -280,7 +280,9 @@ class TellStickController:
             "tdStop", [_encode_int(device_id)]
         )
 
-    async def send_raw_command(self, command: bytes, reserved: int = 0) -> int:
+    async def send_raw_command(
+        self, command: bytes, reserved: int = 0, quiet: bool = False
+    ) -> int:
         """Send tdSendRawCommand — transmit raw pulse bytes via the hardware.
 
         *command* is the raw firmware pulse-train data including the ``S``
@@ -294,6 +296,10 @@ class TellStickController:
         bytes > 127 are NOT corrupted by UTF-8 multi-byte encoding.
         telldusd's ``Message::takeString()`` reads *N* raw bytes (no charset
         conversion), so we must send each byte value as a single byte.
+
+        ``quiet`` is accepted for API symmetry with the Net controller (which
+        uses it to stay silent on backends that cannot send raw pulses) and is
+        ignored here: a Duo always transmits raw pulses.
         """
         # Build the telldusd text-protocol message manually.
         # Format: <func_string><arg1_string><arg2_int>

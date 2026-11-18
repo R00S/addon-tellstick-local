@@ -406,6 +406,12 @@ RF events received by the mirror are forwarded to the primary for device detecti
 
 > **Cross-backend mirroring:** A Duo (USB) can mirror a Net/ZNet (LAN) and vice versa.
 >
+> **Raw-pulse devices:** Luxorparts sockets, Generic RF record & replay devices and the
+> Tuya/Kjell curtain motor are sent as raw pulse trains rather than as a device command,
+> so their frames are replicated to mirrors separately (from **v3.4.0.2**). A mirror can
+> only relay them if it can transmit raw pulses itself — a **TellStick Duo** or an original
+> **TellStick Net (v1)**. A ZNet / Net v2 mirror skips them silently.
+>
 > **Adding devices:** The **+ Add 433 MHz device** button is available for all entries,
 > including mirrors. If you click it while a mirror entry is selected, the flow
 > immediately shows _"This TellStick is a mirror — devices must be added through the
