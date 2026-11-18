@@ -410,11 +410,11 @@ each protocol supports.
 > them. The TellStick Duo includes a firmware-level repeat patch for reliable pairing
 > with picky receivers.
 
-> **🟡 Luxorparts / Cleverio 50969, 50970, 50972 (beta, Duo only):** On/off works
-> on TellStick Duo via raw RF pulse encoding. Add by brand → "Luxorparts — On/off
-> (beta, Duo only)" → pick an LPD number (1–24). Put the receiver in learn mode, then
-> press Learn in HA. Not yet available on TellStick Net/ZNet. See
-> [Known limitations](#known-limitations) for details.
+> **🟡 Luxorparts / Cleverio 50969, 50970, 50972 (beta, Duo / Net v1):** On/off works
+> on a TellStick Duo, and on an original TellStick Net (v1) in the dev build, via raw RF
+> pulse encoding. Add by brand → "Luxorparts — On/off (beta, Duo only)" → pick an LPD
+> number (1–24). Put the receiver in learn mode, then press Learn in HA. Not available on
+> ZNet / Net v2. See [Known limitations](#known-limitations) for details.
 
 ### TX only (can be controlled but not auto-discovered)
 
