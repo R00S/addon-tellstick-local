@@ -614,13 +614,13 @@ brightness slider has no effect.
 If you have both a Duo and a Net/ZNet, add the Net/ZNet as a **mirror/range extender**
 so it only relays on/off commands and the Duo handles all dimming.
 
-### Luxorparts / Cleverio 50969, 50970, 50972 — Beta (Duo only)
+### Luxorparts / Cleverio 50969, 50970, 50972 — Beta (Duo / Net v1)
 
 These Luxorparts / Cleverio 1000W remote-controlled sockets work on
 **TellStick Duo** using raw RF pulse encoding with pre-captured Telldus Live
 codes (LPD 1–24). **Not yet available on TellStick Net/ZNet.**
 
-**How to add a Luxorparts device (Duo):**
+**How to add a Luxorparts device (Duo, or a Net v1 on the dev build):**
 
 1. Go to **Configure → Add device → Add by brand**
 2. Select **"Luxorparts — On/off (beta, Duo only)"**
@@ -635,8 +635,9 @@ codes (LPD 1–24). **Not yet available on TellStick Net/ZNet.**
   your receiver, you need a different LPD number or a fresh receiver.
 - The learn button sends the ON command (not a high-repeat learn signal)
   because the actual learn signal does not flash the Duo hardware.
-- **TellStick Net/ZNet:** Not yet implemented. The raw pulse encoding
-  needs to be ported to the Net/ZNet UDP interface.
+- **TellStick Net (v1):** works in the dev build `3.4.0.1.20261118140136`
+  (see the note at the top of this page) — not in a stable release yet.
+  **ZNet / Net v2:** not available, since that firmware ignores raw `S` packets.
 
 If you have an RTL-SDR and can capture additional working codes, please
 [open an issue][issue].
