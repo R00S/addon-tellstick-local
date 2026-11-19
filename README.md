@@ -401,7 +401,7 @@ each protocol supports.
 
 > **🟡 Luxorparts / Cleverio 50969, 50970, 50972 (beta, Duo / Net v1):** On/off works
 > on TellStick Duo and an original TellStick Net (v1) via raw RF pulse encoding. Add by
-> brand → "Luxorparts — On/off (beta, Duo only)" → pick an LPD number (1–24). Put the
+> brand → "Luxorparts — On/off, recorded LPD 1-24 (beta, Duo + Net v1)" → pick an LPD number (1–24). Put the
 > receiver in learn mode, then press Learn in HA. Not available on ZNet / Net v2. See
 > [Known limitations](#known-limitations) for details.
 
@@ -613,95 +613,58 @@ pulse encoding with pre-captured Telldus Live codes (LPD 1–24).
 **How to add a Luxorparts device (Duo):**
 
 1. Go to **Configure → Add device → Add by brand**
-2. Select **"Luxorparts — On/off (beta, Duo only)"**
+2. Select **"Luxorparts — On/off, recorded LPD 1-24 (beta, Duo + Net v1)"**
 3. Pick an **LPD number** (1–24) — each number is a unique code pair
 4. Put the receiver in learn mode (hold button until LED flashes)
 5. Press **Learn** in HA — the Duo sends the ON code to teach the receiver
 6. The receiver should now respond to on/off commands
 
-**Test device — five switches on a recorded address pair:**
+**Generated channels — the experimental pool (304 codes):**
 
-The flow has a second device type, **"Luxorparts — Test device, 5 switches
-(beta, Duo only)"**. Adding it creates **one Home Assistant device with six
-switches**: five generated pairs (LX-B1…LX-B5) plus a **CONTROL ON/OFF** switch
-that replays the recorded LPD 7 pair byte for byte.
+Device type **"Luxorparts — Generated channel, 304 codes (experimental)"** takes an
+**LPD number** as the *house code* and a **channel 1–16** as the *unit code*.
+Every recorded pair belongs to a family of 16 channels: the payload's low five
+bits are the **channel field**, both halves of a pair carry the same field, and
+channel bit 2 (`0x04`) decides which of the two frames is the ON. Five recordings
+are siblings of another recording with that bit flipped and the roles swapped
+(LPD 4/9, 8/10, 13/18, 14/19, 15/17), so the 24 recordings describe **19
+receivers**. 19 × 16 = **304 device codes**, 29 of which have been at a receiver.
 
-The five generated pairs are **new units of the recorded LPD 7 address pair** —
-the only shape that has ever produced a switch that turns a socket on *and* off:
+A code is one bit-field move on a recording — no cipher work:
 
 ```
-ON  = encrypt(D5, 0x10, 0x80 | unit)     # bit 7 set, bit 6 clear -> ON half
-OFF = encrypt(D5, 0xB1, 0x40 | unit)     # bit 6 set             -> OFF half
+on  = (recorded_on  & ~0xF8) | (channel << 3)
+off = (recorded_off & ~0xF8) | (channel << 3)
+if (channel ^ recorded_channel) & 0x04:   # channel bit 2 picked the other frame
+    on, off = off, on
 ```
 
-The ON half keeps the recorded address `0xD510`, the OFF half the recorded
-address `0xD5B1`; only the 5-bit unit changes, so each switch is a distinct
-device with the recorded pair's own addresses and state polarity. With unit 6
-this reproduces the recorded LPD 7 pair exactly (`0x2450C38` / `0x2633638`).
+`unit = channel 1-16` maps to the field values `0x01, 0x03, … 0x1F`. LPD 7
+channel 4 is that recording itself, so it returns the recorded pair.
 
-| Switch | Unit | ON | OFF |
-| --- | --- | --- | --- |
-| LX-B1 | 9 | `0x23472F8` | `0x2024EF8` |
-| LX-B2 | 11 | `0x2021F68` | `0x2109FE8` |
-| LX-B3 | 7 | `0x223BB28` | `0x20E8028` |
-| LX-B4 | 8 | `0x25FC788` | `0x27E4708` |
-| LX-B5 | 10 | `0x210CE58` | `0x2297C58` |
-| CONTROL ON/OFF | 6 | `0x2450C38` | `0x2633638` |
+**No pairing signal is sent** when a generated device is added: put the receiver
+in learn mode and press its **on** button.
 
-Units 9 and 11 are the two the v1 build already proved on hardware; 7, 8 and 10
-have never been at a receiver. Half of the 32 unit values are skipped because
-their frames would not carry payload bit 0, the one bit fixed in all 62 captured
-codes.
-
-A second device type, **"Luxorparts — Test device v1, seeds +1..5 (beta, Duo
-only)"**, restores the **first** generated build beside this one: five switches
-(LX-B1…LX-B5 v1, houses 111–115) carrying the original `LPD 7 seeds +1…5` pairs,
-plus its own control. It is the build the current one is derived from, so both can
-be taught in one session and compared.
-
-**No pairing signal is sent when the device is added**, and the switches have no
-Learn button: a receiver in learn mode learns the code it hears, so pair a switch
-by pressing its **on** button.
-
-A third device type, **"Luxorparts — Test device v5, corrected shifts (beta, Duo
-only)"**, is the build that follows from that result. Its pairs are **recorded**
-pairs shifted by a few counts inside the frame's 5-bit channel field — nothing in
-the encrypted part of the frame is invented, which is the one thing every other
-build got wrong:
-
-| Switch | Pair | Channel | ON | OFF |
-| --- | --- | --- | --- | --- |
-| LX-B1 v5 | LPD 7 +3 | `0x0D` | `0x2450C68` | `0x2633668` |
-| LX-B2 v5 | LPD 7 +4 | `0x0F` | `0x2450C78` | `0x2633678` |
-| LX-B3 v5 | LPD 5 −1 | `0x05` | `0x6BD1C28` | `0x6DB7628` |
-| LX-B4 v5 | LPD 13 −1 | `0x15` | `0x53F5EA8` | `0x5C548A8` |
-| LX-B5 v5 | LPD 6 +4 | `0x1F` | `0x32128F8` | `0x3E2CDF8` |
-| CONTROL ON/OFF v5 | LPD 7 | `0x07` | `0x2450C38` | `0x2633638` |
-
-Channel bit 2 (`0x04`) carries the on/off side of a pair: five recorded pairs are
-siblings that are the same two frames with that bit flipped and the ON/OFF roles
-swapped (LPD 4/9, 8/10, 13/18, 14/19, 15/17). v1's offsets walked that bit — +1, +2
-and +5 cleared it and ran reversed, +3 and +4 kept it and worked — which is why
-LX-B1 and LX-B2 are v1's two working pairs again.
-
-> **Hardware results (2026-11-19), one 50969:** scheme A (remote-family clones) was
-> refused outright. Scheme B v1 (LPD 7 seeds +1…5) is the only build whose OFF ever
-> worked: two switches correct both ways, two reversed but working, one reversed and
-> flawed. Every later build — address-bit offsets, one plaintext record encrypted
-> twice, a recorded ON with the OFF rebuilt at its own address, and new units of the
-> recorded address pair — either refused to learn or learned every ON and answered
-> **no OFF**. The reason is in the v1 codes: they are a recorded pair shifted inside
-> the frame's channel field, so the encrypted part of the frame — the part that
-> carries the pair's own ON/OFF relation — was never invented.
+**Hardware results (2026-11-19), one 50969:** scheme A (remote-family clones) was
+refused outright. Scheme B v1 (LPD 7 seeds +1…5) is the only build whose OFF ever
+worked: two switches correct both ways, two reversed but working, one reversed and
+flawed. Every later build — address-bit offsets, one plaintext record encrypted
+twice, a recorded ON with the OFF rebuilt at its own address, and new units of the
+recorded address pair — either refused to learn or learned every ON and answered
+**no OFF**. v5 (LPD 7 +3/+4, LPD 5 −1, LPD 13 −1, LPD 6 +4) worked **5 of 5**,
+which is what the 304-code pool is built on; the four test-device types that
+produced those results have been removed.
 
 **Current limitations:**
 
-- LPD 1–24 are the only **recorded** codes. If none of them work with your
-  receiver, try one of the generated test pairs above or a different LPD number.
-- The learn button sends the ON command (not a high-repeat learn signal)
-  because the actual learn signal does not flash the Duo hardware.
-- **TellStick Net/ZNet:** Not yet implemented. The raw pulse encoding
-  needs to be ported to the Net/ZNet UDP interface.
+- 24 recorded pairs (LPD 1–24) and 304 generated codes; only 5 generated codes
+  have been verified on hardware
+- The learn button sends the ON command (not a high-repeat learn signal) because
+  the real learn signal does not flash the Duo hardware
+- **TellStick Net v1:** sends the same raw pulse bytes, but the v1 `S` payload
+  limit (199 bytes) fits 3 frames where the Duo replays 10 — built, **untested on
+  hardware**
+- **ZNet / Net v2:** not implemented (their firmware discards raw pulse packets)
 
 If you have an RTL-SDR and can capture additional working codes, please
 [open an issue][issue].

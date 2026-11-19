@@ -88,7 +88,8 @@ generated build replaced the OFF's address with the ON's own and lost every OFF;
 the current build keeps both addresses and varies only the unit. Its codes are in
 the **v4** section at the end of this file.
 
-A **second** test device (widget 22, "Luxorparts — Test device v1, seeds +1..5")
+A **second** test device (widget 22, "Luxorparts — Test device v1, seeds +1..5",
+removed in v3.4.0.12)
 restores the first generated build unchanged, so both can be taught to one
 receiver in the same session. Its pairs are the old `LPD 7 seeds +1…5` on houses
 111–115, plus a control on 116 that replays LPD 7 again:
@@ -137,7 +138,7 @@ Decrypting the whole recorded list adds three facts that constrain the rule:
   OFF control byte is always exactly `ON ^ 0xC0` (`0x86` → `0x46`) and the only
   other difference is the **address**.
 
-### v4 — new units on the recorded address pair
+### v4 — new units on the recorded address pair (removed in v3.4.0.12)
 
 Device type **"Luxorparts — Test device, 5 switches (beta, Duo only)"** (widget 21,
 houses 101–106). The v3 group (recorded ON + OFF rebuilt at that same address) was
@@ -194,7 +195,7 @@ bit 0 set, and bit 0 = 1 is the one bit fixed in all 62 captured codes
 (`LUXORPARTS_PROTOCOL_ANALYSIS.md` §2). The skipped units are 0–5, 13, 15–21, 29
 and 31.
 
-### v5 — v1 with the channel bit held
+### v5 — v1 with the channel bit held (removed in v3.4.0.12)
 
 Device type **"Luxorparts — Test device v5, corrected shifts (beta, Duo only)"**
 (widget 24, houses 131–136). v1 is the only build whose OFF ever worked, and the
@@ -229,3 +230,61 @@ build after v1 got wrong.
 
 **Hardware result (2026-11-19, v3.4.0.10):** only v4's B1 and B3 learned and turned
 on (no OFF on either); B2, B4 and B5 could not learn at all; the control worked.
+
+### v3.4.0.12 — the generated pool replaces the test devices
+
+The four test-device types (widgets 21, 22 and 24, and their catalog entries) are
+**removed**. Their job is done: v5 was built with the rule in
+`LUXORPARTS_PROTOCOL_ANALYSIS.md` §7b and worked **5 of 5** on a 50969, so the rule
+now ships as a generator instead of as five switches.
+
+Device type **"Luxorparts — Generated channel, 304 codes (experimental)"**
+(widget 25) takes **house = LPD number 1–24** and **unit = channel 1–16**:
+
+```
+channel field values: 0x01, 0x03, 0x05 … 0x1F  (unit 1 … 16)
+on  = (recorded_on  & ~0xF8) | (channel << 3)
+off = (recorded_off & ~0xF8) | (channel << 3)
+if (channel ^ recorded_channel) & 0x04:          # bit 2 picks the ON frame
+    on, off = off, on
+```
+
+The 24 recordings are **19 families** — five are the same receiver twice (LPD 4/9,
+8/10, 13/18, 14/19, 15/17) and are canonicalised to the first entry — so the pool is
+**19 × 16 = 304 device codes**: 24 are the recordings themselves and 280
+were never recorded.
+
+| Base LPD | Sibling | Recorded channel | bit 2 | ON at channel 4 | OFF at channel 4 |
+| --- | --- | --- | --- | --- | --- |
+| 1 | — | `0x07` | 1 | `0x5E14538` | `0x5A59738` |
+| 2 | — | `0x15` | 1 | `0x559DB38` | `0x5CCC038` |
+| 3 | — | `0x11` | 0 | `0x51B1038` | `0x5BD4B38` |
+| 4 | 9 | `0x1F` | 1 | `0x340EB38` | `0x3978538` |
+| 5 | — | `0x07` | 1 | `0x6BD1C38` | `0x6DB7638` |
+| 6 | — | `0x17` | 1 | `0x3212838` | `0x3E2CD38` |
+| 7 | — | `0x07` | 1 | `0x2450C38` | `0x2633638` |
+| 8 | 10 | `0x07` | 1 | `0x3757C38` | `0x3B81638` |
+| 11 | — | `0x1F` | 1 | `0x35A0B38` | `0x339A538` |
+| 12 | — | `0x1F` | 1 | `0x3034B38` | `0x3C4D538` |
+| 13 | 18 | `0x17` | 1 | `0x53F5E38` | `0x5C54838` |
+| 14 | 19 | `0x1D` | 1 | `0x5723138` | `0x5AC1338` |
+| 15 | 17 | `0x01` | 0 | `0x5BBFF38` | `0x5E8E638` |
+| 16 | — | `0x09` | 0 | `0x5467C38` | `0x51DA238` |
+| 20 | — | `0x07` | 1 | `0x23CEC38` | `0x292B638` |
+| 21 | — | `0x07` | 1 | `0x21A7C38` | `0x25F1638` |
+| 22 | — | `0x07` | 1 | `0x206CC38` | `0x289D638` |
+| 23 | — | `0x07` | 1 | `0x2709C38` | `0x224A638` |
+| 24 | — | `0x07` | 1 | `0x2A86C38` | `0x2FE8638` |
+
+Channel 4 was used as the sample column because it is the field value
+(`0x07`) that most recordings use, so those rows reproduce recorded codes
+where the recording itself sits on channel 4.
+
+Why this is believed to work, and what has actually been to a receiver: the 24
+recordings, plus the five v5 channels (LPD 7 channel 7 = `0x2450C68`/`0x2633668`,
+channel 8 = `0x2450C78`/`0x2633678`, LPD 5 channel 3, LPD 13 channel 11, LPD 6
+channel 16). Those five **learned and switched both ways**. Channel 4 of a family is
+its own recording, so it returns the recorded pair unchanged.
+
+The learn button and "no pairing signal on add" behaviour are unchanged: a receiver
+learns the code it hears, so pair a generated channel by pressing its **on** button.

@@ -912,3 +912,71 @@ switch answered an OFF.
 
 5. **Always deploy and test before making the next change.** The agent made 3-5
    commits between each user test, making it impossible to isolate failures.
+
+---
+
+## 2026-11-19 — v5 passed 5/5; the generated pool ships, the test devices go (v3.4.0.12)
+
+**Reported by the project owner** (v3.4.0.11, widget 24, houses 131–136): **all five
+v5 switches worked**, control included. The rule from the previous entry is therefore
+confirmed on hardware, not inferred: a device pair is a recorded pair retuned inside
+the frame's 5-bit channel field, both halves together, with channel bit 2 deciding
+which frame is the ON.
+
+### Changed
+
+* `const.py`: the test-device groups are **gone** (`LX_LIVE_*`, `LX_TEST_UNITS`,
+  `LX_TEST_LIST/CODES`, `LX_TEST_V1_*`, `LX_CONTROL_*`, `LX_CONTROL_V1_*`,
+  `LX_TEST_V5_*`, `LX_CONTROL_V5_*`, `_lx_seed_pair()`, `_lx_unit_pair()`, and their
+  lookups in `luxorparts_generate_codes()`). Widgets **21, 22, 24** and their catalog
+  entries are removed.
+* `const.py`: new generated pool — `LX_GEN_CHANNELS`, `LX_GEN_CHANNEL_MASK`,
+  `LX_GEN_VARIANT` (`lx_gen`), `LX_GEN_CANONICAL` (the five sibling recordings),
+  `LX_GEN_CODE_COUNT` (304), `luxorparts_channel_codes()` (one family, one channel)
+  and `luxorparts_codes()` (the dispatch used by every send path).
+* `const.py`: widget **25** (house = LPD 1–24, unit = channel 1–16), catalog entry
+  "Luxorparts — Generated channel, 304 codes (experimental; house = LPD 1-24,
+  unit = channel 1-16)", and an `lx_gen` timing profile identical to `lx_live`.
+* `build_device_uid()`: generated devices keep the variant in their UID
+  (`luxorparts_lx_gen_<lpd>_<channel>`) so they cannot collide with the recorded
+  devices, which use `luxorparts_selflearning_<lpd>_1`.
+* `switch.py`, `button.py`, `config_flow.py`: all Luxorparts lookups go through
+  `luxorparts_codes(house, unit, model)`.
+* `net_client.py`: `_encode_luxorparts_variant()` now generates from the same helper
+  (it used to read `LX_GROUND_TRUTH_CODES` directly and returned `-1` for anything
+  else) and trims the repeat count to the v1 `S` payload limit — 3 frames of 50 bytes
+  instead of 10, because 500 bytes is over `_NET_V1_MAX_PULSES = 199`.
+* `strings.json` / `translations/en.json`: `lx_test`, `lx_test_v1`, `lx_test_v5` steps
+  and their `_added` aborts removed.
+* README, USER_GUIDE §5/§15, `LUXORPARTS_PAIRS.md`, `LUXORPARTS_PROTOCOL_ANALYSIS.md`
+  §10–§12, issue doc.
+
+### Documented, not implemented
+
+* **No `OFF = f(ON)`:** simple transforms 0/24, no GF(2) affine map for any of the 16
+  output bits, no affine map mod 2¹⁶/2²⁴/2²⁸, rank 24/24 over the 48 codes, 19 distinct
+  xor masks spanning rank 16. The relation is keyed per device.
+* **Repeat-press capture plan:** press ON 5× then OFF 5× on one device via rtl_433.
+  Identical frames ⇒ static encoder, those 280 codes are final. Differing frames ⇒
+  a counter/keystream, and the family becomes attackable.
+* **A-series idea:** eight remote-sniffed pairs (~+120 codes) as generator bases —
+  unverified, excluded.
+* **High bits 21–23:** nothing varies them; the 13-switch sweep stays a future probe.
+
+### Version
+
+3.4.0.11 → **3.4.0.12** in both `manifest.json` files.
+
+### Verification
+
+* `const.py` doctests (records the five hardware-proven v5 codes through the
+  generator), `py_compile` on the five touched modules, `tests/test_ha_integration.py`,
+  JSON validity, `strings.json` == `translations/en.json`, mirror copies
+  byte-identical, both manifests 3.4.0.12.
+* Pool: all 24 LPD × 16 channels build, 304 distinct ordered pairs, recorded path
+  unchanged for LPD 1–24 unit 1, generated UIDs distinct from recorded ones.
+
+### Not verified
+
+* No receiver here: 275 of the 304 codes have never been at a 50969, and nothing at
+  all has been sent from a TellStick Net v1 (3-frame burst, unverified).

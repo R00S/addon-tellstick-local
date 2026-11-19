@@ -2626,7 +2626,7 @@ def _encode_generic_command(
 # Luxorparts pulse encoder constants and functions are in const.py.
 # Import them for use in _encode_luxorparts_variant().
 from .const import (  # noqa: E402 — grouped with the block that uses them
-    LX_GROUND_TRUTH_CODES,
+    luxorparts_codes,
     _LX_VARIANT_PARAMS,
     luxorparts_build_packet,
 )
@@ -3306,8 +3306,14 @@ def _encode_luxorparts_variant(
     wire format (the only format proven to make the Duo flash — see
     ``docs/LUXORPARTS_TIMELINE.md``).
 
-    Looks up the hardcoded ground-truth code for (house, unit) and ON/OFF,
-    then builds raw pulse bytes for the ZNet UDP dict.
+    Looks up the ON/OFF pair for (house, unit) — recorded LPD pair, generated
+    channel (``:lx_gen`` model) or the generic cipher — then builds raw pulse
+    bytes for the ZNet UDP dict.
+
+    **Experimental on Net v1.**  The firmware caps an ``S`` payload at
+    ``_NET_V1_MAX_PULSES`` bytes, which is shorter than the 10-repeat burst the
+    Duo sends (500 bytes), so the repeat count is trimmed to fit (3 frames).
+    Never verified against a receiver on Net hardware — treat as untested.
 
     Returns ``None`` if no matching code exists or method is unsupported.
     """
@@ -3326,10 +3332,12 @@ def _encode_luxorparts_variant(
     except (TypeError, ValueError):
         return None
 
-    codes = LX_GROUND_TRUTH_CODES.get((house_int, unit_int))
-    if codes is None:
+    try:
+        codes = luxorparts_codes(house_int, unit_int, model_full)
+    except (KeyError, IndexError):
         _LOGGER.warning(
-            "Luxorparts: no ground-truth code for house=%s unit=%s", house, unit
+            "Luxorparts: no code for house=%s unit=%s model=%r",
+            house, unit, model_full,
         )
         return None
 
@@ -3344,6 +3352,16 @@ def _encode_luxorparts_variant(
     params = _LX_VARIANT_PARAMS.get(variant)
     if params is not None:
         repeats = params[0]
+        # The Net v1 firmware rejects an S payload longer than
+        # _NET_V1_MAX_PULSES bytes (= 3 frames here), so trim rather than drop.
+        frame_len = len(luxorparts_build_packet(code, repeats=1))
+        max_repeats = max(1, _NET_V1_MAX_PULSES // frame_len)
+        if repeats > max_repeats:
+            _LOGGER.debug(
+                "Luxorparts on Net: %d of %d repeats fit the %d-byte limit",
+                max_repeats, repeats, _NET_V1_MAX_PULSES,
+            )
+            repeats = max_repeats
         raw = luxorparts_build_packet(code, repeats=repeats)
         return dict(S=raw)
 

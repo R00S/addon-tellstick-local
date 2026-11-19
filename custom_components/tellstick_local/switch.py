@@ -32,7 +32,7 @@ from .const import (
     TELLSTICK_TURNON,
     generic_rf_build_raw_command,
     luxorparts_build_raw_command,
-    luxorparts_generate_codes,
+    luxorparts_codes,
 )
 from .entity import TellStickEntity
 
@@ -351,15 +351,14 @@ class TellStickSwitch(TellStickEntity, SwitchEntity):
             )
             return
 
-        codes = luxorparts_generate_codes(house_int, unit_int)
+        # Extract variant suffix (e.g. "selflearning-switch:lx_gen" → "lx_gen")
+        variant = self._model.split(":", 1)[1] if ":" in self._model else ""
+        codes = luxorparts_codes(house_int, unit_int, self._model)
 
         code = codes.get(action)
         if code is None:
             _LOGGER.warning("LX raw TX: no code for action=%s", action)
             return
-
-        # Extract variant suffix (e.g. "selflearning-switch:lx_t01" → "lx_t01")
-        variant = self._model.split(":", 1)[1] if ":" in self._model else ""
 
         raw_cmd = luxorparts_build_raw_command(code, variant)
         _LOGGER.info(

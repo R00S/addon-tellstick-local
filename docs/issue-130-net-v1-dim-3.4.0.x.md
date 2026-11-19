@@ -395,3 +395,47 @@ working, one reversed and flawed.
 
 * No receiver here: whether a shifted recording is accepted as a separate device,
   and whether B3…B5 behave like B1/B2, is the next hardware test.
+
+---
+
+## v3.4.0.12 — generated Luxorparts pool on Duo and Net v1; test devices removed
+
+**v5 passed 5/5 on hardware (2026-11-19),** so the channel-field rule is now a
+generator. The four test-device types (widgets 21, 22, 24 + catalog entries + strings
++ their `const.py` groups) are removed, and the pool ships as a normal experimental
+device path:
+
+* **Duo:** widget 25 → `luxorparts_codes()` → `luxorparts_build_raw_command()`
+  (`P\x02 R10 S50+`, unchanged).
+* **Net v1:** `_encode_luxorparts_variant()` now uses the same helper instead of
+  `LX_GROUND_TRUTH_CODES`, so generated houses resolve. The v1 firmware caps the `S`
+  payload at 199 bytes, so the burst is trimmed from 10 frames (500 B) to **3 frames
+  (150 B)**; the encoder would previously have refused the packet outright. This path
+  has **not been tested against a receiver**.
+* **ZNet / Net v2:** unchanged — raw pulse packets are discarded by that firmware.
+
+### Changed
+
+* `const.py`: pool helpers (`luxorparts_channel_codes()`, `luxorparts_codes()`,
+  `LX_GEN_*`), widget 25, generated catalog entry, `lx_gen` timing profile,
+  variant-aware `build_device_uid()`; test-device groups deleted.
+* `config_flow.py`: test steps and `_add_lx_test_switches()` deleted; the Luxorparts
+  confirm branch uses `luxorparts_codes()`.
+* `switch.py` / `button.py` / `net_client.py`: dispatch through `luxorparts_codes()`.
+* `strings.json` / `translations/en.json`: `lx_test*` keys removed.
+
+### Version
+
+3.4.0.11 → **3.4.0.12**.
+
+### Verification
+
+* `const.py` doctests, `py_compile`, `tests/test_ha_integration.py`, JSON/strings
+  parity, byte-identical mirror, both manifests 3.4.0.12.
+* Pool: 304 distinct pairs from 19 families × 16 channels; the five v5
+  hardware-proven codes reproduce exactly; recorded LPD 1–24 lookups unchanged.
+
+### Not verified
+
+* 275 of 304 codes have never been at a receiver.
+* Net v1 transmission of a 3-frame burst.

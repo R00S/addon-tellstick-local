@@ -561,3 +561,142 @@ LPD 13 −1 and LPD 6 +4 on houses 131–135, plus the recorded LPD 7 control on
   at the recorded pairs.
 * No timing, repeats or command-format change is involved — the existing
   `P\x02 R10 S50+` path and the verified pulse widths are unaffected.
+
+## 10. The generated pool — 304 codes (v3.4.0.12)
+
+v5 worked **5 of 5** on hardware, so the rule in §7b is no longer a hypothesis. The
+generator in `const.py` (`luxorparts_channel_codes()`) is that rule and nothing else:
+
+```python
+on  = (recorded_on  & ~0xF8) | (channel << 3)      # channel = 0x01 … 0x1F, odd
+off = (recorded_off & ~0xF8) | (channel << 3)
+if (channel ^ recorded_channel) & 0x04:            # bit 2 picks the ON frame
+    on, off = off, on
+```
+
+Nothing is re-encrypted and nothing in the plaintext is invented — the cipher's
+nibble chain is never entered, which is the property that separated v5 from every
+build before it.
+
+The 24 recordings collapse to **19 families** because five of them are the same
+receiver seen twice (siblings of §7b). Each family yields 16 channels:
+
+| Base LPD | Sibling recording(s) | Recorded channel | bit 2 | Generated codes |
+| --- | --- | --- | --- | --- |
+| 1 | — | `0x07` | 1 | 16 |
+| 2 | — | `0x15` | 1 | 16 |
+| 3 | — | `0x11` | 0 | 16 |
+| 4 | 9 | `0x1F` | 1 | 16 |
+| 5 | — | `0x07` | 1 | 16 |
+| 6 | — | `0x17` | 1 | 16 |
+| 7 | — | `0x07` | 1 | 16 |
+| 8 | 10 | `0x07` | 1 | 16 |
+| 11 | — | `0x1F` | 1 | 16 |
+| 12 | — | `0x1F` | 1 | 16 |
+| 13 | 18 | `0x17` | 1 | 16 |
+| 14 | 19 | `0x1D` | 1 | 16 |
+| 15 | 17 | `0x01` | 0 | 16 |
+| 16 | — | `0x09` | 0 | 16 |
+| 20 | — | `0x07` | 1 | 16 |
+| 21 | — | `0x07` | 1 | 16 |
+| 22 | — | `0x07` | 1 | 16 |
+| 23 | — | `0x07` | 1 | 16 |
+| 24 | — | `0x07` | 1 | 16 |
+
+**19 × 16 = 304 distinct device codes.** Twenty-four of them are the recordings
+themselves; the other 280 were never recorded. Twenty-nine have been at a receiver:
+the 24 recordings and the five v5 channels (LPD 7 channels 7 and 8, LPD 5 channel 3,
+LPD 13 channel 11, LPD 6 channel 16). Verified by construction and doctest, not by radio:
+all 384 (LPD, channel) *inputs* build, they map to exactly 304 distinct ordered
+pairs, and the five v5 codes come out of the generator unchanged.
+
+Channel 1 of a family is a real new device (field `0x01`) even when the recording
+itself sits on channel 4 or 6. The generated devices therefore live in a separate
+UID namespace (`luxorparts_lx_gen_<lpd>_<channel>`) from the recorded ones
+(`luxorparts_selflearning_<lpd>_1`) — they would otherwise collide.
+
+### Net v1 (experimental)
+
+The Net/ZNet path builds the same pulse bytes, but the v1 firmware caps an `S`
+payload at 199 bytes. One frame is 50 bytes, so Net v1 gets **3 repeats** where the
+Duo replays 10 (`_encode_luxorparts_variant()` trims the count instead of dropping
+the frame). Whether a 50969 accepts a 3-frame burst from a Net v1 is **untested**;
+ZNet/Net v2 discards raw pulse packets entirely, so the path cannot work there.
+
+## 11. Why `OFF = f(ON)` does not exist (checked, v3.4.0.12)
+
+Before accepting "304 is good enough", the 24 pairs were tested for a structural
+shortcut that would let a single captured ON code manufacture its own OFF. None
+exists; all of the following are negative results over the 24 recorded pairs.
+
+* **Simple transforms** (byte/word swaps, complements, rotations, xor against the
+  ON and OFF halves of the pair): **0 of 24** match.
+* **Affine map over GF(2)**, `OFF = A·ON ⊕ b` for a 24×24 binary matrix: inconsistent
+  for **all 16** output bits — the linear system has no solution.
+* **Affine over ℤ**, `OFF = a·ON + b (mod 2¹⁶)` and mod 2²⁴/2²⁸: no `(a, b)` fits.
+* **Rank**: the 48 recorded codes span **rank 24 of 24** over GF(2), i.e. they are not
+  confined to a low-dimensional subspace that a linear relation could exploit.
+* **XOR masks**: `ON ⊕ OFF` takes **19 distinct values** across the 24 pairs; those
+  masks span rank 16 over GF(2) and every one of them has a zero low nibble. The
+  masks cluster by *recording*, not by anything derivable from a single frame.
+* **Per-bit flip counts** between ON and OFF over the 24 pairs peak at bits 6, 19, 8,
+  14 and 15 (17–21 flips of 24) — consistent with a cipher, not with a control field.
+
+Conclusion: the pair relation is **keyed by the device**, so a single ON frame cannot
+produce its OFF. Two consequences:
+
+1. 280 codes beyond the recordings is a hard ceiling for the current recording
+   set; widening it needs more recordings, not better maths.
+2. The only route that could still break the keying is a **rolling counter or
+   keystream** — see §12. If the encoder is static, no amount of extra captures helps
+   either; if it rolls, one repeat-press capture session may open the whole family.
+
+## 12. Planned experiments — documented, not implemented
+
+None of the following is in the code. They are listed in the order they are worth
+doing.
+
+### 12a. Repeat-press capture (decides whether the encoder rolls)
+
+**Question:** is a device's frame a function of its channel only, or does the remote
+advance a counter/keystream on every press?
+
+**Method:** one 50969 remote, one channel, rtl_433 logging, and **press ON five times,
+then OFF five times**, waiting a second between presses. Compare the frames.
+
+* **All ON presses identical, all OFF presses identical** → the encoder is a static
+  table. `OFF = f(ON)` really is closed and those 280 codes are final, and the only
+  way to grow the pool is to record more receivers.
+* **Frames differ between presses** → the payload carries a counter or keystream. Then
+  the earlier 24 "pairs" are snapshots of a rolling sequence and the whole family
+  becomes reachable: a captured ON/OFF pair plus the keystream's step would let any
+  channel be produced. That is a capture-analysis job, not a generator change, and it
+  needs a repeat-press log from a device whose OFF is known to work (LPD 7, or any v5
+  channel).
+
+This is the single highest-value capture left. It costs five extra presses per
+button.
+
+### 12b. The eight A-series pairs (remote-sniffed, excluded)
+
+The press log holds eight further pairs in the `A` series
+(`AEBEEB8`/`AEBEEA8` … `AFAFEA8`). They were captured from a *remote*, not from
+Telldus Live, and never produced a working switch on a Duo — the same frame shape
+family as the working codes, but with no hardware confirmation at all. If they are
+real device pairs, they would give eight more families (≈ **+128 codes**, ~120 after
+deduplication) without any new capture session.
+
+**Untested idea:** use them as generator bases exactly like LPD 1–24 and check on
+hardware whether their families learn. The risk is that a remote-sniffed frame is a
+different transmission variant (repeat count, gap, or a clone remote with its own
+key), which is why they are not in the pool today.
+
+### 12c. High pieces 21–23 (13-switch sweep)
+
+Bits 21–23 of every recorded pair are constant within the pair, but no recording
+varies them, so nothing is known about what they carry. A 13-switch sweep per family
+(channels 1–13 of LPD 7's upper half, `0x13`…`0x1F`, plus probes on bits 21–23) was
+designed and **not** sent: it is 13 extra switches on one receiver to test one
+hypothesis, and the 304-code pool already covers the channels that are proven to be
+part of the device identity. It stays documented as a future probe.
+

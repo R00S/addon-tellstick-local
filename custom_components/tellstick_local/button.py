@@ -38,7 +38,7 @@ from .const import (
     ENTRY_TELLSTICK_CONTROLLER,
     SIGNAL_NEW_DEVICE,
     luxorparts_build_raw_command,
-    luxorparts_generate_codes,
+    luxorparts_codes,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -249,12 +249,11 @@ class TellStickLearnButton(ButtonEntity):
             )
             return
 
-        codes = luxorparts_generate_codes(house_int, unit_int)
-        code = codes["on"]
-
         # Extract variant suffix for timing parameters
         model = device_dict.get(CONF_DEVICE_MODEL, "")
         variant = model.split(":", 1)[1] if ":" in model else ""
+        codes = luxorparts_codes(house_int, unit_int, model)
+        code = codes["on"]
 
         raw_cmd = luxorparts_build_raw_command(code, variant)
 

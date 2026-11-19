@@ -340,20 +340,6 @@
             "fade": "Fade (smooth)"
           }
         },
-        "lx_test_v1": {
-          "title": "Luxorparts test device v1",
-          "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#15-known-limitations",
-          "description": "Adds **{name}** — one device with six on/off switches carrying the FIRST generated build (LPD 7 seeds +1..5).\n\n**CONTROL ON/OFF** replays the recorded LPD 7 pair byte for byte, so this group carries the same known-good reference as the current test device.\n\n**LX-B1 … LX-B5 v1** are the original generated pairs, restored so they can be retested next to the current ones. Their seeds moved payload bits 1–3, which the receiver reads as state/unit, so switches may share a socket or run on/off reversed — that is the behaviour being compared.\n\n**No pairing signal is sent here.** Put the receiver in learn mode and press the switch's **on** button."
-        },
-        "lx_test_v5": {
-          "title": "Luxorparts test device v5",
-          "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#15-known-limitations",
-          "description": "Adds **{name}** — one device with six on/off switches, built the way the v1 build was: each pair is a **recorded** pair from the LPD list with both halves shifted by the same small amount inside the frame's channel field. Nothing in the encrypted part of the frame is invented — the one thing every other build got wrong.\n\nThe channel field carries the state: five recorded pairs come as siblings that are the same two frames with channel bit 2 flipped and the ON/OFF roles swapped (LPD 4/9, 8/10, 13/18, 14/19, 15/17). **LX-B1 … LX-B5** keep that bit, so their ON frame stays an ON frame. The v1 build walked that bit by accident: its +1, +2 and +5 offsets cleared it and ran reversed, while +3 and +4 kept it and worked — those two are shipped here again as **LX-B1** and **LX-B2**.\n\n**CONTROL ON/OFF** replays the recorded LPD 7 pair byte for byte.\n\n**No pairing signal is sent here.** Put the receiver in learn mode and press a switch's **on** button."
-        },
-        "lx_test": {
-          "title": "Luxorparts test device",
-          "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#15-known-limitations",
-          "description": "Adds **{name}** — one device with six on/off switches.\n\n**LX-B1 … LX-B5** are five **new units** (1…5) of the **recorded LPD 7 address pair**: the ON half keeps the recorded address `0xD510` with control byte `0x80 | unit`, the OFF half the recorded address `0xD5B1` with `0x40 | unit`. Only the 5-bit unit field changes, so every switch is a distinct device that keeps the recorded pair's ON/OFF addresses and state polarity — the shape the v1 build proved on hardware. Unit 6 is the recorded device itself, which is why this reproduces `0x2450C38` / `0x2633638` byte for byte.\n\n**CONTROL ON/OFF** replays the recorded LPD 7 pair byte for byte.\n\n**No pairing signal is sent here.** Put the receiver in learn mode and press a switch's **on** button.\n\n**Hardware so far:** every build that changed the address lost the OFF; only the v1 build, which kept both recorded addresses, made switches that turn a socket on *and* off."        },
         "confirm": {
           "title": "Send pairing signal",
           "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#52-self-learning-teach-add-device-button",
@@ -481,9 +467,6 @@
       "abort": {
         "poc_requires_duo": "This curtain motor is driven by raw pulse trains, which a TellStick Duo or an original TellStick Net (v1) can transmit. ZNet / Net v2 cannot.",
         "device_added": "Device added. It will appear in your device list shortly.",
-        "lx_test_added": "Luxorparts test device added — one device with five switches (LX-T1 … LX-T5). Put a receiver in learn mode and press a switch's ON button to pair it.",
-        "lx_test_v1_added": "Luxorparts test device v1 added — five switches (LPD 7 seeds +1..5) plus a control. Put a receiver in learn mode and press a switch's ON button to pair it.",
-        "lx_test_v5_added": "Luxorparts test device v5 added — five recorded pairs shifted inside the channel field (bit 2 held) plus a control. Put a receiver in learn mode and press a switch's ON button to pair it.",
         "mirror_is_secondary": "This TellStick is a mirror — devices must be added through the primary hub entry."
       }
     }

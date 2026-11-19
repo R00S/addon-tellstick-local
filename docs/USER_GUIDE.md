@@ -195,15 +195,14 @@ need to be taught a code before they respond.
 > button on its device page. Use it to re-pair a receiver without deleting and
 > re-adding the device — put the receiver in learn mode and press the button.
 
-> **Luxorparts / Cleverio 50969, 50970, 50972 (beta, Duo only):** Add by brand →
-> "Luxorparts — On/off (beta, Duo only)" → pick an LPD number (1–24). Put the
-> receiver in learn mode, then press Learn. To test whether a receiver accepts a
-> code that was **generated** rather than recorded, add
-> "Luxorparts — Test device, 5 switches (beta, Duo only)": it creates one device
-> with five generated switches plus a **CONTROL ON/OFF** that replays the
-> recorded LPD 7 pair, and sends no pairing signal — put the receiver in learn
-> mode and press a switch's **on** button. See
-> [Section 15](#15-known-limitations) for details.
+> **Luxorparts / Cleverio 50969, 50970, 50972 (beta, Duo + Net v1):** Add by brand →
+> "Luxorparts — On/off, recorded LPD 1-24 (beta, Duo + Net v1)" → pick an LPD number (1–24). Put the
+> receiver in learn mode, then press Learn. To use a code that was **generated**
+> rather than recorded, add
+> "Luxorparts — Generated channel, 304 codes (experimental)": house code = LPD
+> number, unit code = channel 1–16 of that receiver's family. No pairing signal
+> is sent — put the receiver in learn mode and press the switch's **on** button.
+> See [Section 15](#15-known-limitations) for details.
 
 ### 5.3 Kjell & Company / Tuya-MOES curtain motor (Duo only)
 
@@ -711,7 +710,7 @@ NAT), the integration keeps the old firmware-dict behaviour and the newer protoc
 stay silent. Set the log level to Debug and look for the `raw=v1` / `raw=firmware-dict`
 field in the `Net send:` lines to see which path was used.
 
-### Luxorparts / Cleverio 50969, 50970, 50972 — Beta (Duo only)
+### Luxorparts / Cleverio 50969, 50970, 50972 — Beta (Duo + Net v1)
 
 These Luxorparts / Cleverio 1000W remote-controlled sockets work on **TellStick Duo**
 and on an original **TellStick Net (v1)** from v3.4.0.0, using raw RF pulse encoding
@@ -721,73 +720,58 @@ with pre-captured Telldus Live codes (LPD 1–24). **Not available on ZNet / Net
 **How to add a Luxorparts device (Duo):**
 
 1. **Configure → Add device → Add by brand**
-2. Select **"Luxorparts — On/off (beta, Duo only)"**
+2. Select **"Luxorparts — On/off, recorded LPD 1-24 (beta, Duo + Net v1)"**
 3. Pick an **LPD number** (1–24) — each number is a unique code pair
 4. Put the receiver in learn mode (hold button until LED flashes)
 5. Press **Learn** in HA
 
-**Test device — five switches on a recorded address pair:**
+**Generated channels — the experimental pool (304 codes):**
 
-Device type **"Luxorparts — Test device, 5 switches (beta, Duo only)"** adds one
-Home Assistant device with six switches: five generated pairs (LX-B1…LX-B5) and a
-**CONTROL ON/OFF** that replays the recorded LPD 7 pair byte for byte. No pairing
-signal is sent when the device is added and the switches have no Learn button —
-put the receiver in learn mode and press a switch's **on** button.
+Device type **"Luxorparts — Generated channel, 304 codes (experimental)"** takes an
+**LPD number** as the *house code* and a **channel 1–16** as the *unit code*.
+Every recorded pair belongs to a family of 16 channels: the payload's low five
+bits are the **channel field**, both halves of a pair carry the same field, and
+channel bit 2 (`0x04`) decides which of the two frames is the ON. Five recordings
+are siblings of another recording with that bit flipped and the roles swapped
+(LPD 4/9, 8/10, 13/18, 14/19, 15/17), so the 24 recordings describe **19
+receivers**. 19 × 16 = **304 device codes**, 29 of which have been at a receiver.
 
-The five pairs are **new units of the recorded LPD 7 address pair**: the ON half
-keeps the recorded address `0xD510` with control byte `0x80 | unit`, the OFF half
-the recorded address `0xD5B1` with `0x40 | unit`. Only the 5-bit unit changes, so
-each switch is a distinct device that keeps the recorded pair's two addresses and
-its state polarity. Unit 6 is the recorded device itself, which is why this
-reproduces `0x2450C38` / `0x2633638` byte for byte.
+A code is one bit-field move on a recording — no cipher work:
 
-| Switch | Unit | ON | OFF |
-| --- | --- | --- | --- |
-| LX-B1 | 9 | `0x23472F8` | `0x2024EF8` |
-| LX-B2 | 11 | `0x2021F68` | `0x2109FE8` |
-| LX-B3 | 7 | `0x223BB28` | `0x20E8028` |
-| LX-B4 | 8 | `0x25FC788` | `0x27E4708` |
-| LX-B5 | 10 | `0x210CE58` | `0x2297C58` |
-| CONTROL ON/OFF | 6 | `0x2450C38` | `0x2633638` |
+```
+on  = (recorded_on  & ~0xF8) | (channel << 3)
+off = (recorded_off & ~0xF8) | (channel << 3)
+if (channel ^ recorded_channel) & 0x04:   # channel bit 2 picked the other frame
+    on, off = off, on
+```
 
-Units 9 and 11 already worked on hardware in the v1 build; 7, 8 and 10 are new.
-A second device type, **"Luxorparts — Test device v1, seeds +1..5 (beta, Duo
-only)"**, keeps the first build beside it (houses 111–115 plus its own control) so
-both can be taught in one session.
+`unit = channel 1-16` maps to the field values `0x01, 0x03, … 0x1F`. LPD 7
+channel 4 is that recording itself, so it returns the recorded pair.
 
-Hardware results on a 50969 (2026-11-19): scheme A (five remote-family clones)
-was **refused outright**. Scheme B v1 is the only build whose OFF ever worked: of
-its five switches, two were correct both ways, two were reversed but working, one
-was reversed and flawed. Every later build — v2's address offset, the plaintext
-pairs, v3's rebuilt OFF and v4's new units — either refused to learn or answered
-**ON only, never an OFF**.
+**No pairing signal is sent** when a generated device is added: put the receiver
+in learn mode and press its **on** button.
 
-The v1 codes explain the split, because they are the recorded LPD 7 pair shifted
-inside the frame's 5-bit channel field. Channel bit 2 carries the on/off side of a
-pair: five recorded pairs appear as siblings that are the same two frames with that
-bit flipped and the roles swapped (LPD 4/9, 8/10, 13/18, 14/19, 15/17). v1's
-offsets +1, +2 and +5 cleared that bit and ran reversed; +3 and +4 kept it and
-worked.
-
-Device type **"Luxorparts — Test device v5, corrected shifts (beta, Duo only)"**
-applies that rule on purpose: five recorded pairs, each shifted only inside the
-channel field with bit 2 held, plus a CONTROL that replays the recorded LPD 7 pair.
-LPD 7 +3 and +4 are v1's two working pairs, shipped again as the reference.
-
-| Switch | Pair | Channel | ON | OFF |
-| --- | --- | --- | --- | --- |
-| LX-B1 v5 | LPD 7 +3 | `0x0D` | `0x2450C68` | `0x2633668` |
-| LX-B2 v5 | LPD 7 +4 | `0x0F` | `0x2450C78` | `0x2633678` |
-| LX-B3 v5 | LPD 5 −1 | `0x05` | `0x6BD1C28` | `0x6DB7628` |
-| LX-B4 v5 | LPD 13 −1 | `0x15` | `0x53F5EA8` | `0x5C548A8` |
-| LX-B5 v5 | LPD 6 +4 | `0x1F` | `0x32128F8` | `0x3E2CDF8` |
-| CONTROL ON/OFF v5 | LPD 7 | `0x07` | `0x2450C38` | `0x2633638` |
+**Hardware results (2026-11-19), one 50969:** scheme A (remote-family clones) was
+refused outright. Scheme B v1 (LPD 7 seeds +1…5) is the only build whose OFF ever
+worked: two switches correct both ways, two reversed but working, one reversed and
+flawed. Every later build — address-bit offsets, one plaintext record encrypted
+twice, a recorded ON with the OFF rebuilt at its own address, and new units of the
+recorded address pair — either refused to learn or learned every ON and answered
+**no OFF**. v5 (LPD 7 +3/+4, LPD 5 −1, LPD 13 −1, LPD 6 +4) worked **5 of 5**,
+which is what the 304-code pool is built on; the four test-device types that
+produced those results have been removed.
 
 **Current limitations:**
 
-- LPD 1–24 are the only **recorded** codes (picks 101–105 are generated tests)
-- The learn button sends the ON command (not a high-repeat learn signal)
-- **TellStick Net/ZNet:** Not yet implemented
+- 24 recorded pairs (LPD 1–24) and 304 generated codes; only 5 generated codes
+  have been verified on hardware
+- The learn button sends the ON command (not a high-repeat learn signal) because
+  the real learn signal does not flash the Duo hardware
+- **TellStick Net v1:** sends the same raw pulse bytes, but the v1 `S` payload
+  limit (199 bytes) fits 3 frames where the Duo replays 10 — built, **untested on
+  hardware**
+- **ZNet / Net v2:** not implemented (their firmware discards raw pulse packets)
+
 
 ---
 

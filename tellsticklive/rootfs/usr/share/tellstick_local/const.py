@@ -326,21 +326,13 @@ WIDGET_PARAMS: dict[int, list[dict]] = {
         {"name": "house", "type": "int", "default": 1, "min": 1, "max": 24},
         {"name": "unit", "type": "int", "default": 1, "min": 1, "max": 1},
     ],
-    # 21: Luxorparts test device — five new units of the recorded LPD 7
-    #     address pair on one device.  No parameter form: async_step_lx_test()
-    #     adds all five switches (LX-B1..LX-B5) in one go, grouped under a
-    #     single HA device.
-    21: [],
-    # 22: Luxorparts test device v1 — the first scheme-B build (LPD 7 seeds
-    #     +1..5).  Kept so a receiver can be taught the old and the new pairs in
-    #     one session; async_step_lx_test_v1() adds its five switches and a
-    #     control.
-    22: [],
-    # 24: Luxorparts test device v5 — v1's arithmetic with the rule it stumbled
-    #     on made explicit (recorded pair shifted inside the channel field, bit
-    #     2 of the channel kept).  async_step_lx_test_v5() adds its five
-    #     switches and a control.
-    24: [],
+    # 25: Luxorparts generated channel (experimental) — house = recorded LPD
+    #     number (1-24), unit = channel of that device family (1-16).
+    #     Model suffix ":lx_gen" marks the generated lookup.
+    25: [
+        {"name": "house", "type": "int", "default": 1, "min": 1, "max": 24},
+        {"name": "unit", "type": "int", "default": 2, "min": 1, "max": 16},
+    ],
 }
 
 # ---------------------------------------------------------------------------
@@ -398,16 +390,14 @@ DEVICE_CATALOG: list[tuple[str, str, str, int]] = [
     ("KlikAanKlikUit — Self-learning on/off", "arctech", "selflearning-switch:klikaanklikuit", 8),
     # Lidl/Silvercrest 433 MHz sockets use arctech selflearning protocol
     ("Lidl (Silvercrest) — Self-learning on/off", "arctech", "selflearning-switch:silvercrest", 8),
-    # NOTE: Luxorparts/Cleverio 50969, 50970, 50972 — BETA (Duo only)
+    # NOTE: Luxorparts/Cleverio 50969, 50970, 50972 — BETA (Duo + Net v1)
     # Uses raw RF pulse encoding via LPD codes.  Pick LPD 1-24 to select
-    # a verified Telldus Live code pair.  Not available on Net/ZNet yet.
-    # The test device (LX-B1..LX-B5, houses 101-105) is one HA device with five
-    # ON/OFF switches: new units of the recorded LPD 7 address pair — see
-    # docs/LUXORPARTS_PROTOCOL_ANALYSIS.md §7.
-    ("Luxorparts — Test device, 5 switches (beta, Duo only)", "luxorparts", "selflearning-switch:lx_live", 21),
-    ("Luxorparts — Test device v1, seeds +1..5 (beta, Duo only)", "luxorparts", "selflearning-switch:lx_live", 22),
-    ("Luxorparts — Test device v5, corrected shifts (beta, Duo only)", "luxorparts", "selflearning-switch:lx_live", 24),
-    ("Luxorparts — On/off (beta, Duo only)", "luxorparts", "selflearning-switch:lx_live", 20),
+    # a verified Telldus Live code pair.
+    # "Generated channel" is the experimental pool: 19 device families x 16
+    # channels = 304 codes, of which 9 are hardware-verified — see
+    # docs/LUXORPARTS_PROTOCOL_ANALYSIS.md §8 and §10.
+    ("Luxorparts — On/off, recorded LPD 1-24 (beta, Duo + Net v1)", "luxorparts", "selflearning-switch:lx_live", 20),
+    ("Luxorparts — Generated channel, 304 codes (experimental; house = LPD 1-24, unit = channel 1-16)", "luxorparts", "selflearning-switch:lx_gen", 25),
     ("Nexa — Bell", "arctech", "bell:nexa", 4),
     ("Nexa — Code switch", "arctech", "codeswitch:nexa", 1),
     ("Nexa — Self-learning dimmer", "arctech", "selflearning-dimmer:nexa", 8),
@@ -1076,231 +1066,6 @@ LX_GROUND_TRUTH_CODES: dict[tuple[int, int], dict[str, int]] = {
 
 
 # ---------------------------------------------------------------------------
-# Generated test pairs — new units on a recorded address pair
-#
-# Hardware history (all 2026-11-19, one 50969):
-#
-#   * Scheme A (clone the remote-family template): all five pairs REFUSED.
-#   * Scheme B v1 (LPD 7 seeds +1…5, i.e. raw payload bits 1-3): all learned;
-#     B3/B4 correct, B1/B5 reversed, B2 refused.
-#   * Scheme B v2 (seed offset in the address bits): every ON worked, no OFF.
-#   * Plaintext pairs (one address, recorded control bytes 0x86/0x46): every ON
-#     worked, no OFF.
-#   * v3 (recorded ON + OFF rebuilt at that same address): every ON worked, no
-#     OFF.
-#
-# v1 is the only build that ever produced pairs with BOTH commands working, so
-# its five codes are where the answer is.  Decrypting them settles it:
-#
-#     switch  ON ctrl  OFF ctrl   ctrl>>6 ON/OFF   reported
-#     LPD 7   0x86     0x46       10 / 01          correct (control)
-#     B1      0x6C     0xAC       01 / 10          reversed
-#     B2      0x4A     0x8A       01 / 10          reversed, refused
-#     B3      0x2B     0xEB       00 / 11          correct
-#     B4      0x09     0xC9       00 / 11          correct
-#     B5      0xD8     0xA8       11 / 10          reversed
-#
-# All five outcomes follow one rule: **bit 6 of the control byte is the state
-# bit** — 0 = ON, 1 = OFF.  The three reversed switches are exactly the three
-# whose ON half carries bit 6 = 1, i.e. whose ON press is an OFF frame.  Bit 7
-# is a don't-care (0x10 and 0x00 both work as an ON half).
-#
-# That also explains why every "fix the address" build failed: the address is not
-# the variable.  The recorded pair keeps *two* addresses — 0xD510 for ON and
-# 0xD5B1 for OFF — and v1 kept both, because it offsets two recorded
-# ciphertexts.  Rebuilding the OFF at the ON's own address (plaintext pairs, v3)
-# or inventing a fresh address throws that away, and then no OFF can match.
-#
-# A generated device is therefore grown the way B3/B4 already proved on hardware:
-# keep the recorded pair's two addresses and control patterns, and vary only the
-# 5-bit unit field.
-#
-#     ON  = encrypt(D5, 0x10, 0x80 | unit)     # bit 7 set, bit 6 clear -> ON
-#     OFF = encrypt(D5, 0xB1, 0x40 | unit)     # bit 6 set            -> OFF
-#
-# With unit 6 this reproduces the recorded LPD 7 pair byte for byte
-# (0x2450C38 / 0x2633638) — the check that both halves are one device.
-#
-# The "Luxorparts — Test device, 5 switches" entry adds ONE Home Assistant device
-# holding LX-B1…LX-B5 (units 9, 11, 7, 8, 10 of the LPD 7 address pair, stored as
-# houses 101-105, unit 1) plus a CONTROL switch.
-#
-# House 106 is the control: it emits the recorded LPD 7 pair byte for byte
-# (``LX_CONTROL_CODES``), so the same device carries a reference that is known
-# to work.  House 106 rather than 7 keeps the control out of the normal LPD 7
-# device's UID, so adding the test device never renames or regroups an existing
-# LPD 7 switch.
-#
-# No learn signal is sent when the device is added: a Luxorparts receiver learns
-# whatever code it hears while in learn mode, so a switch is paired by pressing
-# its **on** button, exactly like the ON key of a physical remote.
-#
-# These pairs are deliberately kept out of LX_LPD_LIST, which stays the recorded
-# Telldus Live list (LPD 1-24).  101+ was chosen so a test number can never
-# collide with a recorded LPD.  LPD 7 supplies the address pair because it is the
-# one pair whose OFF is confirmed on hardware.
-# ---------------------------------------------------------------------------
-
-LX_LIVE_CONTROL_LPD = 7
-
-# Plaintext of the recorded LPD 7 pair: the ON half carries address 0xD510 with
-# control byte 0x86, the OFF half address 0xD5B1 with control byte 0x46.  Both
-# addresses belong to the device — a device is this pair of addresses plus the
-# unit, and bit 6 of the control byte selects the half.
-LX_LIVE_ADDR_ON: tuple[int, int] = (0xD5, 0x10)
-LX_LIVE_ADDR_OFF: tuple[int, int] = (0xD5, 0xB1)
-LX_LIVE_CTRL_ON = 0x80  # bit 7 set, bit 6 clear -> ON half
-LX_LIVE_CTRL_OFF = 0x40  # bit 6 set             -> OFF half
-LX_LIVE_UNIT_MASK = 0x1F
-
-# Unit values the test device drives.  Only half the 5-bit space gives a valid
-# frame: payload bit 0 must be 1 (the one bit that is fixed in all 62 captured
-# codes — docs/LUXORPARTS_PROTOCOL_ANALYSIS.md §2), which rules out units 0-5,
-# 13, 15-21, 29 and 31.  6 is the recorded device itself.  The five switches use
-# 9 and 11 — the two units the v1 build already proved on hardware (v1 B4 and
-# B3, ctrl 0x09/0xC9 and 0x2B/0xEB) — plus 7, 8 and 10, which have never been
-# tested at a receiver.
-LX_TEST_UNITS: tuple[int, ...] = (9, 11, 7, 8, 10)
-
-# ---------------------------------------------------------------------------
-# Scheme B v1 — the first hardware build, kept for side-by-side retesting
-#
-# v3.4.0.5 shipped these: the LPD 7 seeds moved by 1…5.  The receiver accepted
-# all of them, but several switches then controlled the same socket with on/off
-# reversed, because payload bits 1-3 are state/unit rather than address.  The
-# codes are kept unchanged (widget 22, houses 111-115 + control 116) so a
-# receiver can be taught both builds in one session and the two compared
-# directly.  They are a diagnostic, not a way to create devices: widget 21 is
-# the supported test device.
-# ---------------------------------------------------------------------------
-
-LX_LIVE_SEED_ON = 0x2450C3  # = LPD 7 ON seed (payload24 >> 1)
-LX_LIVE_SEED_OFF = 0x263363  # = LPD 7 OFF seed
-LX_LIVE_SEED_OFFSETS_V1: tuple[int, ...] = (1, 2, 3, 4, 5)
-
-
-def _lx_seed_pair(seed_on: int, seed_off: int) -> tuple[int, int]:
-    """Build a stored28 (ON, OFF) pair from two seeds (scheme B v1 arithmetic).
-
-    >>> hex(_lx_seed_pair(0x2450C4, 0x263364)[0])
-    '0x2450c48'
-    >>> hex(_lx_seed_pair(0x2450C4, 0x263364)[1])
-    '0x2633648'
-    """
-
-    def _store(seed: int) -> int:
-        return (((seed & 0x7FFFFF) << 1) | 1) << 3  # payload bit 0 is always 1
-
-    return _store(seed_on), _store(seed_off)
-
-
-# Columns: (test_num, on_code, off_code, description)
-LX_TEST_V1_LIST: list[tuple[int, int, int, str]] = [
-    (
-        110 + index,
-        *_lx_seed_pair(LX_LIVE_SEED_ON + offset, LX_LIVE_SEED_OFF + offset),
-        f"LPD 7 seeds + {offset} (payload bits 1-3)",
-    )
-    for index, offset in enumerate(LX_LIVE_SEED_OFFSETS_V1, start=1)
-]
-
-LX_TEST_V1_CODES: dict[tuple[int, int], dict[str, int]] = {
-    (num, 1): {"on": on_code, "off": off_code}
-    for num, on_code, off_code, _ in LX_TEST_V1_LIST
-}
-
-# Control of the v1 test device (house 116): the recorded LPD 7 pair again, so
-# the v1 group carries the same known-good reference as the current one.
-LX_CONTROL_V1_HOUSE = 116
-LX_CONTROL_V1_LABEL = "CONTROL ON/OFF (LPD 7) v1"
-LX_CONTROL_V1_CODES: dict[tuple[int, int], dict[str, int]] = {
-    (LX_CONTROL_V1_HOUSE, 1): dict(LX_GROUND_TRUTH_CODES[(LX_LIVE_CONTROL_LPD, 1)])
-}
-
-# ---------------------------------------------------------------------------
-# Scheme B v5 — v1's arithmetic, with the rule it stumbled on made explicit
-#
-# Hardware history (one 50969, 2026-11-19):
-#
-#   * Scheme A (remote-family clones): never worked, removed.
-#   * v1 (LPD 7 seeds +1…5): the ONLY build whose OFF ever worked.  B3 and B4
-#     (offsets +3, +4) were right both ways; B1 and B2 (offsets +1, +2) worked
-#     both ways but with on/off reversed; B5 (offset +5) was reversed and flawed.
-#   * v2, plaintext pairs, v3, v4: every one failed — refused at learn, or ON
-#     only, never an OFF.
-#
-# v1's five codes are the recorded LPD 7 pair shifted by +2·offset in the
-# 24-bit payload.  The cipher is a nibble chain that runs from the payload's
-# least-significant nibble upwards, so such a shift changes only the last
-# plaintext byte — the control byte — and leaves both addresses (0xD510 for ON,
-# 0xD5B1 for OFF) exactly as recorded.  That is why v1 could work at all: it
-# never invents an address, it only retunes the channel field of a real pair.
-#
-# The frame's low five bits are that channel field, and they are shared by the
-# two halves of every recorded pair (verified over all 24 pairs: payload bits
-# 1-4 never differ between the halves, and bit 0 is always 1).  The captures
-# also show how the field carries the state: five pairs come in siblings that
-# are the SAME two frames with channel bit 2 (0x04) flipped and the ON/OFF
-# roles swapped — LPD 4/9, 8/10, 13/18, 14/19 and 15/17.  For a fixed pair of
-# frames, then, channel bit 2 selects which one is ON.
-#
-# v1 walked that bit without knowing it:
-#
-#     offset  channel  channel bit 2   result
-#     +1      0x09     0               reversed (bit 2 flipped vs 0x07)
-#     +2      0x0B     0               reversed (bit 2 flipped vs 0x07)
-#     +3      0x0D     1               correct  (bit 2 kept)
-#     +4      0x0F     1               correct  (bit 2 kept)
-#     +5      0x11     0               reversed, and the shift carried into bit
-#                                     5 — part of the encrypted field — which is
-#                                     why this one was also "flawed"
-#
-# Read the other way round: the two switches that worked are exactly the two
-# whose channel kept bit 2 of the recorded pair's channel (0x07).  That is why
-# the reversed ones were reversed — their ON frame decoded as an OFF frame.
-#
-# v5 repeats v1's arithmetic with that rule made explicit: take a recorded
-# pair, shift both halves by the same small even amount, keep the channel's
-# bit 2 unchanged, and stay inside the 4-bit channel field so the shift never
-# carries into the encrypted part.  Nothing in the encrypted part of the frame
-# is invented — the one thing every other build got wrong.
-#
-# B1 and B2 are v1's offsets +3 and +4 on LPD 7, the two pairs that worked
-# both ways on hardware; B3…B5 apply the same rule to other recordings so the
-# five switches cannot be variants of one pair.
-# ---------------------------------------------------------------------------
-
-# Columns: (test_num, on_code, off_code, description)
-LX_TEST_V5_LIST: list[tuple[int, int, int, str]] = [
-    (131, 0x2450C68, 0x2633668, "LPD 7 +3, channel 0x0D (v1 B3, proven)"),
-    (132, 0x2450C78, 0x2633678, "LPD 7 +4, channel 0x0F (v1 B4, proven)"),
-    (133, 0x6BD1C28, 0x6DB7628, "LPD 5 -1, channel 0x05"),
-    (134, 0x53F5EA8, 0x5C548A8, "LPD 13 -1, channel 0x15"),
-    (135, 0x32128F8, 0x3E2CDF8, "LPD 6 +4, channel 0x1F"),
-]
-
-LX_TEST_V5_CODES: dict[tuple[int, int], dict[str, int]] = {
-    (num, 1): {"on": on_code, "off": off_code}
-    for num, on_code, off_code, _ in LX_TEST_V5_LIST
-}
-
-# Control of the v5 test device (house 136): the recorded LPD 7 pair again.
-LX_CONTROL_V5_HOUSE = 136
-LX_CONTROL_V5_LABEL = "CONTROL ON/OFF (LPD 7) v5"
-LX_CONTROL_V5_CODES: dict[tuple[int, int], dict[str, int]] = {
-    (LX_CONTROL_V5_HOUSE, 1): dict(LX_GROUND_TRUTH_CODES[(LX_LIVE_CONTROL_LPD, 1)])
-}
-
-# The control switch of the test device (house 106): the recorded LPD 7 pair,
-# byte for byte.  Kept out of LX_GROUND_TRUTH_CODES so the LPD picker still
-# offers LPD 1-24 only.
-LX_CONTROL_HOUSE = 106
-LX_CONTROL_LABEL = "CONTROL ON/OFF (LPD 7)"
-LX_CONTROL_CODES: dict[tuple[int, int], dict[str, int]] = {
-    (LX_CONTROL_HOUSE, 1): dict(LX_GROUND_TRUTH_CODES[(LX_LIVE_CONTROL_LPD, 1)])
-}
-
-
 # ---------------------------------------------------------------------------
 # Luxorparts encryption — ported from Homey ``se.luxorparts-1`` app
 #
@@ -1394,43 +1159,102 @@ def _lx_decrypt_payload(cipher24: int) -> tuple[int, int, int]:
     raise ValueError(f"not a Luxorparts ciphertext: 0x{cipher24:06X}")
 
 
-def _lx_unit_pair(unit: int) -> tuple[int, int]:
-    """Encrypt both halves of one Luxorparts device for a unit of LPD 7's pair.
+# ---------------------------------------------------------------------------
+# Generated pool — the other 15 channels of every recorded device family
+# ---------------------------------------------------------------------------
+# A device pair is one recorded pair with the payload's low five bits (the
+# "channel field", bits 3-7 of the 28-bit code) retuned; both halves move
+# together.  Channel bit 2 (field value 0x04) decides which half the receiver
+# treats as ON, so when the new channel's bit 2 differs from the recording's
+# the two halves swap roles.  See docs/LUXORPARTS_PROTOCOL_ANALYSIS.md §8.
+#
+# Confirmed on hardware (2026-11-19, 5/5): the five v5 test pairs were built
+# with exactly this rule and every one of them worked.
 
-    The two plaintext addresses and the control patterns come from the recorded
-    LPD 7 pair; only the 5-bit unit field changes, so ON and OFF always describe
-    one device and their control bytes keep the recorded state polarity.
-    ``unit=6`` — the recorded device's own unit — reproduces the recorded pair.
+#: The 16 channel field values a device family can carry (low 5 bits).
+LX_GEN_CHANNELS: tuple[int, ...] = tuple(range(1, 32, 2))
 
-    >>> hex(_lx_unit_pair(6)[0]), hex(_lx_unit_pair(6)[1])
+#: Clears the channel field (bits 3-7) of a stored 28-bit code.
+LX_GEN_CHANNEL_MASK = 0x7FFFFF07
+
+#: Model suffix that marks a generated channel (``selflearning-switch:lx_gen``).
+LX_GEN_VARIANT = "lx_gen"
+
+#: LPD numbers that are the *same device* as an earlier recording — identical
+#: address pair and family, so they generate identical codes.  Canonicalised
+#: to the first entry so each receiver yields one 16-channel family.
+LX_GEN_CANONICAL: dict[int, int] = {9: 4, 10: 8, 17: 15, 18: 13, 19: 14}
+
+
+#: Number of distinct device codes the generator can produce.
+LX_GEN_CODE_COUNT = len({LX_GEN_CANONICAL.get(lpd, lpd) for lpd, *_ in LX_LPD_LIST}) \
+    * len(LX_GEN_CHANNELS)
+
+
+def luxorparts_channel_codes(lpd: int, channel: int) -> dict[str, int]:
+    """Return the ON/OFF pair of one channel of a recorded device family.
+
+    ``lpd`` is the recorded pair's number (1-24, see ``LX_LPD_LIST``) and
+    ``channel`` its 1-based position in ``LX_GEN_CHANNELS`` (1-16), i.e.
+    channel 1 = field 0x01 and channel 16 = field 0x1F.
+
+    >>> c = luxorparts_channel_codes(7, 4)  # LPD 7's own recorded channel
+    >>> hex(c['on']), hex(c['off'])
     ('0x2450c38', '0x2633638')
-    >>> hex(_lx_unit_pair(1)[0]), hex(_lx_unit_pair(1)[1])
-    ('0x2700080', '0x252e100')
+    >>> c = luxorparts_channel_codes(7, 7)  # v5 B1 — worked on hardware
+    >>> hex(c['on']), hex(c['off'])
+    ('0x2450c68', '0x2633668')
+    >>> c = luxorparts_channel_codes(7, 8)  # v5 B2 — bit 2 held, no swap
+    >>> hex(c['on']), hex(c['off'])
+    ('0x2450c78', '0x2633678')
+    >>> c = luxorparts_channel_codes(7, 6)  # field 0x0B: bit 2 clear -> swap
+    >>> hex(c['on']), hex(c['off'])
+    ('0x2633658', '0x2450c58')
+    >>> c = luxorparts_channel_codes(5, 3)  # v5 B3
+    >>> hex(c['on']), hex(c['off'])
+    ('0x6bd1c28', '0x6db7628')
+    >>> c = luxorparts_channel_codes(13, 11)  # v5 B4
+    >>> hex(c['on']), hex(c['off'])
+    ('0x53f5ea8', '0x5c548a8')
+    >>> c = luxorparts_channel_codes(6, 16)  # v5 B5
+    >>> hex(c['on']), hex(c['off'])
+    ('0x32128f8', '0x3e2cdf8')
     """
-    return (
-        _lx_encrypt_payload((*LX_LIVE_ADDR_ON, LX_LIVE_CTRL_ON | unit)) << 3,
-        _lx_encrypt_payload((*LX_LIVE_ADDR_OFF, LX_LIVE_CTRL_OFF | unit)) << 3,
-    )
+    base_lpd = LX_GEN_CANONICAL.get(int(lpd), int(lpd))
+    recorded = LX_GROUND_TRUTH_CODES.get((base_lpd, 1))
+    if recorded is None:
+        raise KeyError(f"no recorded pair for LPD {lpd}")
+    index = int(channel) - 1
+    if not 0 <= index < len(LX_GEN_CHANNELS):
+        raise IndexError(
+            f"channel {channel} out of range 1-{len(LX_GEN_CHANNELS)}"
+        )
+    field = LX_GEN_CHANNELS[index]
+    on_code = (recorded["on"] & LX_GEN_CHANNEL_MASK) | (field << 3)
+    off_code = (recorded["off"] & LX_GEN_CHANNEL_MASK) | (field << 3)
+    if (field ^ ((recorded["on"] >> 3) & 0x1F)) & 0x04:
+        on_code, off_code = off_code, on_code
+    return {"on": on_code, "off": off_code}
 
 
-# Columns: (test_num, on_code, off_code, description)
-LX_TEST_LIST: list[tuple[int, int, int, str]] = [
-    (
-        100 + index,
-        *_lx_unit_pair(unit),
-        f"LPD 7 address pair, unit {unit} (ctrl 0x{LX_LIVE_CTRL_ON | unit:02X} / "
-        f"0x{LX_LIVE_CTRL_OFF | unit:02X})",
-    )
-    for index, unit in enumerate(LX_TEST_UNITS, start=1)
-]
+def luxorparts_codes(house: int, unit: int, model: str = "") -> dict[str, int]:
+    """Return the ON/OFF codes for a stored Luxorparts device.
 
-# Keyed by (test_num, 1), the same shape as LX_GROUND_TRUTH_CODES.
-LX_TEST_CODES: dict[tuple[int, int], dict[str, int]] = {
-    (num, 1): {"on": on_code, "off": off_code}
-    for num, on_code, off_code, _ in LX_TEST_LIST
-}
+    A model carrying the ``:lx_gen`` suffix marks a generated channel: ``house``
+    is then the recorded LPD number and ``unit`` the channel (1-16).  Every
+    other device keeps the recorded-pair / generic-cipher lookup.
 
-
+    >>> luxorparts_codes(7, 1, "selflearning-switch:lx_live") == \
+        LX_GROUND_TRUTH_CODES[(7, 1)]
+    True
+    >>> luxorparts_codes(7, 4, "selflearning-switch:lx_gen") == \
+        LX_GROUND_TRUTH_CODES[(7, 1)]
+    True
+    """
+    variant = model.split(":", 1)[1] if ":" in model else ""
+    if variant == LX_GEN_VARIANT:
+        return luxorparts_channel_codes(int(house), int(unit))
+    return luxorparts_generate_codes(int(house), int(unit))
 
 
 def luxorparts_generate_codes(house: int, unit: int) -> dict[str, int]:
@@ -1447,10 +1271,8 @@ def luxorparts_generate_codes(house: int, unit: int) -> dict[str, int]:
 
     If the (house, unit) pair exists in ``LX_GROUND_TRUTH_CODES`` (captured
     from Telldus Live via RTL-433), those verified codes are returned instead.
-    The test pairs in ``LX_TEST_CODES`` (houses 101-105) are returned the same
-    way; they are new units on the recorded LPD 7 address pair.
-    House 106 (``LX_CONTROL_CODES``) returns the recorded LPD 7 pair, so the test
-    device carries a control that is known to work.
+    Generated channels are reached through ``luxorparts_codes()`` with a
+    ``:lx_gen`` model, see ``luxorparts_channel_codes()``.
 
     Returns 28-bit hex integers (24-bit cipher << 3 with start bit 0).
 
@@ -1462,34 +1284,6 @@ def luxorparts_generate_codes(house: int, unit: int) -> dict[str, int]:
     gt = LX_GROUND_TRUTH_CODES.get((house, unit))
     if gt is not None:
         return dict(gt)
-
-    # Control of the test device (house 106) — the recorded LPD 7 pair
-    control = LX_CONTROL_CODES.get((house, unit))
-    if control is not None:
-        return dict(control)
-
-    # Test pairs (houses 101-105) — new units on the LPD 7 address pair
-    test = LX_TEST_CODES.get((house, unit))
-    if test is not None:
-        return dict(test)
-
-    # v1 test pairs (houses 111-115) and their control (116) — the first
-    # scheme-B build, kept for side-by-side retesting
-    test_v1 = LX_TEST_V1_CODES.get((house, unit))
-    if test_v1 is not None:
-        return dict(test_v1)
-    control_v1 = LX_CONTROL_V1_CODES.get((house, unit))
-    if control_v1 is not None:
-        return dict(control_v1)
-
-    # v5 test pairs (houses 131-135) and their control (136) — v1's arithmetic
-    # with the channel's bit 2 held, see the block above.
-    test_v5 = LX_TEST_V5_CODES.get((house, unit))
-    if test_v5 is not None:
-        return dict(test_v5)
-    control_v5 = LX_CONTROL_V5_CODES.get((house, unit))
-    if control_v5 is not None:
-        return dict(control_v5)
 
     # Map UI unit (1-based) to protocol unit (0-based, 5-bit, 0–31)
     proto_unit = max(0, unit - 1) & 0x1F
@@ -1588,6 +1382,8 @@ _LX_VARIANT_PARAMS: dict[str, tuple[int, int, int, int, int]] = {
     # gap_inter=LX_GAP_INTER for Net path; Duo path overrides with
     # LX_GAP_INTER_DUO to compensate for additive P-prefix pause.
     "lx_live": (10, LX_PULSE_SHORT, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
+    # Generated channel pool: identical RF timing, different code lookup.
+    "lx_gen": (10, LX_PULSE_SHORT, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
 }
 
 # Default parameters when variant is not found
@@ -1710,6 +1506,11 @@ def build_device_uid(protocol: str, model: str, house: str, unit: str) -> str:
     1. Strip the vendor suffix: ``selflearning-switch:nexa`` → ``selflearning-switch``
     2. Normalize: ``selflearning-switch`` → ``selflearning`` (to match RF events)
     """
+    # Generated Luxorparts channels share house/unit space with the recorded
+    # LPD devices (house 1-24, unit 1-16), so keep the variant in the model
+    # part of the UID to stop the two sets colliding.
+    if model.split(":", 1)[-1] == LX_GEN_VARIANT:
+        return "_".join(filter(None, [protocol, LX_GEN_VARIANT, house, unit]))
     # Strip vendor suffix (e.g. "selflearning-switch:nexa" → "selflearning-switch")
     base_model = normalize_rf_model(model)
     return "_".join(filter(None, [protocol, base_model, house, unit]))
