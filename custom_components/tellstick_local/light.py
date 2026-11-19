@@ -310,7 +310,7 @@ class TellStickLight(TellStickEntity, LightEntity):
                 self._attr_brightness = level
             else:
                 await self._send_generic_rf_raw("on")
-            await self._async_mirror_command("turn_on")
+            # The raw helper mirrors the pulse train itself.
         elif self._telldusd_device_id is not None:
             if ATTR_BRIGHTNESS in kwargs:
                 level = int(kwargs[ATTR_BRIGHTNESS])
@@ -330,8 +330,10 @@ class TellStickLight(TellStickEntity, LightEntity):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the light off."""
+        raw_sent = False
         if self._protocol == PROTOCOL_GENERIC_RF and hasattr(self._controller, "send_raw_command"):
             await self._send_generic_rf_raw("off")
+            raw_sent = True
         elif self._telldusd_device_id is not None:
             await self._controller.turn_off(self._telldusd_device_id)
         else:
@@ -339,7 +341,8 @@ class TellStickLight(TellStickEntity, LightEntity):
                 "Cannot send off command for %s: no telldusd device ID (UID mismatch?)",
                 self._device_uid,
             )
-        await self._async_mirror_command("turn_off")
+        if not raw_sent:
+            await self._async_mirror_command("turn_off")
         self._attr_is_on = False
         self.async_write_ha_state()
 
@@ -401,3 +404,5 @@ class TellStickLight(TellStickEntity, LightEntity):
             _LOGGER.warning(
                 "Generic RF raw TX failed: uid=%s result=%d", self._device_uid, result
             )
+
+        await self._async_mirror_raw(raw_cmd)

@@ -21,6 +21,7 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .client import RawDeviceEvent
+from .entity import async_mirror_raw_command
 from .const import (
     CONF_DEVICE_HOUSE,
     CONF_DEVICE_MODEL,
@@ -263,6 +264,10 @@ class TellStickLearnButton(ButtonEntity):
             _LOGGER.warning("LX learn failed: result=%d", result)
         else:
             _LOGGER.info("LX learn success")
+
+        await async_mirror_raw_command(
+            self.hass, self._entry_id, raw_cmd, self._device_uid
+        )
 
 
 # ---------------------------------------------------------------------------

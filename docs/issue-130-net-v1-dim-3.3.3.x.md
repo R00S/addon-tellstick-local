@@ -1,5 +1,10 @@
-# Branch: issue-130-net-v1-dim — 3.3.3.x
+# Branch: issue-130-net-v1-dim — 3.3.3.x → 3.4.0.x
 
+> This branch started on the 3.3.3.x line. The TellStick Net v1 protocol work was
+> re-landed as the 3.4.0.x series on `net-v1-protocols` (up to 3.4.0.2), and this
+> branch merged that line in so the Luxorparts work ships as **3.4.0.3**. Sessions
+> below keep their original headings; the shared 3.4.0.x history is in
+> [`5fe97fc32425f971ae084741-3.4.0.x.md`](5fe97fc32425f971ae084741-3.4.0.x.md).
 Continues the 3.3.3.x series started on `main` (see
 [`docs/5fe97fc32425f971ae084741-3.3.3.x.md`](5fe97fc32425f971ae084741-3.3.3.x.md))
 and the earlier 3.3.1.x/3.3.2.x history in
@@ -170,8 +175,10 @@ picker stays 1–24 and the codes are deliberately outside it. Timing and the
 
 ### Version
 
-3.3.3.1 → **3.3.3.2** for the test device; 3.3.3.2 → **3.3.3.3** with this
-chores pass (manifests only, no further code change).
+3.3.3.1 → **3.3.3.2** for the test device; 3.3.3.2 → 3.3.3.3 with the chores
+pass. The branch then merged `net-v1-protocols` (3.4.0.2) to join the 3.4.0.x
+line and was bumped to **3.4.0.3** — the test release carries the full Net v1
+protocol stack plus the Luxorparts test device.
 
 ### Verification
 

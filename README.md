@@ -7,13 +7,15 @@ Home assistant support for tellsticks (duo, net, znet) without no need for Telld
 
 > [!WARNING]
 > **🟡 TellStick Net / ZNet — Release candidate** – On/off commands, event reception, and sensor
-> decoding work for all major protocols. A wide range of scenarios has been tested, but
-> edge cases may remain. Feedback and bug reports are very welcome.
+> decoding work for all major protocols. An original **TellStick Net (v1)** additionally
+> supports every TX protocol from v3.4.0.0 (raw pulse encoding). A wide range of scenarios
+> has been tested, but edge cases may remain. Feedback and bug reports are very welcome.
 
 > [!CAUTION]
-> **🟡 Luxorparts / Cleverio 50969, 50970, 50972 — Release candidate (Duo only)** – On/off works
-> on TellStick Duo using raw RF pulse encoding with pre-captured Telldus Live codes
-> (LPD 1–24). Not yet available on TellStick Net/ZNet. See [details below](#known-limitations).
+> **🟡 Luxorparts / Cleverio 50969, 50970, 50972 — Release candidate (Duo / Net v1)** – On/off
+> works on TellStick Duo and on an original TellStick Net (v1) from v3.4.0.0, using raw RF
+> pulse encoding with pre-captured Telldus Live codes (LPD 1–24). Not available on
+> ZNet / Net v2. See [details below](#known-limitations).
 
 ![Project Stage][project-stage-shield]
 
@@ -53,8 +55,11 @@ Live account, and no YAML file editing.
 >   major protocols (arctech, everflourish, waveman, sartano, x10, hasta, brateck). Sensor
 >   decoding works for fineoffset, mandolyn, and oregon. Some edge cases may remain.
 >   No Telldus Live account needed — the integration talks to the Net/ZNet via local UDP.
->   **Note:** arctech dimmers (`selflearning-dimmer`) only support on/off on Net/ZNet —
->   variable-brightness dimming requires a **TellStick Duo**.
+>   **Note:** arctech dimmers (`selflearning-dimmer`) only support on/off on ZNet / Net v2 —
+>   variable-brightness dimming there requires a **TellStick Duo**. An original
+>   **TellStick Net (v1)** dims correctly from v3.3.3.1 and, from **v3.4.0.0**, sends every
+>   supported TX protocol (hasta, brateck, ikea, x10, risingsun, silvanchip, code switches, …)
+>   as raw RF pulses.
 > - **Mixing Duo and Net/ZNet:** If you have both, use the **Duo as your primary device**
 >   and add the Net/ZNet as a mirror/range extender. The Duo supports full dimming; the
 >   Net/ZNet does not.
@@ -394,10 +399,10 @@ each protocol supports.
 > them. The TellStick Duo includes a firmware-level repeat patch for reliable pairing
 > with picky receivers.
 
-> **🟡 Luxorparts / Cleverio 50969, 50970, 50972 (beta, Duo only):** On/off works
-> on TellStick Duo via raw RF pulse encoding. Add by brand → "Luxorparts — On/off
-> (beta, Duo only)" → pick an LPD number (1–24). Put the receiver in learn mode, then
-> press Learn in HA. Not yet available on TellStick Net/ZNet. See
+> **🟡 Luxorparts / Cleverio 50969, 50970, 50972 (beta, Duo / Net v1):** On/off works
+> on TellStick Duo and an original TellStick Net (v1) via raw RF pulse encoding. Add by
+> brand → "Luxorparts — On/off (beta, Duo only)" → pick an LPD number (1–24). Put the
+> receiver in learn mode, then press Learn in HA. Not available on ZNet / Net v2. See
 > [Known limitations](#known-limitations) for details.
 
 ### TX only (can be controlled but not auto-discovered)
@@ -598,11 +603,12 @@ brightness slider has no effect.
 If you have both a Duo and a Net/ZNet, add the Net/ZNet as a **mirror/range extender**
 so it only relays on/off commands and the Duo handles all dimming.
 
-### Luxorparts / Cleverio 50969, 50970, 50972 — Beta (Duo only)
+### Luxorparts / Cleverio 50969, 50970, 50972 — Beta (Duo / Net v1)
 
 These Luxorparts / Cleverio 1000W remote-controlled sockets work on
-**TellStick Duo** using raw RF pulse encoding with pre-captured Telldus Live
-codes (LPD 1–24). **Not yet available on TellStick Net/ZNet.**
+**TellStick Duo** and on an original **TellStick Net (v1)** from v3.4.0.0, using raw RF
+pulse encoding with pre-captured Telldus Live codes (LPD 1–24).
+**Not available on ZNet / Net v2.**
 
 **How to add a Luxorparts device (Duo):**
 

@@ -465,7 +465,7 @@
         "invalid_base_code": "The captured code must be 10 hex characters (40 bits), for example 6c82050eee."
       },
       "abort": {
-        "poc_requires_duo": "This curtain motor is driven by raw pulse trains, which only a TellStick Duo can transmit. Net/ZNet cannot.",
+        "poc_requires_duo": "This curtain motor is driven by raw pulse trains, which a TellStick Duo or an original TellStick Net (v1) can transmit. ZNet / Net v2 cannot.",
         "device_added": "Device added. It will appear in your device list shortly.",
         "mirror_is_secondary": "This TellStick is a mirror — devices must be added through the primary hub entry."
       }

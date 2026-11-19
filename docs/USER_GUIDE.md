@@ -246,9 +246,10 @@ only one remote, or when the physical remote should stay authoritative.
 
 **Requirements and limits**
 
-- **TellStick Duo only.** The replay sends raw pulse trains
-  (`tdSendRawCommand`), which Net/ZNet cannot do — on those backends the flow
-  stops with an explanation instead of creating a device.
+- **TellStick Duo, or an original TellStick Net (v1) from v3.4.0.0.** The replay
+  sends raw pulse trains: a Duo via `tdSendRawCommand`, a v1 via an S-only UDP
+  packet. ZNet / Net v2 discard those packets, so the flow stops with an
+  explanation instead of creating a device.
 - **No feedback.** Nothing receives this remote, so the cover reports an assumed
   state; there is no position and no "it worked" confirmation.
 - **The burst matters.** A real button press is five identical 40-bit frames
@@ -407,6 +408,12 @@ RF events received by the mirror are forwarded to the primary for device detecti
 
 > **Cross-backend mirroring:** A Duo (USB) can mirror a Net/ZNet (LAN) and vice versa.
 >
+> **Raw-pulse devices:** Luxorparts sockets, Generic RF record & replay devices and the
+> Tuya/Kjell curtain motor are sent as raw pulse trains rather than as a device command,
+> so their frames are replicated to mirrors separately (from **v3.4.0.2**). A mirror can
+> only relay them if it can transmit raw pulses itself — a **TellStick Duo** or an original
+> **TellStick Net (v1)**. A ZNet / Net v2 mirror skips them silently.
+>
 > **Adding devices:** The **+ Add 433 MHz device** button is available for all entries,
 > including mirrors. If you click it while a mirror entry is selected, the flow
 > immediately shows _"This TellStick is a mirror — devices must be added through the
@@ -488,6 +495,11 @@ learn-signal options.
 > on **TellStick Duo**. It also works on an original **TellStick Net (v1)** from v3.3.3.1
 > (dim frames are sent as raw pulse bytes there). On **ZNet / Net v2** the firmware
 > ignores the level, so any brightness above 0 goes to full brightness.
+>
+> **TellStick Net v1 — full protocol support:** from **v3.4.0.0** an original TellStick Net
+> sends *every* TX protocol this integration supports as raw RF pulses, so all Duo devices
+> (blinds, projector screens, Koppla, X10, code switches, …) can be controlled from a v1.
+> ZNet / Net v2 keep the firmware-dict behaviour described above.
 
 > **Sartano note:** Sartano/codeswitch auto-detection is **off by default** because
 > `telldusd` often falsely decodes arctech signals as sartano. Enable the
@@ -682,11 +694,26 @@ check the log and report it in a GitHub issue.
 Net/ZNet as a **mirror/range extender** — the Duo handles all dimming while the
 Net/ZNet relays on/off commands.
 
+### TellStick Net v1 — protocol support
+
+An original TellStick Net (v1) is identified by its discovery name `TellStickNet`.
+From **v3.4.0.0** it sends all supported TX protocols as raw pulse trains, matching
+what a Duo can do: arctech (including dim and a correct learn frame), comen,
+everflourish, sartano, yidong, waveman, upm, fuhaote, brateck, risingsun, x10,
+hasta (v1 and v2), ikea and silvanchip. `kangtai` is the one exception — it exists
+only in the ZNet firmware and the Duo cannot send it either.
+
+If the unit cannot be identified (for example UDP discovery is blocked by a VM or
+NAT), the integration keeps the old firmware-dict behaviour and the newer protocols
+stay silent. Set the log level to Debug and look for the `raw=v1` / `raw=firmware-dict`
+field in the `Net send:` lines to see which path was used.
+
 ### Luxorparts / Cleverio 50969, 50970, 50972 — Beta (Duo only)
 
 These Luxorparts / Cleverio 1000W remote-controlled sockets work on **TellStick Duo**
-using raw RF pulse encoding with pre-captured Telldus Live codes (LPD 1–24).
-**Not yet available on TellStick Net/ZNet.**
+and on an original **TellStick Net (v1)** from v3.4.0.0, using raw RF pulse encoding
+with pre-captured Telldus Live codes (LPD 1–24). **Not available on ZNet / Net v2**
+(their firmware discards raw pulse packets).
 
 **How to add a Luxorparts device (Duo):**
 

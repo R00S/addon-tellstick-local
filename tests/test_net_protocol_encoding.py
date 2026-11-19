@@ -207,6 +207,186 @@ def run_tests() -> None:
         traceback.print_exc()
 
     # ---------------------------------------------------------------
+    # Test 3b: Net v1 raw pulse-train encoders (Duo protocol parity)
+    #   Ported from telldus-core; every frame is S-only (plus R/P).
+    # ---------------------------------------------------------------
+    print("\n=== Test 3b: Net v1 raw encoders ===")
+    try:
+        from custom_components.tellstick_local.net_client import (
+            _NET_V1_MAX_PULSES,
+            _encode_net_v1_raw,
+        )
+
+        # (name, protocol, model, house, unit, method, param, expected len, prefix)
+        cases = [
+            ("arctech on", "arctech", "selflearning-switch", 12345, "1", "turnon", None, 131, b"\x18\xff"),
+            ("arctech dim", "arctech", "selflearning-dimmer", 12345, "1", "dim", 128, 147, b"\x18\xff"),
+            ("arctech codeswitch", "arctech", "codeswitch", "C", "5", "turnon", None, 50, b"$k$k"),
+            ("arctech bell", "arctech", "bell", "C", "1", "bell", None, 82, b"$k$k"),
+            ("comen", "comen", "selflearning-switch", 100, "1", "turnon", None, 131, b"\x18\xff"),
+            ("everflourish", "everflourish", "selflearning-switch", 100, "1", "turnon", None, 108, b"\x3c"),
+            ("sartano", "sartano", "codeswitch", "0101010101", "1", "turnon", None, 50, b"$kk$"),
+            ("yidong", "yidong", "goobay", "0", "3", "turnon", None, 50, b"$k$k"),
+            ("waveman", "waveman", "codeswitch", "K", "5", "turnon", None, 50, b"$k$k"),
+            ("upm", "upm", "selflearning", 2047, "2", "turnon", None, 41, b";"),
+            ("fuhaote", "fuhaote", "codeswitch", "0101010101", "1", "turnon", None, 49, b"\x13\x3a"),
+            ("brateck up", "brateck", "codeswitch", "01010100", "1", "up", None, 49, b"!V"),
+            ("risingsun selflearning", "risingsun", "selflearning", 1000, "3", "turnon", None, 66, b"\x78"),
+            ("risingsun codeswitch", "risingsun", "codeswitch", "2", "3", "turnoff", None, 50, b".e"),
+            ("x10", "x10", "codeswitch", "B", "5", "turnon", None, 75, b"\xff\x01"),
+            ("hasta v1 up", "hasta", "selflearning", 1234, "2", "up", None, 85, b"\xa4\x01"),
+            ("hasta v2 stop", "hasta", "selflearningv2", 1234, "2", "stop", None, 92, b"\xf5\x01"),
+            ("ikea dim", "ikea", "selflearning", 3, "1,4", "dim", 100, 39, b"\x54"),
+            ("silvanchip kp100", "silvanchip", "kp100", 123456, "1", "up", None, 126, b"\x64"),
+            ("silvanchip ecosavers", "silvanchip", "ecosavers", 123456, "2", "turnon", None, 60, b"\x25"),
+        ]
+        for name, proto, model, house, unit, method, param, exp_len, prefix in cases:
+            res = _encode_net_v1_raw(proto, model, house, unit, method, param)
+            ok = isinstance(res, dict) and isinstance(res.get("S"), bytes)
+            report(f"{name}: returns S bytes", ok, f"result={type(res)}")
+            if not ok:
+                continue
+            pulses = res["S"]
+            report(
+                f"{name}: length {exp_len}",
+                len(pulses) == exp_len,
+                f"len={len(pulses)}",
+            )
+            report(
+                f"{name}: prefix",
+                pulses.startswith(prefix),
+                f"head={pulses[:4].hex()}",
+            )
+            report(
+                f"{name}: S-only (+R/P)",
+                set(res) <= {"S", "R", "P"},
+                f"keys={sorted(res)}",
+            )
+            report(
+                f"{name}: within firmware limit",
+                len(pulses) <= _NET_V1_MAX_PULSES,
+                f"len={len(pulses)}",
+            )
+
+        # Per-protocol repeat/pause parameters
+        # hasta must NOT set R/P: telldus-core's hasta string carries none, so
+        # the Duo sends it with hardware defaults.  "Duo parity" means the same.
+        hasta = _encode_net_v1_raw("hasta", "selflearning", 1234, "2", "up")
+        report(
+            "hasta v1 uses Duo defaults (no R/P)",
+            isinstance(hasta, dict) and set(hasta) == {"S"},
+            f"{hasta and {k: v for k, v in hasta.items() if k != 'S'}}",
+        )
+        rising_learn = _encode_net_v1_raw(
+            "risingsun", "selflearning", 1000, "3", "learn"
+        )
+        report(
+            "risingsun learn requests P=5 R=50",
+            isinstance(rising_learn, dict)
+            and rising_learn.get("P") == 5
+            and rising_learn.get("R") == 50,
+        )
+
+        # Unsupported method/model must fall through, never build a bad frame
+        report(
+            "arctech codeswitch dim -> None",
+            _encode_net_v1_raw("arctech", "codeswitch", "C", "5", "dim", 128) is None,
+        )
+        report(
+            "brateck turnon -> None",
+            _encode_net_v1_raw("brateck", "codeswitch", "01010100", "1", "turnon") is None,
+        )
+        report(
+            "silvanchip unknown model -> None",
+            _encode_net_v1_raw("silvanchip", "mystery", 1, "1", "turnon") is None,
+        )
+        report(
+            "kangtai has no Duo encoder -> None",
+            _encode_net_v1_raw("kangtai", "selflearning-switch", 1, "1", "turnon") is None,
+        )
+        report(
+            "sartano rejects non-binary code",
+            _encode_net_v1_raw("sartano", "codeswitch", "ABCDEF", "1", "turnon") is None,
+        )
+
+    except Exception as e:
+        report("Net v1 raw encoders", False, str(e))
+        import traceback
+        traceback.print_exc()
+
+    # ---------------------------------------------------------------
+    # Test 3c: Duo-style raw commands (P/R + S) translated for Net v1
+    #   Covers the protocols we added on the Duo path on top of telldus-core:
+    #   luxorparts, generic_rf record & replay, and the Tuya curtain motor.
+    # ---------------------------------------------------------------
+    print("\n=== Test 3c: Duo raw commands on Net v1 ===")
+    try:
+        from custom_components.tellstick_local.const import (
+            generic_rf_build_raw_command,
+            luxorparts_build_raw_command,
+            timings_to_tellstick_bytes,
+        )
+        from custom_components.tellstick_local.net_client import (
+            _parse_duo_raw_command,
+        )
+
+        pulses, pause, repeats = _parse_duo_raw_command(b"P\x02R\x0aS\x01\x02+")
+        report("parses P/R prefix", pause == 2 and repeats == 10, f"P={pause} R={repeats}")
+        report("strips S/+ markers", pulses == b"\x01\x02", f"pulses={pulses!r}")
+
+        plain, plain_pause, plain_repeats = _parse_duo_raw_command(b"S\x18\xff+")
+        report(
+            "plain S command keeps firmware defaults",
+            plain == b"\x18\xff" and plain_pause is None and plain_repeats is None,
+        )
+
+        # generic_rf record & replay
+        timings = [392, -1148, 392, -1148]
+        cmd = generic_rf_build_raw_command(timings, repeat_count=5)
+        gp, gpause, grepeats = _parse_duo_raw_command(cmd)
+        report(
+            "generic_rf pulses survive translation",
+            gp == timings_to_tellstick_bytes(timings),
+            f"len={len(gp)}",
+        )
+        report("generic_rf repeat/pause preserved", grepeats == 5 and gpause == 2)
+
+        # luxorparts
+        lp, lpause, lrepeats = _parse_duo_raw_command(
+            luxorparts_build_raw_command(1, "")
+        )
+        report(
+            "luxorparts frame parsed (50 pulses)",
+            isinstance(lp, bytes) and len(lp) == 50,
+            f"len={len(lp) if isinstance(lp, bytes) else '?'}",
+        )
+        report(
+            "luxorparts within v1 limit",
+            len(lp) <= 199 and lrepeats is not None and lpause is not None,
+            f"R={lrepeats} P={lpause}",
+        )
+
+        # Tuya / Kjell curtain motor (84-byte frames in the Duo builder)
+        from custom_components.tellstick_local.tuya_curtain import (
+            build_curtain_command,
+            payload_for_button,
+        )
+
+        tp, tpause, trepeats = _parse_duo_raw_command(
+            build_curtain_command(payload_for_button("up"), "a")
+        )
+        report(
+            "tuya curtain frame parsed",
+            isinstance(tp, bytes) and len(tp) > 0 and trepeats is not None,
+            f"len={len(tp) if isinstance(tp, bytes) else '?'} R={trepeats} P={tpause}",
+        )
+
+    except Exception as e:
+        report("Duo raw command translation", False, str(e))
+        import traceback
+        traceback.print_exc()
+
+    # ---------------------------------------------------------------
     # Test 4: Protocol catalog splits are consistent
     # ---------------------------------------------------------------
     print("\n=== Test 4: Protocol catalog consistency ===")

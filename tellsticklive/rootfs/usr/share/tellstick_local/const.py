@@ -506,9 +506,25 @@ PROTOCOL_MODEL_LABELS: list[str] = [label for label, _, _, _ in PROTOCOL_MODEL_C
 # See docs/ZNET_PROTOCOL_PORTING_GUIDE.md for full details.
 # ---------------------------------------------------------------------------
 
-# Protocols with raw pulse-train encoders implemented in net_client.py.
-# These bypass all Net/ZNet firmware bugs and work on ALL hardware versions.
-NET_RAW_PROTOCOLS: set[str] = {"arctech", "everflourish"}
+# Protocols with a raw pulse-train encoder in net_client.py.  On TellStick Net
+# v1 (product "TellStickNet") they are preferred for every command; on v2/ZNet
+# only arctech dim and everflourish actually take the raw path.
+NET_RAW_PROTOCOLS: set[str] = {
+    "arctech",
+    "brateck",
+    "comen",
+    "everflourish",
+    "fuhaote",
+    "hasta",
+    "ikea",
+    "risingsun",
+    "sartano",
+    "silvanchip",
+    "upm",
+    "waveman",
+    "x10",
+    "yidong",
+}
 
 # Split PROTOCOL_MODEL_CATALOG for Net/ZNet backends:
 # - "raw" = our code encodes the pulse train (reliable on all hardware;
