@@ -366,16 +366,16 @@ payload24 = ((seed & 0x7FFFFF) << 1) | 1     # bit 0 always 1, frame MSB 0
 stored28  = payload24 << 3
 ```
 
-The generated seeds are the working LPD 7 seeds with 1…5 added, so every test pair
-sits one seed step from a code that works on this Duo path:
+The generated seeds are the working LPD 7 seeds with one **address** bit moved each
+(`0x0400` … `0x4000`), so every switch is a different device:
 
 | Switch | Seeds (ON / OFF) | ON (stored28) | OFF (stored28) |
 | --- | --- | --- | --- |
-| LX-B1 | `0x2450C4` / `0x263364` | `0x2450C48` | `0x2633648` |
-| LX-B2 | `0x2450C5` / `0x263365` | `0x2450C58` | `0x2633658` |
-| LX-B3 | `0x2450C6` / `0x263366` | `0x2450C68` | `0x2633668` |
-| LX-B4 | `0x2450C7` / `0x263367` | `0x2450C78` | `0x2633678` |
-| LX-B5 | `0x2450C8` / `0x263368` | `0x2450C88` | `0x2633688` |
+| LX-B1 | `0x2454C3` / `0x263763` | `0x2454C38` | `0x2637638` |
+| LX-B2 | `0x2458C3` / `0x263B63` | `0x2458C38` | `0x263B638` |
+| LX-B3 | `0x2460C3` / `0x264363` | `0x2460C38` | `0x2643638` |
+| LX-B4 | `0x2470C3` / `0x265363` | `0x2470C38` | `0x2653638` |
+| LX-B5 | `0x2490C3` / `0x267363` | `0x2490C38` | `0x2673638` |
 | CONTROL (LPD 7) | `0x2450C3` / `0x263363` | `0x2450C38` | `0x2633638` |
 
 The control returns LPD 7's recorded pair from `luxorparts_generate_codes(106, 1)`
@@ -386,15 +386,23 @@ pair by pressing a switch's **on** button with the receiver in learn mode.
 1. Teach **CONTROL** first: receiver in learn mode, press CONTROL's **on**, then
    check that its on and off both work. If CONTROL fails, the test device's own
    wiring is at fault and the B results mean nothing.
-2. Then teach LX-B1 the same way — it differs from CONTROL by one seed step
-   (`0x2450C4` vs `0x2450C3`).
-3. If LX-B1 is accepted, try LX-B2…LX-B5 (two to five steps away).
-4. If CONTROL works and none of the B switches do, the receiver validates the
-   payload: generation then needs the real encoder, not the Live-family shape.
+2. Teach each of LX-B1…LX-B5 to a **different** socket and check that every switch
+   controls only its own socket, with on and off the right way round.
+3. If a switch still controls another one, or its on/off are reversed, the address
+   field is not where the offsets land — move them further up the payload.
 
-**What this decides:** whether a receiver stores whole codes and compares them (then
-any plausible code is accepted) or decodes a field and rejects what it cannot
-validate.
+**Results (2026-11-19):** the v3.4.0.5 build, whose seeds differed by only 1…5
+(payload bits 1–3), was **accepted in full** — CONTROL and all five generated pairs
+were learned. But several of those switches then controlled the **same** socket with
+on/off reversed. That settles two questions at once:
+
+* the receiver **learns a code it has never seen**, so generation is possible;
+* the receiver **decodes the payload** — bits 1–3 are state/unit, not address.
+
+So "store the whole code and compare" is ruled out, and a generator must produce a
+valid address/state encoding, not merely a plausible frame. The address-bit offsets
+above test that. **The encoder is still unknown**, so this is field-spreading from a
+real pair, not a solved cipher.
 
 ## 8. Still unknown
 

@@ -735,13 +735,15 @@ pairing signal is sent when the device is added and the switches have no Learn
 button — put the receiver in learn mode and press a switch's **on** button.
 
 The generated pairs are scheme B: Live-family frame shape, seeded from the
-working LPD 7 pair with 1…5 added (`0x2450C48`…`0x2450C88` and their OFF
-partners), so each sits one seed step from a code that works.
+working LPD 7 pair with one address bit moved per switch (`0x0400` … `0x4000` in
+the seed).
 
-Scheme A (five remote-family clones, LX-T1…LX-T5) was tested on 2026-11-19 and
-**all five were refused** by a 50969 in learn mode. The control exists to tell
-the two failure modes apart: if CONTROL works and a LX-Bx switch does not, the
-receiver is validating the payload, not learning any code it hears.
+Hardware results on a 50969 (2026-11-19): scheme A (five remote-family clones,
+LX-T1…LX-T5) was **refused outright**; scheme B **is accepted** — CONTROL and
+all five generated pairs were learned. A first build moved the seed by 1…5
+(payload bits 1–3) and several switches controlled the same socket with on/off
+reversed, which shows the receiver decodes the payload and that those low bits
+are state/unit. The five pairs now move address bits 11–15.
 
 **Current limitations:**
 

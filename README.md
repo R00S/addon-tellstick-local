@@ -628,27 +628,29 @@ switch that replays the recorded LPD 7 pair byte for byte — the same code the
 working Luxorparts path sends.
 
 The generated pairs use scheme B: the Live-family frame shape, seeded from the
-working LPD 7 pair with 1…5 added, so each is one seed step away from a code
-that works:
+working LPD 7 pair with one **address** bit moved per switch (`0x0400` … `0x4000`
+in the seed):
 
 | Switch | ON | OFF |
 | --- | --- | --- |
-| LX-B1 | `0x2450C48` | `0x2633648` |
-| LX-B2 | `0x2450C58` | `0x2633658` |
-| LX-B3 | `0x2450C68` | `0x2633668` |
-| LX-B4 | `0x2450C78` | `0x2633678` |
-| LX-B5 | `0x2450C88` | `0x2633688` |
+| LX-B1 | `0x2454C38` | `0x2637638` |
+| LX-B2 | `0x2458C38` | `0x263B638` |
+| LX-B3 | `0x2460C38` | `0x2643638` |
+| LX-B4 | `0x2470C38` | `0x2653638` |
+| LX-B5 | `0x2490C38` | `0x2673638` |
 | CONTROL ON/OFF | `0x2450C38` | `0x2633638` |
 
 **No pairing signal is sent when the device is added**, and the switches have no
 Learn button: a receiver in learn mode learns the code it hears, so pair a switch
 by pressing its **on** button.
 
-> **Hardware result (2026-11-19):** scheme A (five remote-family clones) was
-> tested first and **all five were refused** by a 50969 in learn mode. Scheme B
-> with the LPD 7 control is the current test: if **CONTROL** works and a LX-Bx
-> switch does not, the receiver validates the payload instead of learning
-> whatever code it hears.
+> **Hardware results (2026-11-19):** scheme A was refused outright — all five
+> remote-family clones. Scheme B **is accepted**: CONTROL and all five generated
+> pairs were learned by a 50969, so a receiver does take codes it has never seen.
+> A first scheme-B build moved the seed by 1…5 (payload bits 1–3) and several
+> switches then controlled the same socket with on/off reversed — proof that the
+> receiver **decodes** the payload and that those low bits are state/unit rather
+> than address. The five pairs now move address bits 11–15 instead.
 
 **Current limitations:**
 

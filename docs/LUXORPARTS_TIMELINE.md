@@ -558,16 +558,16 @@ payload24 = ((seed & 0x7FFFFF) << 1) | 1     # bit 0 always 1, frame MSB 0
 stored28  = payload24 << 3
 ```
 
-The five pairs take the working LPD 7 seeds (`0x2450C3` / `0x263363`) and add 1…5,
-so each is one seed step from a code that works:
+The five pairs take the working LPD 7 seeds (`0x2450C3` / `0x263363`) and move one
+**address** bit each (`0x0400` … `0x4000`), so every switch is a different device:
 
 | Switch | ON | OFF |
 | --- | --- | --- |
-| LX-B1 | `0x2450C48` | `0x2633648` |
-| LX-B2 | `0x2450C58` | `0x2633658` |
-| LX-B3 | `0x2450C68` | `0x2633668` |
-| LX-B4 | `0x2450C78` | `0x2633678` |
-| LX-B5 | `0x2450C88` | `0x2633688` |
+| LX-B1 | `0x2454C38` | `0x2637638` |
+| LX-B2 | `0x2458C38` | `0x263B638` |
+| LX-B3 | `0x2460C38` | `0x2643638` |
+| LX-B4 | `0x2470C38` | `0x2653638` |
+| LX-B5 | `0x2490C38` | `0x2673638` |
 | CONTROL | `0x2450C38` | `0x2633638` |
 
 The control (house 106) replays the recorded LPD 7 pair byte for byte, so the
@@ -577,9 +577,13 @@ instead of 7 keeps it out of the normal LPD 7 device's UID.
 No pairing signal is sent when the device is added and the switches carry no Learn
 button: pair by pressing a switch's **on** button with the receiver in learn mode.
 
-**Open:** if CONTROL works and an LX-Bx switch does not, the receiver validates the
-payload instead of learning any code it hears — generation then needs the real
-encoder, not the frame shape.
+**Hardware result (v3.4.0.5 build):** CONTROL **and all five** generated pairs were
+accepted — the receiver does learn codes it has never seen. Those five seeds then
+differed by 1…5 (payload bits 1–3) and several switches controlled the **same**
+socket with on/off reversed, so the receiver **decodes** the payload and those low
+bits are state/unit. Generation therefore has to move the address field; the offsets
+above do that (payload bits 11–15). Still open: whether a generated address counts
+as a different device to the receiver.
 
 ---
 

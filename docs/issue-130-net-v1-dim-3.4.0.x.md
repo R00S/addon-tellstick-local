@@ -102,3 +102,49 @@ device is distinguishable from the `3.4.0.3.20261119110747` dev build.
 
 * No Luxorparts receiver here: both scheme B and the control are untested on
   hardware. The control is expected to work because it is the recorded LPD 7 pair.
+
+## Session — 2026-11-19 (third): scheme B accepted, seeds moved to address bits
+
+### What the user reported
+
+* **All six switches were accepted** by the 50969 — CONTROL and all five scheme-B
+  pairs. Generation works; the receiver learns codes it has never seen.
+* However, some switches appeared to carry the **same code** as others, and some
+  had **on/off reversed**.
+
+### What that means
+
+The v3.4.0.5 pairs only moved the seed by 1…5, i.e. payload bits 1–3. Codes that
+differ in those bits collapsed onto one socket with different states, so the
+receiver **decodes** the payload: the low bits are state/unit, the upper bits the
+address. "Store the whole code and compare" is therefore ruled out.
+
+### Changed
+
+* `const.py`: `LX_LIVE_SEED_OFFSETS = (0x0400, 0x0800, 0x1000, 0x2000, 0x4000)`;
+  `LX_TEST_LIST` is built from the LPD 7 control seeds plus one offset each, so
+  every switch differs from the control and from the others in a high payload bit
+  (11–15). Codes: `0x2454C38`/`0x2637638` … `0x2490C38`/`0x2673638`, control
+  `0x2450C38`/`0x2633638`.
+* `strings.json` / `translations/en.json`: `lx_test` text now describes the
+  address-bit offsets and no longer claims "one seed step" spacing.
+* Docs: README, USER_GUIDE §15, `LUXORPARTS_PAIRS.md`, `LUXORPARTS_TIMELINE.md`,
+  `LUXORPARTS_PROTOCOL_ANALYSIS.md` §7 (results + revised procedure).
+
+### Version
+
+3.4.0.5 → **3.4.0.6** in both `manifest.json` files.
+
+### Verification
+
+* New codes computed and asserted: ten distinct generated codes, ON ≠ OFF per
+  pair, no overlap with the 62 captured codes, control still byte-identical to
+  LPD 7, six distinct UIDs, LPD 7's own UID untouched.
+* `tests/test_ha_integration.py`, `py_compile`, `const.py` doctests, mirror copies
+  byte-identical.
+
+### Not verified
+
+* No receiver here: whether the address-bit offsets produce sockets the receiver
+  treats as separate devices is the next hardware test. The encoder is still
+  unknown; a rejection or another collapse means the address field sits elsewhere.

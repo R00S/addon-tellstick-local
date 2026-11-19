@@ -75,26 +75,29 @@ Assistant device with six switches: five **scheme B** pairs (Live-family shape,
 `payload24 = ((seed & 0x7FFFFF) << 1) | 1`, `stored28 = payload24 << 3`) and a
 **CONTROL ON/OFF** that replays the recorded LPD 7 pair.
 
-The scheme-B seeds are the working LPD 7 seeds with 1–5 added, so each test pair
-is one seed step away from a code that works:
+The scheme-B seeds are the working LPD 7 seeds with one address bit moved each
+(`0x0400`, `0x0800`, `0x1000`, `0x2000`, `0x4000` in the seed):
 
-| Switch | Seeds (ON / OFF) | ON | OFF |
-|--------|------------------|----|-----|
-| LX-B1 | 0x2450C4 / 0x263364 | 0x2450C48 | 0x2633648 |
-| LX-B2 | 0x2450C5 / 0x263365 | 0x2450C58 | 0x2633658 |
-| LX-B3 | 0x2450C6 / 0x263366 | 0x2450C68 | 0x2633668 |
-| LX-B4 | 0x2450C7 / 0x263367 | 0x2450C78 | 0x2633678 |
-| LX-B5 | 0x2450C8 / 0x263368 | 0x2450C88 | 0x2633688 |
-| CONTROL | 0x2450C3 / 0x263363 | 0x2450C38 | 0x2633638 |
+| Switch | Seed offset | ON | OFF |
+|--------|-------------|----|-----|
+| LX-B1 | +0x0400 | 0x2454C38 | 0x2637638 |
+| LX-B2 | +0x0800 | 0x2458C38 | 0x263B638 |
+| LX-B3 | +0x1000 | 0x2460C38 | 0x2643638 |
+| LX-B4 | +0x2000 | 0x2470C38 | 0x2653638 |
+| LX-B5 | +0x4000 | 0x2490C38 | 0x2673638 |
+| CONTROL | — | 0x2450C38 | 0x2633638 |
 
 No pairing signal is sent when the device is added and the switches have no Learn
 button; pair a switch by pressing its **on** button with the receiver in learn
 mode.
 
-**Hardware results:** scheme A (five remote-family clones, LX-T1…LX-T5,
-`0xAEABEA8`…`0xAFABEB8`) was tested on 2026-11-19 and **all five were refused** by
-a 50969 in learn mode — scheme A is dead and removed from the code. Scheme B and
-the control are untested.
+**Hardware results (2026-11-19):** scheme A (five remote-family clones,
+LX-T1…LX-T5, `0xAEABEA8`…`0xAFABEB8`) was **refused outright** and is removed
+from the code. Scheme B **is accepted**: the control and all five generated pairs
+were learned. A first build used seed offsets 1–5 (payload bits 1–3) and several
+switches then controlled the same socket with on/off reversed — the receiver
+**decodes** the payload, and those low bits are state/unit, not address. The
+address-bit offsets above are the current test.
 
 ---
 

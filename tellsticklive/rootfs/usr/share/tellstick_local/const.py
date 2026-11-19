@@ -1121,13 +1121,30 @@ LX_LIVE_CONTROL_LPD = 7
 LX_LIVE_CONTROL_SEED_ON = 0x2450C3  # = LPD 7 ON seed (payload24 >> 1)
 LX_LIVE_CONTROL_SEED_OFF = 0x263363  # = LPD 7 OFF seed
 
+# Hardware result 2026-11-19, first scheme-B build: CONTROL and all five
+# generated pairs were **accepted** by the 50969 — a receiver does learn a code
+# it has never seen.  But the five test pairs then moved the seed by 1…5, i.e.
+# payload bits 1–3, and several of them controlled the **same** socket with
+# on/off reversed.  That is only possible if the receiver *decodes* the payload:
+# the low payload bits carry state/unit, not address, so adding 1…5 produced the
+# same device at different states.
+#
+# The generated pairs therefore move the seed in the address field instead, in
+# a single bit each: payload bits 11–15.  Every switch now differs from the
+# control and from the other switches in a high payload bit.
+LX_LIVE_SEED_OFFSETS: tuple[int, ...] = (0x0400, 0x0800, 0x1000, 0x2000, 0x4000)
+
 # Columns: (test_num, on_code, off_code, seed description)
 LX_TEST_LIST: list[tuple[int, int, int, str]] = [
-    (101, *_lx_live_pair(0x2450C4, 0x263364), "LPD 7 seeds + 1"),
-    (102, *_lx_live_pair(0x2450C5, 0x263365), "LPD 7 seeds + 2"),
-    (103, *_lx_live_pair(0x2450C6, 0x263366), "LPD 7 seeds + 3"),
-    (104, *_lx_live_pair(0x2450C7, 0x263367), "LPD 7 seeds + 4"),
-    (105, *_lx_live_pair(0x2450C8, 0x263368), "LPD 7 seeds + 5"),
+    (
+        100 + index,
+        *_lx_live_pair(
+            LX_LIVE_CONTROL_SEED_ON + offset,
+            LX_LIVE_CONTROL_SEED_OFF + offset,
+        ),
+        f"LPD 7 seeds + 0x{offset:04X} (payload bit {offset.bit_length()})",
+    )
+    for index, offset in enumerate(LX_LIVE_SEED_OFFSETS, start=1)
 ]
 
 # Keyed by (test_num, 1), the same shape as LX_GROUND_TRUTH_CODES.
