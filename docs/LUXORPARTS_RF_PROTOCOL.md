@@ -52,6 +52,11 @@ Period is constant at ~1500 µs (pulse + gap always sums to ~1500 µs).
 
 ## 4. Packet Structure
 
+**Superseded — see `docs/LUXORPARTS_PROTOCOL_ANALYSIS.md` §2.** There is no fixed
+`0101` preamble (it holds for only 6 of the 62 captures) and no fixed suffix: only
+payload bit 0 is constant, and the frame MSB is the family marker (`0` Live, `1`
+remote).
+
 Total bits: **25**
 
 - Fixed preamble (bits 0–3): always `0101`
@@ -91,6 +96,10 @@ All codes confirmed via RTL-SDR capture with matching Telldus Live house/unit se
 ## 7. Bit-level Analysis
 
 ### 7.1 Fixed bits
+
+**Superseded — see `docs/LUXORPARTS_PROTOCOL_ANALYSIS.md` §2 and §5.** Only payload
+bit 0 is constant across all 62 captures; bit 24 is `0` for every Live code and `1`
+for every remote code.
 
 - Bits 0–3: always `0101` — preamble, never changes
 - Bit 24: always `1` — suffix, never changes

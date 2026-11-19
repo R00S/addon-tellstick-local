@@ -3,7 +3,8 @@
 All known Luxorparts 25-bit OOK-PWM code pairs with both ON and OFF codes.
 Each pair is assigned a stable **LPD** (Luxorparts Device) number for testing.
 
-Remote 1 channel D is excluded (ON code not captured).
+Remote 1 channels B and D are incomplete (B's OFF code and D's ON code were not
+captured) — see the warning under the table.
 
 Codes are 28-bit hex values (25-bit code << 3).
 Internally, LPD number is the lookup key (house=LPD, unit=1).
@@ -46,6 +47,14 @@ Internally, LPD number is the lookup key (house=LPD, unit=1).
 | 30  | Remote | R2-C             | 0xAFBAEA8   | 0xAFBAEB8   |
 | 31  | Remote | R2-D             | 0xAFAFEA8   | 0xAFAFEB8   |
 
+> ⚠️ **LPD 26 and 27 are cross-assembled.** Each row carries one ON and one OFF
+> code from *different* buttons, so the ON entries are really OFF codes and vice
+> versa. The four captures are field `0x2000` ON/OFF
+> (`0xAEBAEA8`/`0xAEBAEB8`), field `0x2200` ON (`0xAEBBEA8`) and field `0x0A00`
+> OFF (`0xAEAFEB8`); B's OFF and D's ON were never captured. See
+> `docs/LUXORPARTS_PROTOCOL_ANALYSIS.md` §3.1. LPD 25–31 are documentation only —
+> the picker ships LPD 1–24.
+
 ---
 
 ## Summary
@@ -55,6 +64,27 @@ Internally, LPD number is the lookup key (house=LPD, unit=1).
 | Telldus Live    | 1–24      | 24    |
 | Physical remote | 25–31     | 7     |
 | **Total**       | **1–31**  | **31**|
+
+Plus five **generated** test pairs (picker 101–105) that are not recordings — see
+the section above.
+
+## Generated test pairs (never captured)
+
+Not recorded codes: built with scheme A from
+`docs/LUXORPARTS_PROTOCOL_ANALYSIS.md` §6 (remote template `0x5D55D5`, bit 1 =
+state, frame MSB 1). Offered in the Duo flow as "Luxorparts — Generated test
+codes" (picker 101–105, LX-T1…LX-T5). None of these ten codes appears in any
+capture, so a receiver that learns one accepts a generated code.
+
+| Pick | Button field | ON | OFF |
+|------|--------------|----|-----|
+| 101 (LX-T1) | bit 9 | 0xAEABEA8 | 0xAEABEB8 |
+| 102 (LX-T2) | bit 11 | 0xAEAEEA8 | 0xAEAEEB8 |
+| 103 (LX-T3) | bits 9+11+13 | 0xAEBFEA8 | 0xAEBFEB8 |
+| 104 (LX-T4) | none | 0xAEAAEA8 | 0xAEAAEB8 |
+| 105 (LX-T5) | bit 9 + remote 2 | 0xAFABEA8 | 0xAFABEB8 |
+
+---
 
 ## Excluded
 

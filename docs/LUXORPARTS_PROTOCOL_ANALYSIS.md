@@ -79,7 +79,7 @@ What the five data bits do:
 
 | Field | Bit(s) | Evidence |
 | --- | --- | --- |
-| State | 1 | ON and OFF differ in **exactly this bit**: `R1-A ON 0x5D7DD5` / `OFF 0x5D7DD7`. Bit 1 = 0 means **ON**, bit 1 = 1 means **OFF** (inverted relative to the usual convention). Holds for five of the seven documented pairs; the two exceptions are the label shift described below |
+| State | 1 | ON and OFF differ in **exactly this bit**: `R1-A ON 0x5D7DD5` / `OFF 0x5D7DD7`. Bit 1 = 0 means **ON**, bit 1 = 1 means **OFF** (inverted relative to the usual convention). Holds for five of the seven documented pairs; the two exceptions are the misassembled rows described below |
 | Button / channel | 9, 11, 13 | only four patterns are used: `0x2800`, `0x2200`, `0x2000`, `0x0A00` |
 | Remote / sub-remote | 17 | R1 and R2 codes differ **only** here (`0x5D…` vs `0x5F…`) |
 
@@ -87,8 +87,10 @@ Observed button fields (payload XOR template):
 
 | Remote | A | B | C | D |
 | --- | --- | --- | --- | --- |
-| R1 (bit17 = 0) | `0x2800` | `0x2000` | `0x0A00` | — |
+| R1 (bit17 = 0) | `0x2800` | `0x2200`\* | `0x2000` | `0x0A00`† |
 | R2 (bit17 = 1) | `0x2800` | `0x2200` | `0x2000` | `0x0A00` |
+
+\* ON captured, OFF missing in `LPD 26`. † OFF captured, ON missing in `LPD 27`.
 
 The three button bits are therefore *not* a binary channel number: only 4 of the 8
 possible patterns appear (`101`, `110`, `100`, `011` as bits 13/11/9), and the four
@@ -98,11 +100,22 @@ Within this family's 16-code space this behaves like a fixed-code remote: one st
 bit, three button bits, one address bit, no checksum, no rolling counter. That
 conclusion is scoped to the 14 captures and says nothing about the Live family.
 
-Two of the seven documented pairs look anomalous — `R1-B` differs in bits 1 and 9,
-`R1-C` in bits 1, 9, 11 and 13. Those are **pairing mistakes in the table, not
-protocol behaviour**: `R1-B ON (0x5D75D7)` and `R1-C OFF (0x5D75D5)` differ only in
-bit 1, i.e. they are the ON/OFF pair of one and the same button. The B and C labels
-were swapped between the ON and OFF columns when the table was assembled.
+Two of the seven documented rows are anomalous — `R1-B` differs in bits 1 and 9,
+`R1-C` in bits 1, 9, 11 and 13. Those rows are **assembly errors in the table, not
+protocol behaviour**: each row holds one ON code and one OFF code from *different*
+buttons.
+
+| Row | Code | Actual field | Actual state |
+| --- | --- | --- | --- |
+| `LPD 26` ON | `0x5D75D7` | `0x2000` | **OFF** |
+| `LPD 26` OFF | `0x5D77D5` | `0x2200` | **ON** |
+| `LPD 27` ON | `0x5D5FD7` | `0x0A00` | **OFF** |
+| `LPD 27` OFF | `0x5D75D5` | `0x2000` | **ON** |
+
+The real pairs are `0x5D75D5`/`0x5D75D7` (field `0x2000`, complete) plus
+`0x5D77D5` (field `0x2200`, ON only) and `0x5D5FD7` (field `0x0A00`, OFF only), so
+remote 1 has two complete pairs (A and C) and two half-pairs (B, D). The button
+letters follow R2's layout — the two remotes differ only in bit 17.
 
 ### 3.2 Telldus Live family — 48 codes
 
@@ -241,16 +254,16 @@ captures is `device_field = 0x2200`, bit 17 = 0:
 
 | State | payload24 | frame25 | stored28 |
 | --- | --- | --- | --- |
-| ON | `0x5D77D5` | `0x15D77D5` | `0x2EBBEA8` |
-| OFF | `0x5D77D7` | `0x15D77D7` | `0x2EBBEB8` |
+| ON | `0x5D77D5` | `0x15D77D5` | `0xAEBBEA8` |
+| OFF | `0x5D77D7` | `0x15D77D7` | `0xAEBBEB8` |
 
 If you want codes that are genuinely outside the captured set, extend to one of the
 four **unobserved** button patterns, e.g. `0x0200` (bit 9 only):
 
 | State | payload24 | frame25 | stored28 |
 | --- | --- | --- | --- |
-| ON | `0x5D57D5` | `0x15D57D5` | `0x2EABEA8` |
-| OFF | `0x5D57D7` | `0x15D57D7` | `0x2EABEB8` |
+| ON | `0x5D57D5` | `0x15D57D5` | `0xAEABEA8` |
+| OFF | `0x5D57D7` | `0x15D57D7` | `0xAEABEB8` |
 
 Both variants are byte-for-byte the remote template with a different device field, so
 they are the closest thing to a "known-good" code that was never captured. Whether
