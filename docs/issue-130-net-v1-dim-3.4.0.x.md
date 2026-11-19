@@ -203,3 +203,23 @@ two control bytes, and one plaintext address is shared by each remote's codes.
 
 * No receiver here: whether the 50969 keys a device on the plaintext address and
   reads state from the control byte is the next hardware test.
+
+### Added — the v1 test device, for side-by-side retesting
+
+Asked for by the owner, so the first B build can be retested at the same time as
+the current one:
+
+* `const.py`: widget **22** and catalog entry "Luxorparts — Test device v1, seeds
+  +1..5 (beta, Duo only)". `_lx_seed_pair()` (the v3.4.0.5 arithmetic) is back,
+  `LX_TEST_V1_LIST` / `LX_TEST_V1_CODES` hold houses 111–115
+  (`0x2450C48`/`0x2633648` … `0x2450C88`/`0x2633688`) — byte-identical to the
+  v3.4.0.5 build — and `LX_CONTROL_V1_CODES` replays LPD 7 on house 116.
+  `luxorparts_generate_codes()` returns them for 111–116.
+* `config_flow.py`: the switch-config body of `async_step_lx_test()` moved into
+  `_add_lx_test_switches()`; new `async_step_lx_test_v1()`, routed from widget 22.
+* `strings.json` / `translations/en.json`: `lx_test_v1` step and
+  `lx_test_v1_added` abort.
+* House ranges do not overlap (101–106 vs 111–116), so both devices can be added
+  together and keep separate UIDs.
+
+Version 3.4.0.7 → **3.4.0.8**.

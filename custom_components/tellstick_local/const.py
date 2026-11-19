@@ -330,6 +330,11 @@ WIDGET_PARAMS: dict[int, list[dict]] = {
     #     No parameter form: async_step_lx_test() adds all five switches
     #     (LX-T1..LX-T5) in one go, grouped under a single HA device.
     21: [],
+    # 22: Luxorparts test device v1 — the first scheme-B build (LPD 7 seeds
+    #     +1..5).  Kept so a receiver can be taught the old and the new pairs in
+    #     one session; async_step_lx_test_v1() adds its five switches and a
+    #     control.
+    22: [],
 }
 
 # ---------------------------------------------------------------------------
@@ -394,6 +399,7 @@ DEVICE_CATALOG: list[tuple[str, str, str, int]] = [
     # ON/OFF switches built from codes that were never captured — see
     # docs/LUXORPARTS_PROTOCOL_ANALYSIS.md §7.
     ("Luxorparts — Test device, 5 switches (beta, Duo only)", "luxorparts", "selflearning-switch:lx_live", 21),
+    ("Luxorparts — Test device v1, seeds +1..5 (beta, Duo only)", "luxorparts", "selflearning-switch:lx_live", 22),
     ("Luxorparts — On/off (beta, Duo only)", "luxorparts", "selflearning-switch:lx_live", 20),
     ("Nexa — Bell", "arctech", "bell:nexa", 4),
     ("Nexa — Code switch", "arctech", "codeswitch:nexa", 1),
@@ -1131,6 +1137,61 @@ LX_LIVE_UNIT_NIBBLE = 0x6
 # as the control, but a value no recorded pair uses.
 LX_TEST_ADDRESSES: tuple[int, ...] = (0xD601, 0xD602, 0xD603, 0xD604, 0xD605)
 
+# ---------------------------------------------------------------------------
+# Scheme B v1 — the first hardware build, kept for side-by-side retesting
+#
+# v3.4.0.5 shipped these: the LPD 7 seeds moved by 1…5.  The receiver accepted
+# all of them, but several switches then controlled the same socket with on/off
+# reversed, because payload bits 1-3 are state/unit rather than address.  The
+# codes are kept unchanged (widget 22, houses 111-115 + control 116) so a
+# receiver can be taught both builds in one session and the two compared
+# directly.  They are a diagnostic, not a way to create devices: widget 21 is
+# the supported test device.
+# ---------------------------------------------------------------------------
+
+LX_LIVE_SEED_ON = 0x2450C3  # = LPD 7 ON seed (payload24 >> 1)
+LX_LIVE_SEED_OFF = 0x263363  # = LPD 7 OFF seed
+LX_LIVE_SEED_OFFSETS_V1: tuple[int, ...] = (1, 2, 3, 4, 5)
+
+
+def _lx_seed_pair(seed_on: int, seed_off: int) -> tuple[int, int]:
+    """Build a stored28 (ON, OFF) pair from two seeds (scheme B v1 arithmetic).
+
+    >>> hex(_lx_seed_pair(0x2450C4, 0x263364)[0])
+    '0x2450c48'
+    >>> hex(_lx_seed_pair(0x2450C4, 0x263364)[1])
+    '0x2633648'
+    """
+
+    def _store(seed: int) -> int:
+        return (((seed & 0x7FFFFF) << 1) | 1) << 3  # payload bit 0 is always 1
+
+    return _store(seed_on), _store(seed_off)
+
+
+# Columns: (test_num, on_code, off_code, description)
+LX_TEST_V1_LIST: list[tuple[int, int, int, str]] = [
+    (
+        110 + index,
+        *_lx_seed_pair(LX_LIVE_SEED_ON + offset, LX_LIVE_SEED_OFF + offset),
+        f"LPD 7 seeds + {offset} (payload bits 1-3)",
+    )
+    for index, offset in enumerate(LX_LIVE_SEED_OFFSETS_V1, start=1)
+]
+
+LX_TEST_V1_CODES: dict[tuple[int, int], dict[str, int]] = {
+    (num, 1): {"on": on_code, "off": off_code}
+    for num, on_code, off_code, _ in LX_TEST_V1_LIST
+}
+
+# Control of the v1 test device (house 116): the recorded LPD 7 pair again, so
+# the v1 group carries the same known-good reference as the current one.
+LX_CONTROL_V1_HOUSE = 116
+LX_CONTROL_V1_LABEL = "CONTROL ON/OFF (LPD 7) v1"
+LX_CONTROL_V1_CODES: dict[tuple[int, int], dict[str, int]] = {
+    (LX_CONTROL_V1_HOUSE, 1): dict(LX_GROUND_TRUTH_CODES[(LX_LIVE_CONTROL_LPD, 1)])
+}
+
 # The control switch of the test device (house 106): the recorded LPD 7 pair,
 # byte for byte.  Kept out of LX_GROUND_TRUTH_CODES so the LPD picker still
 # offers LPD 1-24 only.
@@ -1282,6 +1343,15 @@ def luxorparts_generate_codes(house: int, unit: int) -> dict[str, int]:
     test = LX_TEST_CODES.get((house, unit))
     if test is not None:
         return dict(test)
+
+    # v1 test pairs (houses 111-115) and their control (116) — the first
+    # scheme-B build, kept for side-by-side retesting
+    test_v1 = LX_TEST_V1_CODES.get((house, unit))
+    if test_v1 is not None:
+        return dict(test_v1)
+    control_v1 = LX_CONTROL_V1_CODES.get((house, unit))
+    if control_v1 is not None:
+        return dict(control_v1)
 
     # Map UI unit (1-based) to protocol unit (0-based, 5-bit, 0–31)
     proto_unit = max(0, unit - 1) & 0x1F

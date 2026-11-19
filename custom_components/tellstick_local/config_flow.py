@@ -73,7 +73,10 @@ from .const import (
     GENERIC_RF_TYPE_SWITCH,
     LX_CONTROL_HOUSE,
     LX_CONTROL_LABEL,
+    LX_CONTROL_V1_HOUSE,
+    LX_CONTROL_V1_LABEL,
     LX_TEST_LIST,
+    LX_TEST_V1_LIST,
     PROTOCOL_GENERIC_RF,
     PROTOCOL_MODEL_LABELS,
     PROTOCOL_MODEL_MAP,
@@ -2248,6 +2251,9 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 # Luxorparts test device: five switches on one device, added
                 # in a single step and with no pairing signal of its own.
                 return await self.async_step_lx_test()
+            if widget == 22:
+                # The same, carrying the first scheme-B pairs (seeds +1…5).
+                return await self.async_step_lx_test_v1()
             return await self.async_step_params()
 
         return self.async_show_form(
@@ -2450,6 +2456,63 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             errors=errors,
         )
 
+    async def _add_lx_test_switches(self, switches: list[tuple[int, str]]) -> None:
+        """Store one Luxorparts test group and announce its switches.
+
+        ``switches`` holds ``(house, name)`` pairs.  Every switch is stored as a
+        ``luxorparts`` device (unit 1) that shares the Home Assistant device
+        name given one step earlier and carries ``no_learn_button``, because a
+        Luxorparts receiver is paired by pressing the switch's ON code rather
+        than by a dedicated learn signal.
+        """
+        entry = self._get_entry()
+        entry_data = self.hass.data[DOMAIN].get(entry.entry_id, {})
+        group_name = self._new_device.get(CONF_DEVICE_NAME, "") or "Luxorparts test"
+        model = self._new_device[CONF_DEVICE_MODEL]
+        rf_model = normalize_rf_model(model)
+        existing_devices = dict(entry.options.get(CONF_DEVICES, {}))
+        discovered: set[str] = entry_data.setdefault("_discovered_uids", set())
+
+        for num, switch_name in switches:
+            house = str(num)
+            device_uid = build_device_uid("luxorparts", model, house, "1")
+            existing_devices[device_uid] = {
+                CONF_DEVICE_NAME: switch_name,
+                CONF_DEVICE_PROTOCOL: "luxorparts",
+                CONF_DEVICE_MODEL: model,
+                CONF_DEVICE_HOUSE: house,
+                CONF_DEVICE_UNIT: "1",
+                CONF_DEVICE_ENCODING: "",
+                "params": {"house": house, "unit": "1"},
+                # Every switch of the test device shares one HA device.
+                "group_uid": group_name,
+                # Paired by pressing the switch's ON code, so no
+                # "Send learn signal" button is created for it.
+                "no_learn_button": True,
+            }
+            discovered.add(device_uid)
+
+        new_options = dict(entry.options)
+        new_options[CONF_DEVICES] = existing_devices
+        self.hass.config_entries.async_update_entry(entry, options=new_options)
+
+        # Dispatch a synthetic event per switch so the entities appear
+        # immediately, without waiting for a reload.
+        for num, _switch_name in switches:
+            synthetic = RawDeviceEvent(
+                raw=(
+                    f"class:command;protocol:luxorparts;model:{rf_model};"
+                    f"house:{num};unit:1;method:turnon;"
+                    f"_catalog_model:{model};"
+                ),
+                controller_id=0,
+            )
+            async_dispatcher_send(
+                self.hass,
+                SIGNAL_NEW_DEVICE.format(entry.entry_id),
+                synthetic,
+            )
+
     async def async_step_lx_test(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
@@ -2459,72 +2522,47 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
         101–105: one plaintext address each, encrypted twice with the LPD 7
         pair's own control bytes, so ON and OFF are the same device) and a sixth
         — **CONTROL ON/OFF** — replays the recorded LPD 7 pair byte for byte
-        (house 106).  They are added together, grouped under a
-        single Home Assistant device, and nothing is transmitted here: a
-        Luxorparts receiver learns whatever code it hears while in learn mode,
-        so each switch is paired by pressing its **on** button.
+        (house 106).  They are added together, grouped under a single Home
+        Assistant device, and nothing is transmitted here: a Luxorparts receiver
+        learns whatever code it hears while in learn mode, so each switch is
+        paired by pressing its **on** button.
         """
         if user_input is not None:
-            entry = self._get_entry()
-            entry_data = self.hass.data[DOMAIN].get(entry.entry_id, {})
-            group_name = (
-                self._new_device.get(CONF_DEVICE_NAME, "") or "Luxorparts test"
-            )
-            model = self._new_device[CONF_DEVICE_MODEL]
-            rf_model = normalize_rf_model(model)
-            existing_devices = dict(entry.options.get(CONF_DEVICES, {}))
-            discovered: set[str] = entry_data.setdefault("_discovered_uids", set())
-
-            # Five generated switches, plus the control that replays LPD 7.
             switches: list[tuple[int, str]] = [
                 (num, f"LX-B{num - 100}") for num, *_rest in LX_TEST_LIST
             ]
             switches.append((LX_CONTROL_HOUSE, LX_CONTROL_LABEL))
-
-            for num, switch_name in switches:
-                house = str(num)
-                device_uid = build_device_uid("luxorparts", model, house, "1")
-                existing_devices[device_uid] = {
-                    CONF_DEVICE_NAME: switch_name,
-                    CONF_DEVICE_PROTOCOL: "luxorparts",
-                    CONF_DEVICE_MODEL: model,
-                    CONF_DEVICE_HOUSE: house,
-                    CONF_DEVICE_UNIT: "1",
-                    CONF_DEVICE_ENCODING: "",
-                    "params": {"house": house, "unit": "1"},
-                    # Every switch of the test device shares one HA device.
-                    "group_uid": group_name,
-                    # Paired by pressing the switch's ON code, so no
-                    # "Send learn signal" button is created for it.
-                    "no_learn_button": True,
-                }
-                discovered.add(device_uid)
-
-            new_options = dict(entry.options)
-            new_options[CONF_DEVICES] = existing_devices
-            self.hass.config_entries.async_update_entry(entry, options=new_options)
-
-            # Dispatch a synthetic event per switch so the entities appear
-            # immediately, without waiting for a reload.
-            for num, _switch_name in switches:
-                synthetic = RawDeviceEvent(
-                    raw=(
-                        f"class:command;protocol:luxorparts;model:{rf_model};"
-                        f"house:{num};unit:1;method:turnon;"
-                        f"_catalog_model:{model};"
-                    ),
-                    controller_id=0,
-                )
-                async_dispatcher_send(
-                    self.hass,
-                    SIGNAL_NEW_DEVICE.format(entry.entry_id),
-                    synthetic,
-                )
-
+            await self._add_lx_test_switches(switches)
             return self.async_abort(reason="lx_test_added")
 
         return self.async_show_form(
             step_id="lx_test",
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "name": self._new_device.get(CONF_DEVICE_NAME, ""),
+            },
+        )
+
+    async def async_step_lx_test_v1(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Add the v1 Luxorparts test device: the first generated build.
+
+        Same layout as ``async_step_lx_test``, but its five switches carry the
+        v3.4.0.5 pairs — the LPD 7 seeds moved by 1…5 (houses 111-115) — plus a
+        control on house 116.  Both test devices can be added at the same time,
+        so a receiver can be taught the old and the new pairs in one session.
+        """
+        if user_input is not None:
+            switches: list[tuple[int, str]] = [
+                (num, f"LX-B{num - 110} v1") for num, *_rest in LX_TEST_V1_LIST
+            ]
+            switches.append((LX_CONTROL_V1_HOUSE, LX_CONTROL_V1_LABEL))
+            await self._add_lx_test_switches(switches)
+            return self.async_abort(reason="lx_test_v1_added")
+
+        return self.async_show_form(
+            step_id="lx_test_v1",
             data_schema=vol.Schema({}),
             description_placeholders={
                 "name": self._new_device.get(CONF_DEVICE_NAME, ""),

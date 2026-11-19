@@ -642,6 +642,13 @@ ON it learned and is never taught the OFF:
 | LX-B5 | `0xD605` | `0x203B438` | `0x21C7E38` |
 | CONTROL ON/OFF | LPD 7 | `0x2450C38` | `0x2633638` |
 
+A second device type, **"Luxorparts — Test device v1, seeds +1..5 (beta, Duo
+only)"**, restores the **first** generated build beside this one: five switches
+(LX-B1…LX-B5 v1, houses 111–115) carrying the original `LPD 7 seeds +1…5` pairs,
+plus its own control. Add both devices when a receiver should be taught the old
+and the new pairs in one session — the old pairs are the build whose switches
+shared a socket or ran on/off reversed, so they are the comparison.
+
 **No pairing signal is sent when the device is added**, and the switches have no
 Learn button: a receiver in learn mode learns the code it hears, so pair a switch
 by pressing its **on** button.

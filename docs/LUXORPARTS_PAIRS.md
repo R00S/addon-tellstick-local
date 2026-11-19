@@ -88,6 +88,22 @@ the OFF from the ON it learned.  Every switch uses the recorded pair's own
 control bytes (`0x86` / `0x46`, unit 6) and a fresh address, which is why
 `_lx_plain_pair(0xD510)` reproduces the recorded ON code byte for byte.
 
+A **second** test device (widget 22, "Luxorparts — Test device v1, seeds +1..5")
+restores the first build unchanged, so both can be taught to one receiver in the
+same session. Its pairs are the old `LPD 7 seeds +1…5` on houses 111–115, plus a
+control on 116 that replays LPD 7 again:
+
+| Switch | ON | OFF |
+|--------|----|-----|
+| LX-B1 v1 | 0x2450C48 | 0x2633648 |
+| LX-B2 v1 | 0x2450C58 | 0x2633658 |
+| LX-B3 v1 | 0x2450C68 | 0x2633668 |
+| LX-B4 v1 | 0x2450C78 | 0x2633678 |
+| LX-B5 v1 | 0x2450C88 | 0x2633688 |
+| CONTROL v1 | 0x2450C38 | 0x2633638 |
+
+They are a diagnostic, not a way to create devices.
+
 | Switch | Address | ON | OFF |
 |--------|---------|----|-----|
 | LX-B1 | 0xD601 | 0x21C7C38 | 0x203B638 |

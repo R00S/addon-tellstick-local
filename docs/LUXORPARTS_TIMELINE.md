@@ -645,6 +645,17 @@ replays a recorded pair).
 * No receiver here. Whether the 50969 keys a device on the plaintext address (and
   reads state from the control byte) is what the next hardware run decides.
 
+### v1 test device restored (same release)
+
+The project owner asked for the first scheme-B build back, to retest it next to the
+current one. It returns unchanged as a **second** device type — widget 22,
+"Luxorparts — Test device v1, seeds +1..5" — with the old `LPD 7 seeds +1…5`
+pairs on houses 111–115 (`0x2450C48`/`0x2633648` … `0x2450C88`/`0x2633688`) and its
+own control on house 116 (the recorded LPD 7 pair again). House numbers differ from
+widget 21 so the two groups get separate UIDs and can be added at the same time.
+`async_step_lx_test()` and `async_step_lx_test_v1()` now share
+`_add_lx_test_switches()`.
+
 ---
 
 ## Anti-patterns to avoid

@@ -340,6 +340,11 @@
             "fade": "Fade (smooth)"
           }
         },
+        "lx_test_v1": {
+          "title": "Luxorparts test device v1",
+          "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#15-known-limitations",
+          "description": "Adds **{name}** — one device with six on/off switches carrying the FIRST generated build (LPD 7 seeds +1..5).\n\n**CONTROL ON/OFF** replays the recorded LPD 7 pair byte for byte, so this group carries the same known-good reference as the current test device.\n\n**LX-B1 … LX-B5 v1** are the original generated pairs, restored so they can be retested next to the current ones. Their seeds moved payload bits 1–3, which the receiver reads as state/unit, so switches may share a socket or run on/off reversed — that is the behaviour being compared.\n\n**No pairing signal is sent here.** Put the receiver in learn mode and press the switch's **on** button."
+        },
         "lx_test": {
           "title": "Luxorparts test device",
           "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#15-known-limitations",
@@ -473,6 +478,7 @@
         "poc_requires_duo": "This curtain motor is driven by raw pulse trains, which a TellStick Duo or an original TellStick Net (v1) can transmit. ZNet / Net v2 cannot.",
         "device_added": "Device added. It will appear in your device list shortly.",
         "lx_test_added": "Luxorparts test device added — one device with five switches (LX-T1 … LX-T5). Put a receiver in learn mode and press a switch's ON button to pair it.",
+        "lx_test_v1_added": "Luxorparts test device v1 added — five switches (LPD 7 seeds +1..5) plus a control. Put a receiver in learn mode and press a switch's ON button to pair it.",
         "mirror_is_secondary": "This TellStick is a mirror — devices must be added through the primary hub entry."
       }
     }

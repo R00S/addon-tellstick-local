@@ -739,6 +739,12 @@ twice with the working LPD 7 pair's own control bytes (`0x86` ON, `0x46` OFF), s
 ON and OFF are the same device and differ only in the state byte. The receiver
 derives the OFF from the ON it learned, so no OFF has to be taught.
 
+A second device type, **"Luxorparts — Test device v1, seeds +1..5 (beta, Duo
+only)"**, restores the **first** generated build so both can be retested at the
+same time: five switches (LX-B1…LX-B5 v1, houses 111–115) with the original
+`LPD 7 seeds +1…5` pairs plus its own control. Those are the pairs whose switches
+shared a socket or ran on/off reversed, kept as the comparison.
+
 Hardware results on a 50969 (2026-11-19): scheme A (five remote-family clones,
 LX-T1…LX-T5) was **refused outright**; scheme B **is accepted** — CONTROL and
 all five generated pairs were learned. A first build moved the seed by 1…5
