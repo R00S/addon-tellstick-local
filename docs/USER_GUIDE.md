@@ -734,16 +734,20 @@ a **CONTROL ON/OFF** that replays the recorded LPD 7 pair byte for byte. No
 pairing signal is sent when the device is added and the switches have no Learn
 button — put the receiver in learn mode and press a switch's **on** button.
 
-The generated pairs are scheme B: Live-family frame shape, seeded from the
-working LPD 7 pair with one address bit moved per switch (`0x0400` … `0x4000` in
-the seed).
+The generated pairs use one address per switch (`0xD601` … `0xD605`), encrypted
+twice with the working LPD 7 pair's own control bytes (`0x86` ON, `0x46` OFF), so
+ON and OFF are the same device and differ only in the state byte. The receiver
+derives the OFF from the ON it learned, so no OFF has to be taught.
 
 Hardware results on a 50969 (2026-11-19): scheme A (five remote-family clones,
 LX-T1…LX-T5) was **refused outright**; scheme B **is accepted** — CONTROL and
 all five generated pairs were learned. A first build moved the seed by 1…5
 (payload bits 1–3) and several switches controlled the same socket with on/off
-reversed, which shows the receiver decodes the payload and that those low bits
-are state/unit. The five pairs now move address bits 11–15.
+reversed, which shows the receiver decodes the payload. A second build moved the
+seed in the address bits: every ON worked on its own socket, but **no OFF did** —
+a seed offset is applied after the cipher, so the two halves of a pair no longer
+decoded to one device. The current build encrypts both halves from a single
+plaintext record instead.
 
 **Current limitations:**
 

@@ -2455,10 +2455,11 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
     ) -> SubentryFlowResult:
         """Add the Luxorparts test device: one device, five ON/OFF switches.
 
-        Five switches carry the scheme-B pairs in ``LX_TEST_CODES`` (houses
-        101–105, live-family shape, one seed step each from the working LPD 7
-        pair) and a sixth — **CONTROL ON/OFF** — replays the recorded LPD 7 pair
-        byte for byte (house 106).  They are added together, grouped under a
+        Five switches carry the generated pairs in ``LX_TEST_CODES`` (houses
+        101–105: one plaintext address each, encrypted twice with the LPD 7
+        pair's own control bytes, so ON and OFF are the same device) and a sixth
+        — **CONTROL ON/OFF** — replays the recorded LPD 7 pair byte for byte
+        (house 106).  They are added together, grouped under a
         single Home Assistant device, and nothing is transmitted here: a
         Luxorparts receiver learns whatever code it hears while in learn mode,
         so each switch is paired by pressing its **on** button.
@@ -2474,7 +2475,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             existing_devices = dict(entry.options.get(CONF_DEVICES, {}))
             discovered: set[str] = entry_data.setdefault("_discovered_uids", set())
 
-            # Five scheme-B switches, plus the control that replays LPD 7.
+            # Five generated switches, plus the control that replays LPD 7.
             switches: list[tuple[int, str]] = [
                 (num, f"LX-B{num - 100}") for num, *_rest in LX_TEST_LIST
             ]

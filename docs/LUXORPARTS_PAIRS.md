@@ -71,21 +71,31 @@ not recordings — see the section below.
 ## Generated test pairs (never captured)
 
 Not recorded codes, with one recorded control. The test device adds one Home
-Assistant device with six switches: five **scheme B** pairs (Live-family shape,
-`payload24 = ((seed & 0x7FFFFF) << 1) | 1`, `stored28 = payload24 << 3`) and a
+Assistant device with six switches: five **generated** pairs and a
 **CONTROL ON/OFF** that replays the recorded LPD 7 pair.
 
-The scheme-B seeds are the working LPD 7 seeds with one address bit moved each
-(`0x0400`, `0x0800`, `0x1000`, `0x2000`, `0x4000` in the seed):
+Each generated pair is **one plaintext record, encrypted twice**.  Decrypting the
+recorded LPD 7 pair with the Homey cipher shows the record layout:
 
-| Switch | Seed offset | ON | OFF |
-|--------|-------------|----|-----|
-| LX-B1 | +0x0400 | 0x2454C38 | 0x2637638 |
-| LX-B2 | +0x0800 | 0x2458C38 | 0x263B638 |
-| LX-B3 | +0x1000 | 0x2460C38 | 0x2643638 |
-| LX-B4 | +0x2000 | 0x2470C38 | 0x2653638 |
-| LX-B5 | +0x4000 | 0x2490C38 | 0x2673638 |
-| CONTROL | — | 0x2450C38 | 0x2633638 |
+```
+ON  0x2450C38 -> plaintext  D5 10 86     (address 0xD510, ctrl 0x86)
+OFF 0x2633638 -> plaintext  D5 B1 46     (address 0xD5B1, ctrl 0x46)
+```
+
+The address and unit stay fixed per switch and only the control byte changes, so
+ON and OFF describe one device — the shape a receiver needs, because it derives
+the OFF from the ON it learned.  Every switch uses the recorded pair's own
+control bytes (`0x86` / `0x46`, unit 6) and a fresh address, which is why
+`_lx_plain_pair(0xD510)` reproduces the recorded ON code byte for byte.
+
+| Switch | Address | ON | OFF |
+|--------|---------|----|-----|
+| LX-B1 | 0xD601 | 0x21C7C38 | 0x203B638 |
+| LX-B2 | 0xD602 | 0x26EDC38 | 0x25E1E38 |
+| LX-B3 | 0xD603 | 0x2536C38 | 0x228C638 |
+| LX-B4 | 0xD604 | 0x27FCC38 | 0x2380E38 |
+| LX-B5 | 0xD605 | 0x203B438 | 0x21C7E38 |
+| CONTROL | LPD 7 | 0x2450C38 | 0x2633638 |
 
 No pairing signal is sent when the device is added and the switches have no Learn
 button; pair a switch by pressing its **on** button with the receiver in learn
@@ -96,8 +106,11 @@ LX-T1…LX-T5, `0xAEABEA8`…`0xAFABEB8`) was **refused outright** and is remove
 from the code. Scheme B **is accepted**: the control and all five generated pairs
 were learned. A first build used seed offsets 1–5 (payload bits 1–3) and several
 switches then controlled the same socket with on/off reversed — the receiver
-**decodes** the payload, and those low bits are state/unit, not address. The
-address-bit offsets above are the current test.
+**decodes** the payload, and those low bits are state/unit, not address. A second
+build moved the seed in the address bits: all five **ON** commands worked, but **no
+OFF** did — an offset added to a stored payload is applied after the cipher, so
+the two halves of a pair decoded to different devices. The table above is the
+current build: one plaintext record per switch, encrypted twice.
 
 ---
 

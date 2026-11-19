@@ -366,17 +366,22 @@ payload24 = ((seed & 0x7FFFFF) << 1) | 1     # bit 0 always 1, frame MSB 0
 stored28  = payload24 << 3
 ```
 
-The generated seeds are the working LPD 7 seeds with one **address** bit moved each
-(`0x0400` … `0x4000`), so every switch is a different device:
+The current build (v3.4.0.7) uses the Homey cipher itself: each pair is **one
+plaintext record encrypted twice**, so its two halves decode to the same address
+and differ only in the control byte. Every switch reuses the recorded pair's own
+control bytes (`0x86` ON, `0x46` OFF, unit 6) with a fresh address:
 
-| Switch | Seeds (ON / OFF) | ON (stored28) | OFF (stored28) |
+| Switch | Plaintext (ON / OFF) | ON (stored28) | OFF (stored28) |
 | --- | --- | --- | --- |
-| LX-B1 | `0x2454C3` / `0x263763` | `0x2454C38` | `0x2637638` |
-| LX-B2 | `0x2458C3` / `0x263B63` | `0x2458C38` | `0x263B638` |
-| LX-B3 | `0x2460C3` / `0x264363` | `0x2460C38` | `0x2643638` |
-| LX-B4 | `0x2470C3` / `0x265363` | `0x2470C38` | `0x2653638` |
-| LX-B5 | `0x2490C3` / `0x267363` | `0x2490C38` | `0x2673638` |
-| CONTROL (LPD 7) | `0x2450C3` / `0x263363` | `0x2450C38` | `0x2633638` |
+| LX-B1 | `D6 01 86` / `D6 01 46` | `0x21C7C38` | `0x203B638` |
+| LX-B2 | `D6 02 86` / `D6 02 46` | `0x26EDC38` | `0x25E1E38` |
+| LX-B3 | `D6 03 86` / `D6 03 46` | `0x2536C38` | `0x228C638` |
+| LX-B4 | `D6 04 86` / `D6 04 46` | `0x27FCC38` | `0x2380E38` |
+| LX-B5 | `D6 05 86` / `D6 05 46` | `0x203B438` | `0x21C7E38` |
+| CONTROL (LPD 7) | recorded pair | `0x2450C38` | `0x2633638` |
+
+`_lx_plain_pair(0xD510)` — the recorded ON code's own address — reproduces
+`0x2450C38` byte for byte, which is the check that this field layout is right.
 
 The control returns LPD 7's recorded pair from `luxorparts_generate_codes(106, 1)`
 — house 106 rather than 7 so the test device never shares the normal LPD 7
@@ -400,9 +405,23 @@ on/off reversed. That settles two questions at once:
 * the receiver **decodes the payload** — bits 1–3 are state/unit, not address.
 
 So "store the whole code and compare" is ruled out, and a generator must produce a
-valid address/state encoding, not merely a plausible frame. The address-bit offsets
-above test that. **The encoder is still unknown**, so this is field-spreading from a
-real pair, not a solved cipher.
+valid address/state encoding, not merely a plausible frame.
+
+**Third build (v3.4.0.6, seed offset in the address bits):** all five **ON**
+commands worked on their own sockets, and **no OFF command did** — only the
+CONTROL, the single switch that replays a recorded pair. That is the decisive
+datum. A receiver derives the OFF from the ON it learned and is never taught an
+OFF (v3.1.8.14 taught a 50969 with the ON alone, after which both commands
+worked), so the two halves of a pair must decode to *one* device. A seed offset
+cannot do that: it is added to the stored payload, i.e. **after** the cipher, so
+`0x2450C38` and `0x2633638` offset by the same amount decrypt to unrelated
+records.
+
+**Current build (v3.4.0.7):** each pair is one plaintext record — one address, the
+recorded pair's own control bytes `0x86`/`0x46` (unit 6) — encrypted twice, so the
+ON and OFF of a switch differ only in the state byte. `_lx_plain_pair(0xD510)`
+reproduces the recorded LPD 7 ON code byte for byte. The only thing left to
+confirm on hardware is that the receiver keys a device on the plaintext address.
 
 ## 8. Still unknown
 
@@ -417,10 +436,13 @@ real pair, not a solved cipher.
 
 ## 9. What this changes in the code
 
-* The test device now carries scheme B (`LX_TEST_LIST`, houses 101–105) and the
-  LPD 7 control (house 106, `LX_CONTROL_CODES`). Scheme A is falsified and gone.
-  Do not retire the Homey cipher until B and the control are hardware-tested —
-  swapping one unvalidated mapping for another is not progress.
+* The test device now builds its pairs **with the Homey cipher itself**
+  (`LX_TEST_LIST`, houses 101–105, `_lx_plain_pair()`) plus the LPD 7 control
+  (house 106, `LX_CONTROL_CODES`). Scheme A is falsified, and so is offsetting a
+  stored payload: a pair has to be two encryptions of one record. The cipher is no
+  longer an unvalidated candidate for the Live family — decrypting the recorded
+  pairs yields one plaintext address per remote (all five criss-cross groups) and
+  the recorded LPD 7 ON re-encrypts byte for byte.
 * If B succeeds, `luxorparts_generate_codes()` can return scheme-B values for
   unknown houses; the recorded pairs stay authoritative for LPD 1–24.
 * **If** B passes its hardware test, the LPD picker could grow past 24 by

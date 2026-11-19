@@ -587,6 +587,66 @@ as a different device to the receiver.
 
 ---
 
+## 2026-11-19 — scheme B v2: ON works everywhere, no OFF works (v3.4.0.7)
+
+**Reported by the project owner:** with the address-bit build (v3.4.0.6) all five
+generated switches work, but **only the CONTROL turns off**.
+
+The owner also confirmed the constraint the whole design rests on: a 50969 is
+taught by its **ON** code alone, and the OFF is expected to work as soon as the ON
+does.
+
+### Diagnosis
+
+An offset added to a stored payload is applied *after* the Luxorparts cipher. The
+recorded pairs are two separate encryptions, so decrypting them with the Homey
+cipher (`_lx_encrypt_payload()` inverted) gives:
+
+```
+ON  0x2450C38 -> D5 10 86     OFF 0x2633638 -> D5 B1 46
+ON  0x5BD4B88 -> 3D 81 76     OFF 0x51B1088 -> 2E 7A 56
+```
+
+The cipher is therefore the encoder: every criss-cross group in the LPD list
+(LPD 4/9, 8/10, 13/18, 14/19, 15/17) decrypts to **one** plaintext address with
+two control bytes. Shifting two ciphertexts by the same amount throws that pairing
+away — the ON and OFF of a generated switch decoded to different devices, which is
+exactly the reported symptom (ON accepted, OFF ignored, control fine because it
+replays a recorded pair).
+
+### Changed
+
+* `const.py`: `_lx_live_pair()` and `LX_LIVE_SEED_OFFSETS` are gone.
+  `_lx_plain_pair(address)` encrypts ONE record twice — same address, control
+  bytes `0x86` (ON) / `0x46` (OFF), unit 6, i.e. the recorded LPD 7 pair's own
+  field values. `LX_TEST_ADDRESSES = (0xD601 … 0xD605)` gives each switch a fresh
+  address. Codes: `0x21C7C38`/`0x203B638` … `0x203B438`/`0x21C7E38`; control
+  unchanged at `0x2450C38`/`0x2633638`.
+* `config_flow.py`, `strings.json`, `translations/en.json`: text describes the
+  new pairing instead of the seed offsets.
+* Docs: README, USER_GUIDE §15, `LUXORPARTS_PAIRS.md`,
+  `LUXORPARTS_PROTOCOL_ANALYSIS.md` §6/§7/§9.
+
+### Version
+
+3.4.0.6 → **3.4.0.7** in both `manifest.json` files.
+
+### Verification
+
+* `_lx_plain_pair(0xD510)` reproduces the recorded LPD 7 ON code exactly, and all
+  five pairs decrypt back to one address with control bytes `0x86`/`0x46`.
+* Ten distinct codes, ON ≠ OFF per pair, no overlap with the 62 captured codes,
+  every payload bit 0 = 1 and frame MSB 0, control still byte-identical to LPD 7.
+* `const.py` doctests, `py_compile`, `tests/test_ha_integration.py`, mirror copies
+  byte-identical.
+
+### Not verified
+
+* No receiver here. Whether the 50969 keys a device on the plaintext address (and
+  reads state from the control byte) is what the next hardware run decides.
+
+---
+
 ## Anti-patterns to avoid
 
 1. **Never switch to inline S repeats** without first testing on hardware.

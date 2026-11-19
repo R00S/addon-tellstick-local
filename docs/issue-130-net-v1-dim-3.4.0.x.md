@@ -148,3 +148,58 @@ address. "Store the whole code and compare" is therefore ruled out.
 * No receiver here: whether the address-bit offsets produce sockets the receiver
   treats as separate devices is the next hardware test. The encoder is still
   unknown; a rejection or another collapse means the address field sits elsewhere.
+
+## Session — 2026-11-19 (fourth): pairs built from one plaintext record
+
+### What the user reported
+
+* All five generated switches now work — but **only the CONTROL turns off**.
+* The receiver is taught by the ON code alone; once the ON works the OFF is
+  expected to work too.
+
+### What that means
+
+A seed offset is added to the stored payload, i.e. after the cipher. Decrypting
+the recorded pairs (Homey cipher, inverted) shows the two halves are two separate
+encryptions of one record, e.g. LPD 7: ON `0x2450C38` → `D5 10 86`, OFF
+`0x2633638` → `D5 B1 46`. Offsetting each ciphertext on its own produced pairs
+whose halves decoded to **different devices**, so the receiver — which derives the
+OFF from the ON it learned — could only ever answer the ON. The CONTROL worked
+because it replays a recorded pair.
+
+Decrypting the recorded list also settles the cipher question: all five criss-cross
+groups (LPD 4/9, 8/10, 13/18, 14/19, 15/17) decode to one plaintext address with
+two control bytes, and one plaintext address is shared by each remote's codes.
+
+### Changed
+
+* `const.py`: `_lx_live_pair()` / `LX_LIVE_SEED_OFFSETS` removed.
+  `_lx_plain_pair(address)` encrypts one record twice: same address, control bytes
+  `0x86` ON / `0x46` OFF (unit 6) — the recorded LPD 7 pair's own field values.
+  `LX_TEST_ADDRESSES = (0xD601, 0xD602, 0xD603, 0xD604, 0xD605)`. Codes:
+  `0x21C7C38`/`0x203B638`, `0x26EDC38`/`0x25E1E38`, `0x2536C38`/`0x228C638`,
+  `0x27FCC38`/`0x2380E38`, `0x203B438`/`0x21C7E38`; control unchanged.
+* `config_flow.py`: `async_step_lx_test()` docstring describes the new pairing.
+* `strings.json` / `translations/en.json`: `lx_test` text no longer mentions seed
+  offsets.
+* README, USER_GUIDE §15, `LUXORPARTS_PAIRS.md`, `LUXORPARTS_TIMELINE.md`,
+  `LUXORPARTS_PROTOCOL_ANALYSIS.md` §6/§7/§9.
+
+### Version
+
+3.4.0.6 → **3.4.0.7** in both `manifest.json` files.
+
+### Verification
+
+* `_lx_plain_pair(0xD510)` reproduces the recorded LPD 7 ON code byte for byte;
+  every pair decrypts back to one address with control bytes `0x86`/`0x46`.
+* Ten distinct codes, ON ≠ OFF per pair, no overlap with the recorded codes, every
+  payload bit 0 = 1 and frame MSB 0, control byte-identical to LPD 7, six distinct
+  UIDs, LPD 7's own UID untouched.
+* `const.py` doctests, `py_compile`, `tests/test_ha_integration.py`, mirror copies
+  byte-identical.
+
+### Not verified
+
+* No receiver here: whether the 50969 keys a device on the plaintext address and
+  reads state from the control byte is the next hardware test.

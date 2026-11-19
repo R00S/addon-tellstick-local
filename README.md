@@ -627,18 +627,20 @@ switches**: five **generated** pairs (LX-B1…LX-B5) plus a **CONTROL ON/OFF**
 switch that replays the recorded LPD 7 pair byte for byte — the same code the
 working Luxorparts path sends.
 
-The generated pairs use scheme B: the Live-family frame shape, seeded from the
-working LPD 7 pair with one **address** bit moved per switch (`0x0400` … `0x4000`
-in the seed):
+The generated pairs are built in the plaintext domain: one address per switch,
+encrypted twice with the working LPD 7 pair's own control bytes (`0x86` ON,
+`0x46` OFF). ON and OFF are therefore the same device and differ only in the
+state byte — which is what a receiver needs, because it derives the OFF from the
+ON it learned and is never taught the OFF:
 
-| Switch | ON | OFF |
-| --- | --- | --- |
-| LX-B1 | `0x2454C38` | `0x2637638` |
-| LX-B2 | `0x2458C38` | `0x263B638` |
-| LX-B3 | `0x2460C38` | `0x2643638` |
-| LX-B4 | `0x2470C38` | `0x2653638` |
-| LX-B5 | `0x2490C38` | `0x2673638` |
-| CONTROL ON/OFF | `0x2450C38` | `0x2633638` |
+| Switch | Address | ON | OFF |
+| --- | --- | --- | --- |
+| LX-B1 | `0xD601` | `0x21C7C38` | `0x203B638` |
+| LX-B2 | `0xD602` | `0x26EDC38` | `0x25E1E38` |
+| LX-B3 | `0xD603` | `0x2536C38` | `0x228C638` |
+| LX-B4 | `0xD604` | `0x27FCC38` | `0x2380E38` |
+| LX-B5 | `0xD605` | `0x203B438` | `0x21C7E38` |
+| CONTROL ON/OFF | LPD 7 | `0x2450C38` | `0x2633638` |
 
 **No pairing signal is sent when the device is added**, and the switches have no
 Learn button: a receiver in learn mode learns the code it hears, so pair a switch
