@@ -326,19 +326,16 @@ WIDGET_PARAMS: dict[int, list[dict]] = {
         {"name": "house", "type": "int", "default": 1, "min": 1, "max": 24},
         {"name": "unit", "type": "int", "default": 1, "min": 1, "max": 1},
     ],
-    # 21: Luxorparts test device — five generated ON/OFF pairs on one device.
-    #     No parameter form: async_step_lx_test() adds all five switches
-    #     (LX-T1..LX-T5) in one go, grouped under a single HA device.
+    # 21: Luxorparts test device — five new units of the recorded LPD 7
+    #     address pair on one device.  No parameter form: async_step_lx_test()
+    #     adds all five switches (LX-B1..LX-B5) in one go, grouped under a
+    #     single HA device.
     21: [],
     # 22: Luxorparts test device v1 — the first scheme-B build (LPD 7 seeds
     #     +1..5).  Kept so a receiver can be taught the old and the new pairs in
     #     one session; async_step_lx_test_v1() adds its five switches and a
     #     control.
     22: [],
-    # 23: Luxorparts test device v3 — recorded ONs with the OFF rebuilt at the
-    #     ON's own address.  async_step_lx_test_v3() adds its five switches and
-    #     a control.
-    23: [],
 }
 
 # ---------------------------------------------------------------------------
@@ -399,12 +396,11 @@ DEVICE_CATALOG: list[tuple[str, str, str, int]] = [
     # NOTE: Luxorparts/Cleverio 50969, 50970, 50972 — BETA (Duo only)
     # Uses raw RF pulse encoding via LPD codes.  Pick LPD 1-24 to select
     # a verified Telldus Live code pair.  Not available on Net/ZNet yet.
-    # The test device (LX-T1..LX-T5, house 101-105) is one HA device with five
-    # ON/OFF switches built from codes that were never captured — see
+    # The test device (LX-B1..LX-B5, houses 101-105) is one HA device with five
+    # ON/OFF switches: new units of the recorded LPD 7 address pair — see
     # docs/LUXORPARTS_PROTOCOL_ANALYSIS.md §7.
     ("Luxorparts — Test device, 5 switches (beta, Duo only)", "luxorparts", "selflearning-switch:lx_live", 21),
     ("Luxorparts — Test device v1, seeds +1..5 (beta, Duo only)", "luxorparts", "selflearning-switch:lx_live", 22),
-    ("Luxorparts — Test device v3, recorded ON + own-address OFF (beta, Duo only)", "luxorparts", "selflearning-switch:lx_live", 23),
     ("Luxorparts — On/off (beta, Duo only)", "luxorparts", "selflearning-switch:lx_live", 20),
     ("Nexa — Bell", "arctech", "bell:nexa", 4),
     ("Nexa — Code switch", "arctech", "codeswitch:nexa", 1),
@@ -1074,44 +1070,54 @@ LX_GROUND_TRUTH_CODES: dict[tuple[int, int], dict[str, int]] = {
 
 
 # ---------------------------------------------------------------------------
-# Generated test pairs — one plaintext record per switch, encrypted twice
+# Generated test pairs — new units on a recorded address pair
 #
-# Scheme A (cloning the remote-family template, ``_lx_template_pair()``) was
-# tested on hardware on 2026-11-19: **all five pairs were refused** by a 50969
-# in learn mode.  Scheme A is therefore dead and removed.
+# Hardware history (all 2026-11-19, one 50969):
 #
-# Scheme B v1 moved the working LPD 7 seeds by 1…5 (payload bits 1-3).  The
-# receiver accepted every pair, but several switches then controlled the *same*
-# socket with on/off reversed — the receiver decodes the payload, and those low
-# bits are state/unit, not address.
+#   * Scheme A (clone the remote-family template): all five pairs REFUSED.
+#   * Scheme B v1 (LPD 7 seeds +1…5, i.e. raw payload bits 1-3): all learned;
+#     B3/B4 correct, B1/B5 reversed, B2 refused.
+#   * Scheme B v2 (seed offset in the address bits): every ON worked, no OFF.
+#   * Plaintext pairs (one address, recorded control bytes 0x86/0x46): every ON
+#     worked, no OFF.
+#   * v3 (recorded ON + OFF rebuilt at that same address): every ON worked, no
+#     OFF.
 #
-# Scheme B v2 moved the seeds in the high (address) bits.  Hardware 2026-11-19:
-# every ON worked on its own socket, **no OFF worked**.  Only the CONTROL — the
-# one switch that replays a *recorded* pair — had a working OFF.
+# v1 is the only build that ever produced pairs with BOTH commands working, so
+# its five codes are where the answer is.  Decrypting them settles it:
 #
-# The reason is where the offset was applied.  A seed offset is added to the
-# stored payload, i.e. *after* the Luxorparts cipher, and the two codes of a
-# recorded pair are two separate encryptions::
+#     switch  ON ctrl  OFF ctrl   ctrl>>6 ON/OFF   reported
+#     LPD 7   0x86     0x46       10 / 01          correct (control)
+#     B1      0x6C     0xAC       01 / 10          reversed
+#     B2      0x4A     0x8A       01 / 10          reversed, refused
+#     B3      0x2B     0xEB       00 / 11          correct
+#     B4      0x09     0xC9       00 / 11          correct
+#     B5      0xD8     0xA8       11 / 10          reversed
 #
-#     ON  0x2450C38 -> plaintext  D5 10 86
-#     OFF 0x2633638 -> plaintext  D5 B1 46
+# All five outcomes follow one rule: **bit 6 of the control byte is the state
+# bit** — 0 = ON, 1 = OFF.  The three reversed switches are exactly the three
+# whose ON half carries bit 6 = 1, i.e. whose ON press is an OFF frame.  Bit 7
+# is a don't-care (0x10 and 0x00 both work as an ON half).
 #
-# Shifting each ciphertext on its own therefore decodes to two *unrelated*
-# records.  A receiver derives the OFF from the ON it learned and is never
-# taught the OFF (put a 50969 in learn mode, press ON, and both commands then
-# work — docs/LUXORPARTS_TIMELINE.md, v3.1.8.14), so a pair whose halves decode
-# to different devices can only ever answer the ON.
+# That also explains why every "fix the address" build failed: the address is not
+# the variable.  The recorded pair keeps *two* addresses — 0xD510 for ON and
+# 0xD5B1 for OFF — and v1 kept both, because it offsets two recorded
+# ciphertexts.  Rebuilding the OFF at the ON's own address (plaintext pairs, v3)
+# or inventing a fresh address throws that away, and then no OFF can match.
 #
-# The pairs below are built in the plaintext domain instead: ONE address,
-# encrypted twice with the recorded pair's own control bytes (``0x86`` ON /
-# ``0x46`` OFF, unit 6).  ON and OFF are then the same device by construction and
-# differ only in the control byte, which is the part the receiver reads for
-# state.  ``_lx_plain_pair(0xD510)`` reproduces the recorded LPD 7 ON code byte
-# for byte (``0x2450C38``) — that is the check that this layout is right.
+# A generated device is therefore grown the way B3/B4 already proved on hardware:
+# keep the recorded pair's two addresses and control patterns, and vary only the
+# 5-bit unit field.
 #
-# The "Luxorparts — Test device, 5 switches" entry adds ONE Home Assistant
-# device holding the five test pairs as switches LX-B1…LX-B5 (stored as house
-# 101-105, unit 1) **and** a CONTROL switch.
+#     ON  = encrypt(D5, 0x10, 0x80 | unit)     # bit 7 set, bit 6 clear -> ON
+#     OFF = encrypt(D5, 0xB1, 0x40 | unit)     # bit 6 set            -> OFF
+#
+# With unit 6 this reproduces the recorded LPD 7 pair byte for byte
+# (0x2450C38 / 0x2633638) — the check that both halves are one device.
+#
+# The "Luxorparts — Test device, 5 switches" entry adds ONE Home Assistant device
+# holding LX-B1…LX-B5 (units 9, 11, 7, 8, 10 of the LPD 7 address pair, stored as
+# houses 101-105, unit 1) plus a CONTROL switch.
 #
 # House 106 is the control: it emits the recorded LPD 7 pair byte for byte
 # (``LX_CONTROL_CODES``), so the same device carries a reference that is known
@@ -1125,22 +1131,30 @@ LX_GROUND_TRUTH_CODES: dict[tuple[int, int], dict[str, int]] = {
 #
 # These pairs are deliberately kept out of LX_LPD_LIST, which stays the recorded
 # Telldus Live list (LPD 1-24).  101+ was chosen so a test number can never
-# collide with a recorded LPD.
+# collide with a recorded LPD.  LPD 7 supplies the address pair because it is the
+# one pair whose OFF is confirmed on hardware.
 # ---------------------------------------------------------------------------
 
 LX_LIVE_CONTROL_LPD = 7
 
-# Plaintext of the recorded LPD 7 ON code (``0x2450C38``): the address is
-# 0xD510 and the control byte is 0x86.  Its recorded OFF decodes to address
-# 0xD5B1 with control byte 0x46; only the control byte is reused below.
-LX_LIVE_CONTROL_ADDR = 0xD510
-LX_LIVE_CTRL_ON = 0x86  # count 2, state 0, unit 6
-LX_LIVE_CTRL_OFF = 0x46  # count 1, state 0, unit 6
-LX_LIVE_UNIT_NIBBLE = 0x6
+# Plaintext of the recorded LPD 7 pair: the ON half carries address 0xD510 with
+# control byte 0x86, the OFF half address 0xD5B1 with control byte 0x46.  Both
+# addresses belong to the device — a device is this pair of addresses plus the
+# unit, and bit 6 of the control byte selects the half.
+LX_LIVE_ADDR_ON: tuple[int, int] = (0xD5, 0x10)
+LX_LIVE_ADDR_OFF: tuple[int, int] = (0xD5, 0xB1)
+LX_LIVE_CTRL_ON = 0x80  # bit 7 set, bit 6 clear -> ON half
+LX_LIVE_CTRL_OFF = 0x40  # bit 6 set             -> OFF half
+LX_LIVE_UNIT_MASK = 0x1F
 
-# One fresh address per test switch: same byte1 (cipher table, address family)
-# as the control, but a value no recorded pair uses.
-LX_TEST_ADDRESSES: tuple[int, ...] = (0xD601, 0xD602, 0xD603, 0xD604, 0xD605)
+# Unit values the test device drives.  Only half the 5-bit space gives a valid
+# frame: payload bit 0 must be 1 (the one bit that is fixed in all 62 captured
+# codes — docs/LUXORPARTS_PROTOCOL_ANALYSIS.md §2), which rules out units 0-5,
+# 13, 15-21, 29 and 31.  6 is the recorded device itself.  The five switches use
+# 9 and 11 — the two units the v1 build already proved on hardware (v1 B4 and
+# B3, ctrl 0x09/0xC9 and 0x2B/0xEB) — plus 7, 8 and 10, which have never been
+# tested at a receiver.
+LX_TEST_UNITS: tuple[int, ...] = (9, 11, 7, 8, 10)
 
 # ---------------------------------------------------------------------------
 # Scheme B v1 — the first hardware build, kept for side-by-side retesting
@@ -1300,26 +1314,22 @@ def _lx_decrypt_payload(cipher24: int) -> tuple[int, int, int]:
     raise ValueError(f"not a Luxorparts ciphertext: 0x{cipher24:06X}")
 
 
-def _lx_plain_pair(address: int) -> tuple[int, int]:
-    """Encrypt one Luxorparts record twice — ON and OFF of the same device.
+def _lx_unit_pair(unit: int) -> tuple[int, int]:
+    """Encrypt both halves of one Luxorparts device for a unit of LPD 7's pair.
 
-    Both codes carry the same plaintext address and unit and differ only in the
-    control byte (``LX_LIVE_CTRL_ON`` / ``LX_LIVE_CTRL_OFF``), so a receiver that
-    learned the ON has a partner code for it.  The address of the recorded LPD 7
-    pair reproduces its recorded ON code exactly.
+    The two plaintext addresses and the control patterns come from the recorded
+    LPD 7 pair; only the 5-bit unit field changes, so ON and OFF always describe
+    one device and their control bytes keep the recorded state polarity.
+    ``unit=6`` — the recorded device's own unit — reproduces the recorded pair.
 
-    >>> hex(_lx_plain_pair(LX_LIVE_CONTROL_ADDR)[0])
-    '0x2450c38'
-    >>> on, off = _lx_plain_pair(0xD601)
-    >>> hex(on), hex(off)
-    ('0x21c7c38', '0x203b638')
+    >>> hex(_lx_unit_pair(6)[0]), hex(_lx_unit_pair(6)[1])
+    ('0x2450c38', '0x2633638')
+    >>> hex(_lx_unit_pair(1)[0]), hex(_lx_unit_pair(1)[1])
+    ('0x2700080', '0x252e100')
     """
-    hi, lo = (address >> 8) & 0xFF, address & 0xFF
-    on_ctrl = (LX_LIVE_CTRL_ON & 0xF0) | LX_LIVE_UNIT_NIBBLE
-    off_ctrl = (LX_LIVE_CTRL_OFF & 0xF0) | LX_LIVE_UNIT_NIBBLE
     return (
-        _lx_encrypt_payload((hi, lo, on_ctrl)) << 3,
-        _lx_encrypt_payload((hi, lo, off_ctrl)) << 3,
+        _lx_encrypt_payload((*LX_LIVE_ADDR_ON, LX_LIVE_CTRL_ON | unit)) << 3,
+        _lx_encrypt_payload((*LX_LIVE_ADDR_OFF, LX_LIVE_CTRL_OFF | unit)) << 3,
     )
 
 
@@ -1327,11 +1337,11 @@ def _lx_plain_pair(address: int) -> tuple[int, int]:
 LX_TEST_LIST: list[tuple[int, int, int, str]] = [
     (
         100 + index,
-        *_lx_plain_pair(address),
-        f"address 0x{address:04X} + LPD 7 control bytes (0x{LX_LIVE_CTRL_ON:02X}/"
-        f"0x{LX_LIVE_CTRL_OFF:02X})",
+        *_lx_unit_pair(unit),
+        f"LPD 7 address pair, unit {unit} (ctrl 0x{LX_LIVE_CTRL_ON | unit:02X} / "
+        f"0x{LX_LIVE_CTRL_OFF | unit:02X})",
     )
-    for index, address in enumerate(LX_TEST_ADDRESSES, start=1)
+    for index, unit in enumerate(LX_TEST_UNITS, start=1)
 ]
 
 # Keyed by (test_num, 1), the same shape as LX_GROUND_TRUTH_CODES.
@@ -1341,95 +1351,6 @@ LX_TEST_CODES: dict[tuple[int, int], dict[str, int]] = {
 }
 
 
-# ---------------------------------------------------------------------------
-# Scheme B v3 — recorded ONs, OFF rebuilt at the ON's own address
-#
-# Hardware, v3.4.0.8 (both test devices taught to one 50969):
-#
-#   * widget 21 (fresh plaintext addresses 0xD601…0xD605): every ON turned its
-#     socket on, **no** OFF worked — five of five.
-#   * widget 22 (LPD 7 seeds +1…5, raw payload offsets): B3 and B4 worked both
-#     ways, B1 and B5 ran reversed (the receiver read our ON as an OFF) and B2
-#     was refused outright.
-#   * both controls (the recorded LPD 7 pair) worked both ways.
-#
-# Decrypting the whole recorded list narrows the pairing rule further:
-#
-#   * payload bits 0-4 never change between the two halves of a recorded pair —
-#     that is the unit field, and it is shared;
-#   * bits 5-7 and bits 8-23 change in every pair — there is no single state bit
-#     anywhere in the frame (19 distinct ON ^ OFF masks over 24 pairs);
-#   * for the seven pairs that share the unit-6 control bytes (LPD 5, 7,
-#     20…24) the OFF control byte is always exactly ``ON ^ 0xC0``
-#     (0x86 -> 0x46).  The *only* other difference is the address.
-#
-# So the recorded OFF differs from its ON in the control byte AND in the address.
-# Widget 21 rebuilt the OFF at the ON's own address and the receiver ignored it;
-# widget 22 kept Telldus Live's own address relation and two of five worked.  The
-# one variable neither build isolated is the address: a fresh address is never
-# accepted, while a recorded address can be.
-#
-# This group keeps a recorded ON **verbatim** — an address that is known to be
-# valid at a receiver — and rebuilds only the OFF: same plaintext address, ON
-# control byte with the state bits flipped (``^ 0xC0``).  LPD 20…24 supply the
-# five ONs and the CONTROL on house 126 replays the recorded LPD 7 pair.
-#
-# What the result decides: if these OFFs work, the receiver pairs at the ON's own
-# address and fresh addresses were the problem.  If only the ONs work again, the
-# receiver wants Telldus Live's own OFF address, i.e. a function of the ON we do
-# not have, and generated devices cannot be paired one code at a time.
-# ---------------------------------------------------------------------------
-
-# ON control byte -> OFF control byte, for the unit-6 pairs: 0x86 -> 0x46.
-LX_LIVE_STATE_XOR = 0xC0
-
-# Recorded pairs whose OFF control byte is exactly ``ON ^ LX_LIVE_STATE_XOR``.
-LX_SAME_OFF_LPDS: tuple[int, ...] = (20, 21, 22, 23, 24)
-LX_SAME_OFF_HOUSES: tuple[int, ...] = (121, 122, 123, 124, 125)
-
-
-def _lx_same_address_off(on_code: int) -> int:
-    """Rebuild a recorded pair's OFF at the ON's own plaintext address.
-
-    The recorded OFF of the same pair sits at a *different* address (LPD 7:
-    ``D5 10 86`` -> ``D5 B1 46``), so this deliberately does not reproduce it.
-
-    >>> hex(_lx_same_address_off(LX_GROUND_TRUTH_CODES[(20, 1)]["on"]))
-    '0x257c638'
-    >>> hex(_lx_same_address_off(LX_GROUND_TRUTH_CODES[(7, 1)]["on"]))
-    '0x210ce38'
-    """
-    hi, lo, ctrl = _lx_decrypt_payload(on_code >> 3)
-    return _lx_encrypt_payload((hi, lo, ctrl ^ LX_LIVE_STATE_XOR)) << 3
-
-
-# Columns: (test_num, on_code, off_code, description)
-LX_SAME_OFF_LIST: list[tuple[int, int, int, str]] = [
-    (
-        house,
-        LX_GROUND_TRUTH_CODES[(lpd, 1)]["on"],
-        _lx_same_address_off(LX_GROUND_TRUTH_CODES[(lpd, 1)]["on"]),
-        f"LPD {lpd} ON verbatim + OFF at the same address (ctrl ^ 0x"
-        f"{LX_LIVE_STATE_XOR:02X})",
-    )
-    for lpd, house in zip(LX_SAME_OFF_LPDS, LX_SAME_OFF_HOUSES)
-]
-
-# Keyed by (house, 1), the same shape as LX_GROUND_TRUTH_CODES.
-LX_SAME_OFF_CODES: dict[tuple[int, int], dict[str, int]] = {
-    (num, 1): {"on": on_code, "off": off_code}
-    for num, on_code, off_code, _ in LX_SAME_OFF_LIST
-}
-
-# Control of this group (house 126): the recorded LPD 7 pair again, so the group
-# carries the same known-good reference as the other test devices.
-LX_CONTROL_SAME_OFF_HOUSE = 126
-LX_CONTROL_SAME_OFF_LABEL = "CONTROL ON/OFF (LPD 7) v3"
-LX_CONTROL_SAME_OFF_CODES: dict[tuple[int, int], dict[str, int]] = {
-    (LX_CONTROL_SAME_OFF_HOUSE, 1): dict(
-        LX_GROUND_TRUTH_CODES[(LX_LIVE_CONTROL_LPD, 1)]
-    )
-}
 
 
 def luxorparts_generate_codes(house: int, unit: int) -> dict[str, int]:
@@ -1446,8 +1367,8 @@ def luxorparts_generate_codes(house: int, unit: int) -> dict[str, int]:
 
     If the (house, unit) pair exists in ``LX_GROUND_TRUTH_CODES`` (captured
     from Telldus Live via RTL-433), those verified codes are returned instead.
-    The generated test pairs in ``LX_TEST_CODES`` (houses 101-105) are returned
-    the same way; they are never-captured codes used to test code generation.
+    The test pairs in ``LX_TEST_CODES`` (houses 101-105) are returned the same
+    way; they are new units on the recorded LPD 7 address pair.
     House 106 (``LX_CONTROL_CODES``) returns the recorded LPD 7 pair, so the test
     device carries a control that is known to work.
 
@@ -1467,7 +1388,7 @@ def luxorparts_generate_codes(house: int, unit: int) -> dict[str, int]:
     if control is not None:
         return dict(control)
 
-    # Generated test pairs (houses 101-105) — never-captured codes
+    # Test pairs (houses 101-105) — new units on the LPD 7 address pair
     test = LX_TEST_CODES.get((house, unit))
     if test is not None:
         return dict(test)
@@ -1480,15 +1401,6 @@ def luxorparts_generate_codes(house: int, unit: int) -> dict[str, int]:
     control_v1 = LX_CONTROL_V1_CODES.get((house, unit))
     if control_v1 is not None:
         return dict(control_v1)
-
-    # v3 test pairs (houses 121-125) and their control (126): recorded ONs with
-    # the OFF rebuilt at the ON's own address
-    same_off = LX_SAME_OFF_CODES.get((house, unit))
-    if same_off is not None:
-        return dict(same_off)
-    control_same_off = LX_CONTROL_SAME_OFF_CODES.get((house, unit))
-    if control_same_off is not None:
-        return dict(control_same_off)
 
     # Map UI unit (1-based) to protocol unit (0-based, 5-bit, 0–31)
     proto_unit = max(0, unit - 1) & 0x1F

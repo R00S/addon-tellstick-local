@@ -380,8 +380,8 @@ control bytes (`0x86` ON, `0x46` OFF, unit 6) with a fresh address:
 | LX-B5 | `D6 05 86` / `D6 05 46` | `0x203B438` | `0x21C7E38` |
 | CONTROL (LPD 7) | recorded pair | `0x2450C38` | `0x2633638` |
 
-`_lx_plain_pair(0xD510)` — the recorded ON code's own address — reproduces
-`0x2450C38` byte for byte, which is the check that this field layout is right.
+`_lx_plain_pair(0xD510)` — the recorded ON code's own address — reproduced
+`0x2450C38` byte for byte; that helper is gone, replaced by `_lx_unit_pair()`.
 
 The control returns LPD 7's recorded pair from `luxorparts_generate_codes(106, 1)`
 — house 106 rather than 7 so the test device never shares the normal LPD 7
@@ -420,7 +420,8 @@ records.
 **Current build (v3.4.0.7):** each pair is one plaintext record — one address, the
 recorded pair's own control bytes `0x86`/`0x46` (unit 6) — encrypted twice, so the
 ON and OFF of a switch differ only in the state byte. `_lx_plain_pair(0xD510)`
-reproduces the recorded LPD 7 ON code byte for byte.
+reproduced the recorded LPD 7 ON code byte for byte (the helper was removed in
+v3.4.0.10 — see the build note below).
 
 **Result (v3.4.0.8, 2026-11-19):** all five ONs were learned and turned their socket
 on, **no OFF worked** — five of five. The v1 group (LPD 7 seeds +1…5) run beside it
@@ -435,14 +436,46 @@ Decrypting all 24 pairs then shows why. Payload bits 0–4 never change inside a
 unit-6 pairs (LPD 5, 7, 20–24) the OFF control byte is always exactly
 `ON ^ 0xC0` (`0x86` → `0x46`), and the **address** is the only other difference.
 
-**Fourth build (v3.4.0.9, widget 23):** a **recorded** Telldus Live ON code sent
-unchanged, with the OFF rebuilt at that same address (`ctrl ^ 0xC0`) — LPD 20…24 on
-houses 121–125 plus the LPD 7 control on 126. It is the only group whose ON is a
-recorded code and whose OFF differs from the recorded pair only in the address. If
-those OFFs work, the receiver pairs at the ON's own address and a fresh address was
-the problem; if only the ONs work again, the receiver wants Telldus Live's own OFF
-address — a function of the ON we do not have — and generated devices cannot be
-paired one code at a time.
+**Fourth build (v3.4.0.9, widget 23):** a recorded Telldus Live ON sent unchanged
+with the OFF rebuilt at that same address (`ctrl ^ 0xC0`) — LPD 20…24 on houses
+121–125 plus the LPD 7 control on 126. Result: every ON worked, **no OFF did**,
+five of five. Removed again in v3.4.0.10.
+
+**The v1 build is the key, and it is fully explained.** Decrypting its five pairs
+against their reported behaviour:
+
+| Switch | ON ctrl | OFF ctrl | `ctrl >> 6` ON / OFF | Reported |
+| --- | --- | --- | --- | --- |
+| LPD 7 (control) | `0x86` | `0x46` | `10` / `01` | correct |
+| B1 | `0x6C` | `0xAC` | `01` / `10` | reversed |
+| B2 | `0x4A` | `0x8A` | `01` / `10` | reversed, refused |
+| B3 | `0x2B` | `0xEB` | `00` / `11` | correct |
+| B4 | `0x09` | `0xC9` | `00` / `11` | correct |
+| B5 | `0xD8` | `0xA8` | `11` / `10` | reversed |
+
+**Bit 6 of the control byte is the state bit: 0 = ON, 1 = OFF.** All six outcomes
+follow, and the three reversals are exactly the three ON halves with bit 6 set —
+pressing them sends an OFF frame. Bit 7 is a don't-care. This is the state field
+§3.2/§5 could not find in the raw payload: the chain cipher diffuses it, which is
+why the raw `ON ^ OFF` masks are multi-bit (§3.3).
+
+It also fixes the address question. A device is **two** plaintext addresses —
+`D5 10` for its ON half and `D5 B1` for its OFF half — plus the unit. v1 kept
+both addresses because it offsets two recorded ciphertexts, which is why B3/B4
+work: they are those two addresses at a different unit. Every build that replaced
+the OFF's address (a fresh one, or the ON's own) lost the OFF.
+
+**Current build (v3.4.0.10, widget 21):** new units of the recorded LPD 7 address
+pair — `ON = encrypt(D5, 0x10, 0x80 | unit)`, `OFF = encrypt(D5, 0xB1, 0x40 | unit)`
+— houses 101–105 for units 9, 11, 7, 8 and 10, plus the recorded pair as control on
+house 106. Unit 6 reproduces the recorded pair byte for byte. Units 9 and 11 are
+the two v1 already proved; 7, 8 and 10 are new. Half the unit space (0–5, 13,
+15–21, 29, 31) is unusable because those frames would not carry payload bit 0,
+the one bit fixed in all 62 captured codes.
+
+The open question is now narrow: does a 50969 treat a different unit value as a
+different device? If yes, recorded address pair × 16 valid units gives 384
+distinct devices without ever knowing the encoder.
 
 ## 8. Still unknown
 
@@ -458,17 +491,17 @@ paired one code at a time.
 ## 9. What this changes in the code
 
 * The test device now builds its pairs **with the Homey cipher itself**
-  (`LX_TEST_LIST`, houses 101–105, `_lx_plain_pair()`) plus the LPD 7 control
+  (`LX_TEST_LIST`, houses 101–105, `_lx_unit_pair()`) plus the LPD 7 control
   (house 106, `LX_CONTROL_CODES`). Scheme A is falsified, and so is offsetting a
   stored payload: a pair has to be two encryptions of one record. The cipher is no
   longer an unvalidated candidate for the Live family — decrypting the recorded
   pairs yields one plaintext address per remote (all five criss-cross groups) and
   the recorded LPD 7 ON re-encrypts byte for byte.
-* **v3.4.0.9** adds `_lx_decrypt_payload()` (the cipher's inverse, table chosen by
-  round-trip), `LX_LIVE_STATE_XOR = 0xC0`, `_lx_same_address_off()` and widget 23
-  (`LX_SAME_OFF_LIST`, houses 121–126). The falsified plaintext-pair group stays as
-  a diagnostic; README, USER_GUIDE and the config-flow text now state the
-  v3.4.0.8 result instead of claiming the receiver derives the OFF.
+* **v3.4.0.10** turns the test device into `_lx_unit_pair(unit)` — the recorded
+  LPD 7 pair's two addresses and state patterns with only the unit changed
+  (`LX_TEST_UNITS = (9, 11, 7, 8, 10)`), so every switch is a distinct device.
+  `_lx_decrypt_payload()` stays (it is how the state bit and the unit space were
+  established). The v3 group and `LX_LIVE_STATE_XOR` are removed.
 * If B succeeds, `luxorparts_generate_codes()` can return scheme-B values for
   unknown houses; the recorded pairs stay authoritative for LPD 1–24.
 * **If** B passes its hardware test, the LPD picker could grow past 24 by

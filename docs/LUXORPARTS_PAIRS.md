@@ -74,24 +74,24 @@ Not recorded codes, with one recorded control. The test device adds one Home
 Assistant device with six switches: five **generated** pairs and a
 **CONTROL ON/OFF** that replays the recorded LPD 7 pair.
 
-Each generated pair is **one plaintext record, encrypted twice**.  Decrypting the
-recorded LPD 7 pair with the Homey cipher shows the record layout:
+Decrypting the recorded LPD 7 pair with the Homey cipher shows the record layout,
+and it is why the current build looks the way it does:
 
 ```
 ON  0x2450C38 -> plaintext  D5 10 86     (address 0xD510, ctrl 0x86)
 OFF 0x2633638 -> plaintext  D5 B1 46     (address 0xD5B1, ctrl 0x46)
 ```
 
-The address and unit stay fixed per switch and only the control byte changes, so
-ON and OFF describe one device — the shape a receiver needs, because it derives
-the OFF from the ON it learned.  Every switch uses the recorded pair's own
-control bytes (`0x86` / `0x46`, unit 6) and a fresh address, which is why
-`_lx_plain_pair(0xD510)` reproduces the recorded ON code byte for byte.
+The two halves carry **different addresses**, and the OFF's control byte is the
+ON's with bit 6 set — bit 6 is the state bit (0 = ON, 1 = OFF). The first
+generated build replaced the OFF's address with the ON's own and lost every OFF;
+the current build keeps both addresses and varies only the unit. Its codes are in
+the **v4** section at the end of this file.
 
 A **second** test device (widget 22, "Luxorparts — Test device v1, seeds +1..5")
-restores the first build unchanged, so both can be taught to one receiver in the
-same session. Its pairs are the old `LPD 7 seeds +1…5` on houses 111–115, plus a
-control on 116 that replays LPD 7 again:
+restores the first generated build unchanged, so both can be taught to one
+receiver in the same session. Its pairs are the old `LPD 7 seeds +1…5` on houses
+111–115, plus a control on 116 that replays LPD 7 again:
 
 | Switch | ON | OFF |
 |--------|----|-----|
@@ -102,16 +102,8 @@ control on 116 that replays LPD 7 again:
 | LX-B5 v1 | 0x2450C88 | 0x2633688 |
 | CONTROL v1 | 0x2450C38 | 0x2633638 |
 
-They are a diagnostic, not a way to create devices.
-
-| Switch | Address | ON | OFF |
-|--------|---------|----|-----|
-| LX-B1 | 0xD601 | 0x21C7C38 | 0x203B638 |
-| LX-B2 | 0xD602 | 0x26EDC38 | 0x25E1E38 |
-| LX-B3 | 0xD603 | 0x2536C38 | 0x228C638 |
-| LX-B4 | 0xD604 | 0x27FCC38 | 0x2380E38 |
-| LX-B5 | 0xD605 | 0x203B438 | 0x21C7E38 |
-| CONTROL | LPD 7 | 0x2450C38 | 0x2633638 |
+They are the build whose decoded state bit explained the whole protocol, and they
+stay as the reference — not as a way to create devices.
 
 No pairing signal is sent when the device is added and the switches have no Learn
 button; pair a switch by pressing its **on** button with the receiver in learn
@@ -145,35 +137,59 @@ Decrypting the whole recorded list adds three facts that constrain the rule:
   OFF control byte is always exactly `ON ^ 0xC0` (`0x86` → `0x46`) and the only
   other difference is the **address**.
 
-### v3 — recorded ON, OFF rebuilt at the same address
+### v4 — new units on the recorded address pair
 
-Device type **"Luxorparts — Test device v3, recorded ON + own-address OFF (beta,
-Duo only)"** (widget 23, houses 121–126). Each switch sends a **recorded** Telldus
-Live ON code unchanged — an address a receiver is known to accept — and an OFF
-rebuilt at that **same** plaintext address, i.e. the ON control byte `^ 0xC0`:
+Device type **"Luxorparts — Test device, 5 switches (beta, Duo only)"** (widget 21,
+houses 101–106). The v3 group (recorded ON + OFF rebuilt at that same address) was
+tested on 2026-11-19 and is gone: **all five ONs worked, no OFF did** — the fourth
+build in a row to fail that way.
 
-| Switch | From | ON | OFF |
+v1 is still the only build that ever produced pairs with **both** commands
+working, so its five codes are where the answer is. Decrypting them:
+
+| Switch | ON ctrl | OFF ctrl | `ctrl >> 6` ON / OFF | Reported |
+| --- | --- | --- | --- | --- |
+| LPD 7 (control) | `0x86` | `0x46` | `10` / `01` | correct |
+| B1 | `0x6C` | `0xAC` | `01` / `10` | reversed |
+| B2 | `0x4A` | `0x8A` | `01` / `10` | reversed, refused |
+| B3 | `0x2B` | `0xEB` | `00` / `11` | correct |
+| B4 | `0x09` | `0xC9` | `00` / `11` | correct |
+| B5 | `0xD8` | `0xA8` | `11` / `10` | reversed |
+
+**Bit 6 of the control byte is the state bit: 0 = ON, 1 = OFF.** The three
+reversed switches are exactly the three whose ON half has bit 6 = 1, i.e. whose
+ON press is an OFF frame. Bit 7 is a don't-care. That is why v1 "worked" for some
+switches only: the offset added to the ciphertext walked bits through the state
+field.
+
+It also explains why no address build ever worked. The recorded pair keeps **two**
+addresses — `0xD510` for ON, `0xD5B1` for OFF — and v1 kept both, because it
+offsets two recorded ciphertexts. The plaintext-pair build and v3 replaced the
+OFF's address with the ON's, and then no OFF could match what the receiver derives.
+
+So a generated device is grown the way B3/B4 already proved: keep the recorded
+pair's two addresses and control patterns, and vary only the 5-bit unit.
+
+```
+ON  = encrypt(D5, 0x10, 0x80 | unit)     # bit 7 set, bit 6 clear -> ON half
+OFF = encrypt(D5, 0xB1, 0x40 | unit)     # bit 6 set             -> OFF half
+```
+
+| Switch | Unit | ON | OFF |
 |--------|------|----|-----|
-| LX-S1 | LPD 20 | `0x23CEC38` | `0x257C638` |
-| LX-S2 | LPD 21 | `0x21A7C38` | `0x22EB638` |
-| LX-S3 | LPD 22 | `0x206CC38` | `0x2560E38` |
-| LX-S4 | LPD 23 | `0x2709C38` | `0x21D5E38` |
-| LX-S5 | LPD 24 | `0x2A86C38` | `0x2F14638` |
-| CONTROL ON/OFF | LPD 7 | `0x2450C38` | `0x2633638` |
+| LX-B1 | 9 | `0x23472F8` | `0x2024EF8` |
+| LX-B2 | 11 | `0x2021F68` | `0x2109FE8` |
+| LX-B3 | 7 | `0x223BB28` | `0x20E8028` |
+| LX-B4 | 8 | `0x25FC788` | `0x27E4708` |
+| LX-B5 | 10 | `0x210CE58` | `0x2297C58` |
+| CONTROL ON/OFF | 6 | `0x2450C38` | `0x2633638` |
 
-Every generated OFF above differs from the recorded OFF of the same LPD (which
-sits at a different address, e.g. LPD 20's recorded OFF is `0x292B638`). That is
-the point of the build: it is the only test group whose ON is a recorded code and
-whose OFF differs from the recorded pair **only** in the address.
+Unit 6 reproduces the recorded LPD 7 pair byte for byte, which is the check that
+both halves are one device. Units 9 and 11 are B4's and B3's units from the v1
+build — the two switches that worked — so the group carries its own control at the
+unit level; 7, 8 and 10 have never been at a receiver.
 
-If these OFFs work, the receiver pairs at the ON's own address and a fresh address
-was the problem. If only the ONs work again, the receiver wants Telldus Live's own
-OFF address — a function of the ON we do not have — and generated devices cannot
-be paired one code at a time.
-
----
-
-## Excluded
-
-- **Remote 1 ch D**: ON code not captured → excluded (no complete pair)
-- **H14242/U2**: Removed — single unreliable pair, source uncertain
+Sixteen of the 32 unit values are unusable: their frames would not have payload
+bit 0 set, and bit 0 = 1 is the one bit fixed in all 62 captured codes
+(`LUXORPARTS_PROTOCOL_ANALYSIS.md` §2). The skipped units are 0–5, 13, 15–21, 29
+and 31.

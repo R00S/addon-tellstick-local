@@ -283,3 +283,63 @@ accepts two of five rebuilt pairs. That is what the new group tests.
 ### Not verified
 
 * No receiver here — the recorded-ON group is the next hardware test.
+
+## Session — 2026-11-19 (sixth): v3 failed; v1 decoded — bit 6 is state
+
+### What the user reported
+
+v3 (houses 121–126): every switch learns and turns on, **no OFF works** — five of
+five. Four builds in a row have now failed on OFF, and the user's note is the key:
+*"some perfectly working and some flawed or reversed, but with both on and off
+working in v1 — the key has to be in v1."*
+
+### What v1 says
+
+| Switch | ON ctrl | OFF ctrl | `ctrl >> 6` ON/OFF | Reported |
+| --- | --- | --- | --- | --- |
+| LPD 7 | `0x86` | `0x46` | `10`/`01` | correct |
+| B1 | `0x6C` | `0xAC` | `01`/`10` | reversed |
+| B2 | `0x4A` | `0x8A` | `01`/`10` | reversed, refused |
+| B3 | `0x2B` | `0xEB` | `00`/`11` | correct |
+| B4 | `0x09` | `0xC9` | `00`/`11` | correct |
+| B5 | `0xD8` | `0xA8` | `11`/`10` | reversed |
+
+**Bit 6 of the control byte is the state bit** (0 = ON, 1 = OFF); bit 7 is a
+don't-care. All six outcomes follow, and the three reversals are exactly the three
+ON halves with bit 6 set. The recorded pair also keeps **two** addresses (`D510`
+on, `D5B1` off); v1 kept both and every failed build replaced the OFF's address,
+which is why no OFF ever matched.
+
+### Changed
+
+* `const.py`: `_lx_unit_pair(unit)` builds a device from the recorded pair's two
+  addresses and state patterns —
+  `encrypt(D5, 0x10, 0x80 | unit)` / `encrypt(D5, 0xB1, 0x40 | unit)` — with
+  `LX_LIVE_ADDR_ON/OFF`, `LX_LIVE_CTRL_ON/OFF` and
+  `LX_TEST_UNITS = (9, 11, 7, 8, 10)`. `unit 6` reproduces the recorded LPD 7 pair
+  byte for byte.
+* Removed the falsified v3 group (widget 23, houses 121–126) with its const block,
+  config-flow step, strings and catalog entry.
+* Widget 22 (v1) untouched: it is the reference the rule came from.
+* README, USER_GUIDE §15, `LUXORPARTS_PAIRS.md`, `LUXORPARTS_TIMELINE.md`,
+  `LUXORPARTS_PROTOCOL_ANALYSIS.md` §7/§9.
+
+### Version
+
+3.4.0.9 → **3.4.0.10** in both `manifest.json` files.
+
+### Verification
+
+* `_lx_unit_pair(6)` == `(0x2450C38, 0x2633638)`; all five pairs decrypt to
+  `D510`/`D5B1` with `ctrl >> 6` = `10`/`01`, the same unit in both halves, and
+  payload bit 0 set (the one bit fixed in all 62 captures — 16 of 32 units qualify,
+  which is why the list is 9, 11, 7, 8, 10 rather than 1…5).
+* Ten distinct codes, no overlap with recorded or v1 codes, control still the
+  recorded pair, six distinct UIDs.
+* `const.py` doctests, `py_compile`, `tests/test_ha_integration.py`,
+  `strings.json` == `translations/en.json`, mirror copies byte-identical.
+
+### Not verified
+
+* No receiver here: whether units other than 6 are separate devices at a 50969 is
+  the next hardware test.

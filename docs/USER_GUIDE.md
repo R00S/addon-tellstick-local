@@ -726,42 +726,42 @@ with pre-captured Telldus Live codes (LPD 1–24). **Not available on ZNet / Net
 4. Put the receiver in learn mode (hold button until LED flashes)
 5. Press **Learn** in HA
 
-**Test device — five generated switches + a working control:**
+**Test device — five switches on a recorded address pair:**
 
 Device type **"Luxorparts — Test device, 5 switches (beta, Duo only)"** adds one
-Home Assistant device with six switches: five generated pairs (LX-B1…LX-B5) and
-a **CONTROL ON/OFF** that replays the recorded LPD 7 pair byte for byte. No
-pairing signal is sent when the device is added and the switches have no Learn
-button — put the receiver in learn mode and press a switch's **on** button.
+Home Assistant device with six switches: five generated pairs (LX-B1…LX-B5) and a
+**CONTROL ON/OFF** that replays the recorded LPD 7 pair byte for byte. No pairing
+signal is sent when the device is added and the switches have no Learn button —
+put the receiver in learn mode and press a switch's **on** button.
 
-The generated pairs use one address per switch (`0xD601` … `0xD605`), encrypted
-twice with the working LPD 7 pair's own control bytes (`0x86` ON, `0x46` OFF), so
-ON and OFF are the same device and differ only in the state byte. That build was
-tested on 2026-11-19: **all five ONs were learned and turned their socket on, no
-OFF worked** — see the results below.
+The five pairs are **new units of the recorded LPD 7 address pair**: the ON half
+keeps the recorded address `0xD510` with control byte `0x80 | unit`, the OFF half
+the recorded address `0xD5B1` with `0x40 | unit`. Only the 5-bit unit changes, so
+each switch is a distinct device that keeps the recorded pair's two addresses and
+its state polarity. Unit 6 is the recorded device itself, which is why this
+reproduces `0x2450C38` / `0x2633638` byte for byte.
 
+| Switch | Unit | ON | OFF |
+| --- | --- | --- | --- |
+| LX-B1 | 9 | `0x23472F8` | `0x2024EF8` |
+| LX-B2 | 11 | `0x2021F68` | `0x2109FE8` |
+| LX-B3 | 7 | `0x223BB28` | `0x20E8028` |
+| LX-B4 | 8 | `0x25FC788` | `0x27E4708` |
+| LX-B5 | 10 | `0x210CE58` | `0x2297C58` |
+| CONTROL ON/OFF | 6 | `0x2450C38` | `0x2633638` |
+
+Units 9 and 11 already worked on hardware in the v1 build; 7, 8 and 10 are new.
 A second device type, **"Luxorparts — Test device v1, seeds +1..5 (beta, Duo
-only)"**, restores the **first** generated build so both can be retested at the
-same time: five switches (LX-B1…LX-B5 v1, houses 111–115) with the original
-`LPD 7 seeds +1…5` pairs plus its own control. Those are the pairs whose switches
-shared a socket or ran on/off reversed, kept as the comparison.
+only)"**, keeps the first build beside it (houses 111–115 plus its own control) so
+both can be taught in one session.
 
-Hardware results on a 50969 (2026-11-19): scheme A (five remote-family clones,
-LX-T1…LX-T5) was **refused outright**; scheme B **is accepted** — a 50969 learns
-every generated pair and every ON turns its socket on. **No generated OFF has
-ever worked.** A first build moved the seed by 1…5 (payload bits 1–3): two of five
-switches worked both ways, two ran on/off reversed (the receiver read the ON as an
-OFF) and one was refused — proof that the receiver decodes the payload. A second
-build moved the seed in the address bits: every ON worked, no OFF did. The current
-build encrypts both halves from a single plaintext record; its ONs all work and
-its OFFs still do not. Both controls — the recorded LPD 7 pair — work both ways.
-
-A third device type, **"Luxorparts — Test device v3, recorded ON + own-address OFF
-(beta, Duo only)"**, isolates the remaining variable: a **recorded** Telldus Live
-ON code sent unchanged (LPD 20…24, houses 121–125) with an OFF rebuilt at that
-**same** address (`0x86` → `0x46`). If those OFFs work, the receiver pairs at the
-ON's own address and only a fresh address was the problem; if only the ONs work
-again, the receiver wants Telldus Live's own OFF address.
+Hardware results on a 50969 (2026-11-19): scheme A (five remote-family clones)
+was **refused outright**; scheme B v1 is the only build whose switches worked
+**both ways** — B3 and B4 correct, B1 and B5 reversed, B2 refused. Every later
+build learned every ON and answered **no OFF**. Decrypting the v1 codes shows why:
+**bit 6 of the control byte is the state bit** (0 = ON, 1 = OFF), so a pair only
+runs the right way up when its ON half has bit 6 clear — and every failed build had
+replaced the recorded pair's second address with one of its own.
 
 **Current limitations:**
 

@@ -737,6 +737,76 @@ and a generated OFF can only work if its address is one the receiver derives.
 
 ---
 
+## 2026-11-19 — v3 tested; v1 decoded: bit 6 is the state bit (v3.4.0.10)
+
+**Reported by the project owner** (v3.4.0.9, widget 23, houses 121–126): every
+switch learned and turned its socket **on**, and **no OFF worked** — five of five.
+Together with the earlier runs that makes four builds in a row whose OFFs were all
+ignored.
+
+### The v1 codes hold the answer
+
+v1 (LPD 7 seeds +1…5) is the only build that ever produced pairs with **both**
+commands working. Decrypting its five pairs:
+
+| Switch | ON ctrl | OFF ctrl | `ctrl >> 6` ON / OFF | Reported |
+| --- | --- | --- | --- | --- |
+| LPD 7 (control) | `0x86` | `0x46` | `10` / `01` | correct |
+| B1 | `0x6C` | `0xAC` | `01` / `10` | reversed, learns with off |
+| B2 | `0x4A` | `0x8A` | `01` / `10` | reversed, refused |
+| B3 | `0x2B` | `0xEB` | `00` / `11` | correct |
+| B4 | `0x09` | `0xC9` | `00` / `11` | correct |
+| B5 | `0xD8` | `0xA8` | `11` / `10` | reversed |
+
+**Bit 6 of the control byte is the state bit: 0 = ON, 1 = OFF.** Every one of the
+six outcomes follows from it, including all three reversals: their ON half carries
+bit 6 = 1, so pressing it sends an OFF frame. Bit 7 is a don't-care (both `0x10`
+and `0x00` work as an ON half). The v1 offset walked bytes through the state
+field, which is why three of five switches came out wrong.
+
+That also closes the address question. The recorded pair has **two** addresses —
+`D5 10` for ON and `D5 B1` for OFF — and every failed build replaced the OFF's
+address with one of its own (a fresh address, or the ON's own). v1 kept both
+because it offsets two recorded ciphertexts, and B3/B4 are exactly those two
+addresses with a different unit.
+
+### Changed
+
+* `const.py`: the test device is now built from the recorded pair's two addresses
+  and control patterns — `_lx_unit_pair(unit)` =
+  `encrypt(D5, 0x10, 0x80 | unit)` / `encrypt(D5, 0xB1, 0x40 | unit)`, with
+  `LX_LIVE_ADDR_ON/OFF`, `LX_LIVE_CTRL_ON/OFF`, `LX_TEST_UNITS = (9, 11, 7, 8, 10)`.
+  `unit 6` reproduces the recorded LPD 7 pair byte for byte.
+* Removed: the falsified v3 group (widget 23, houses 121–126, `LX_SAME_OFF_*`,
+  `_lx_same_address_off()`, `LX_LIVE_STATE_XOR`) and its config-flow step, strings
+  and catalog entry. Widget 21 keeps its number and house range (101–106), so an
+  already-added test device simply sends the new unit pair.
+* Widget 22 (v1) is untouched — it is the reference the rule was derived from.
+* README, USER_GUIDE §15, `LUXORPARTS_PAIRS.md`,
+  `LUXORPARTS_PROTOCOL_ANALYSIS.md` §7/§9.
+
+### Version
+
+3.4.0.9 → **3.4.0.10** in both `manifest.json` files.
+
+### Verification
+
+* `_lx_unit_pair(6)` == `(0x2450C38, 0x2633638)`, the recorded LPD 7 pair.
+* All five pairs decrypt to addresses `D510`/`D5B1` with `ctrl >> 6` = `10`/`01`,
+  the same unit in both halves, and payload bit 0 set in both halves.
+* Ten distinct codes, no overlap with the 48 recorded codes or with the v1 group;
+  control (house 106) still the recorded pair; six distinct UIDs.
+* `const.py` doctests, `py_compile`, `tests/test_ha_integration.py`,
+  `strings.json` == `translations/en.json`, mirror copies byte-identical.
+
+### Not verified
+
+* No receiver here. Whether units other than 6 are accepted as separate devices is
+  exactly what the next hardware run decides; 9 and 11 are the two already known
+  to work, 7/8/10 are new.
+
+---
+
 ## Anti-patterns to avoid
 
 1. **Never switch to inline S repeats** without first testing on hardware.
