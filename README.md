@@ -630,8 +630,9 @@ working Luxorparts path sends.
 The generated pairs are built in the plaintext domain: one address per switch,
 encrypted twice with the working LPD 7 pair's own control bytes (`0x86` ON,
 `0x46` OFF). ON and OFF are therefore the same device and differ only in the
-state byte — which is what a receiver needs, because it derives the OFF from the
-ON it learned and is never taught the OFF:
+state byte. That assumed the receiver derives the OFF from the ON it learned —
+the hardware run below shows it rejected exactly that: **all five ONs worked, no
+OFF did**:
 
 | Switch | Address | ON | OFF |
 | --- | --- | --- | --- |
@@ -649,17 +650,28 @@ plus its own control. Add both devices when a receiver should be taught the old
 and the new pairs in one session — the old pairs are the build whose switches
 shared a socket or ran on/off reversed, so they are the comparison.
 
+A third device type, **"Luxorparts — Test device v3, recorded ON + own-address
+OFF (beta, Duo only)"**, isolates the one variable the other two did not. Each
+switch sends a **recorded** Telldus Live ON code unchanged (LPD 20…24, houses
+121–125) and an OFF rebuilt at that **same** address — the ON's control byte with
+its state bits flipped (`0x86` → `0x46`). If those OFFs work, the receiver pairs
+at the ON's own address and only a fresh address was the problem; if only the ONs
+work again, the receiver wants Telldus Live's own OFF address and generated
+devices cannot be paired one code at a time.
+
 **No pairing signal is sent when the device is added**, and the switches have no
 Learn button: a receiver in learn mode learns the code it hears, so pair a switch
 by pressing its **on** button.
 
 > **Hardware results (2026-11-19):** scheme A was refused outright — all five
-> remote-family clones. Scheme B **is accepted**: CONTROL and all five generated
-> pairs were learned by a 50969, so a receiver does take codes it has never seen.
-> A first scheme-B build moved the seed by 1…5 (payload bits 1–3) and several
-> switches then controlled the same socket with on/off reversed — proof that the
-> receiver **decodes** the payload and that those low bits are state/unit rather
-> than address. The five pairs now move address bits 11–15 instead.
+> remote-family clones. Scheme B **is accepted**: a 50969 learns every generated
+> pair and every ON turns its socket on, but **no generated OFF has ever worked**.
+> With the plaintext-pair build all five ONs worked and all five OFFs did not.
+> With the restored v1 build (LPD 7 seeds +1…5) two of five switches worked both
+> ways, two ran reversed — the receiver read our ON as an OFF — and one was
+> refused. Both controls (the recorded LPD 7 pair) work both ways. So the receiver
+> **does** decode the payload: a rebuilt pair was accepted for two of five values
+> of an address the recorded pairs already use, and never at a fresh address.
 
 **Current limitations:**
 

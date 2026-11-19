@@ -348,7 +348,12 @@
         "lx_test": {
           "title": "Luxorparts test device",
           "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#15-known-limitations",
-          "description": "Adds **{name}** — one device with six on/off switches.\n\n**CONTROL ON/OFF** replays the recorded LPD 7 pair byte for byte — the same code the working Luxorparts path sends — so a reference that is known to work sits in the same device.\n\n**LX-B1 … LX-B5** are **generated** (scheme B, Live-family shape). Each is one fresh address encrypted twice with the CONTROL's own control bytes (`0x86` ON, `0x46` OFF), so a switch's ON and OFF are the same device and differ only in the state byte. The receiver works out the OFF from the ON it learned, so the OFF never has to be taught.\n\n**No pairing signal is sent here.** A Luxorparts receiver learns whatever code it hears while in learn mode, so pairing is done by pressing the switch's **on** button — exactly like the ON key on a physical remote."
+          "description": "Adds **{name}** — one device with six on/off switches.\n\n**CONTROL ON/OFF** replays the recorded LPD 7 pair byte for byte — the same code the working Luxorparts path sends — so a reference that is known to work sits in the same device.\n\n**LX-B1 … LX-B5** are **generated** (scheme B, Live-family shape). Each is one fresh address encrypted twice with the CONTROL's own control bytes (`0x86` ON, `0x46` OFF), so a switch's ON and OFF are the same device and differ only in the state byte.\n\n**Hardware 2026-11-19:** all five ONs were learned and turned their socket on, **no OFF worked**. The receiver does not derive an OFF at the ON's own address, so this build is a diagnostic, not a working device.\n\n**No pairing signal is sent here.** A Luxorparts receiver learns whatever code it hears while in learn mode, so pairing is done by pressing the switch's **on** button — exactly like the ON key on a physical remote."
+        },
+        "lx_test_v3": {
+          "title": "Luxorparts test device v3",
+          "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#15-known-limitations",
+          "description": "Adds **{name}** — one device with six on/off switches.\n\n**LX-S1 … LX-S5** send a **recorded** Telldus Live ON code (LPD 20…24) unchanged, and an OFF rebuilt at that **same** address: the ON's control byte with its state bits flipped (`0x86` → `0x46`).\n\nThis is the one variable the earlier builds never isolated. The recorded OFF of every unit-6 pair differs from its ON in the address as well as the control byte, and a fresh address (test device, houses 101–105) lost the OFF on all five switches. Here the address is a recorded one, so if the OFFs work the receiver pairs at the ON's own address and a generated address was the problem; if only the ONs work again, the receiver wants Telldus Live's own OFF address.\n\n**CONTROL ON/OFF** replays the recorded LPD 7 pair byte for byte.\n\n**No pairing signal is sent here.** Put the receiver in learn mode and press the switch's **on** button."
         },
         "confirm": {
           "title": "Send pairing signal",
@@ -479,6 +484,7 @@
         "device_added": "Device added. It will appear in your device list shortly.",
         "lx_test_added": "Luxorparts test device added — one device with five switches (LX-T1 … LX-T5). Put a receiver in learn mode and press a switch's ON button to pair it.",
         "lx_test_v1_added": "Luxorparts test device v1 added — five switches (LPD 7 seeds +1..5) plus a control. Put a receiver in learn mode and press a switch's ON button to pair it.",
+        "lx_test_v3_added": "Luxorparts test device v3 added — five switches (recorded LPD 20..24 ON + OFF at the same address) plus a control. Put a receiver in learn mode and press a switch's ON button to pair it.",
         "mirror_is_secondary": "This TellStick is a mirror — devices must be added through the primary hub entry."
       }
     }

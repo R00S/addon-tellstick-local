@@ -420,8 +420,29 @@ records.
 **Current build (v3.4.0.7):** each pair is one plaintext record — one address, the
 recorded pair's own control bytes `0x86`/`0x46` (unit 6) — encrypted twice, so the
 ON and OFF of a switch differ only in the state byte. `_lx_plain_pair(0xD510)`
-reproduces the recorded LPD 7 ON code byte for byte. The only thing left to
-confirm on hardware is that the receiver keys a device on the plaintext address.
+reproduces the recorded LPD 7 ON code byte for byte.
+
+**Result (v3.4.0.8, 2026-11-19):** all five ONs were learned and turned their socket
+on, **no OFF worked** — five of five. The v1 group (LPD 7 seeds +1…5) run beside it
+split three ways instead: B3 and B4 correct, B1 and B5 reversed (our ON read as an
+OFF), B2 refused at learn time. Both controls worked. So the receiver decodes **and**
+validates the frame, and the plaintext rebuild is falsified for OFF: the recorded
+OFF is not the ON's own record with the state bits flipped.
+
+Decrypting all 24 pairs then shows why. Payload bits 0–4 never change inside a pair
+(the unit field); bits 5–7 and 8–23 change in **every** pair, giving 19 distinct
+`ON ^ OFF` masks — there is no single state bit anywhere in the frame. For the seven
+unit-6 pairs (LPD 5, 7, 20–24) the OFF control byte is always exactly
+`ON ^ 0xC0` (`0x86` → `0x46`), and the **address** is the only other difference.
+
+**Fourth build (v3.4.0.9, widget 23):** a **recorded** Telldus Live ON code sent
+unchanged, with the OFF rebuilt at that same address (`ctrl ^ 0xC0`) — LPD 20…24 on
+houses 121–125 plus the LPD 7 control on 126. It is the only group whose ON is a
+recorded code and whose OFF differs from the recorded pair only in the address. If
+those OFFs work, the receiver pairs at the ON's own address and a fresh address was
+the problem; if only the ONs work again, the receiver wants Telldus Live's own OFF
+address — a function of the ON we do not have — and generated devices cannot be
+paired one code at a time.
 
 ## 8. Still unknown
 
@@ -443,6 +464,11 @@ confirm on hardware is that the receiver keys a device on the plaintext address.
   longer an unvalidated candidate for the Live family — decrypting the recorded
   pairs yields one plaintext address per remote (all five criss-cross groups) and
   the recorded LPD 7 ON re-encrypts byte for byte.
+* **v3.4.0.9** adds `_lx_decrypt_payload()` (the cipher's inverse, table chosen by
+  round-trip), `LX_LIVE_STATE_XOR = 0xC0`, `_lx_same_address_off()` and widget 23
+  (`LX_SAME_OFF_LIST`, houses 121–126). The falsified plaintext-pair group stays as
+  a diagnostic; README, USER_GUIDE and the config-flow text now state the
+  v3.4.0.8 result instead of claiming the receiver derives the OFF.
 * If B succeeds, `luxorparts_generate_codes()` can return scheme-B values for
   unknown houses; the recorded pairs stay authoritative for LPD 1–24.
 * **If** B passes its hardware test, the LPD picker could grow past 24 by

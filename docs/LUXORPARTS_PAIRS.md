@@ -125,8 +125,51 @@ switches then controlled the same socket with on/off reversed — the receiver
 **decodes** the payload, and those low bits are state/unit, not address. A second
 build moved the seed in the address bits: all five **ON** commands worked, but **no
 OFF** did — an offset added to a stored payload is applied after the cipher, so
-the two halves of a pair decoded to different devices. The table above is the
-current build: one plaintext record per switch, encrypted twice.
+the two halves of a pair decoded to different devices.
+
+The table above is the plaintext-pair build, and it is the third OFF failure:
+**all five ONs turned their socket on, no OFF worked, five of five.** The v1 group
+beside it (LPD 7 seeds +1…5) split three ways — B3 and B4 worked both ways, B1 and
+B5 ran **reversed** (the receiver read our ON as an OFF) and B2 was **refused** and
+only works once B1 is taught. Both controls (the recorded LPD 7 pair) work both
+ways. So the receiver both decodes and validates the frame, and neither a fresh
+address nor an offset of a recorded one produces a usable OFF.
+
+Decrypting the whole recorded list adds three facts that constrain the rule:
+
+* payload bits 0–4 **never** change between the two halves of a recorded pair —
+  that is the unit field, and it is shared;
+* bits 5–7 and bits 8–23 change in every pair: 19 distinct `ON ^ OFF` masks over
+  24 pairs, so there is no single state bit anywhere in the 24-bit payload;
+* for the seven pairs that share the unit-6 control bytes (LPD 5, 7, 20–24) the
+  OFF control byte is always exactly `ON ^ 0xC0` (`0x86` → `0x46`) and the only
+  other difference is the **address**.
+
+### v3 — recorded ON, OFF rebuilt at the same address
+
+Device type **"Luxorparts — Test device v3, recorded ON + own-address OFF (beta,
+Duo only)"** (widget 23, houses 121–126). Each switch sends a **recorded** Telldus
+Live ON code unchanged — an address a receiver is known to accept — and an OFF
+rebuilt at that **same** plaintext address, i.e. the ON control byte `^ 0xC0`:
+
+| Switch | From | ON | OFF |
+|--------|------|----|-----|
+| LX-S1 | LPD 20 | `0x23CEC38` | `0x257C638` |
+| LX-S2 | LPD 21 | `0x21A7C38` | `0x22EB638` |
+| LX-S3 | LPD 22 | `0x206CC38` | `0x2560E38` |
+| LX-S4 | LPD 23 | `0x2709C38` | `0x21D5E38` |
+| LX-S5 | LPD 24 | `0x2A86C38` | `0x2F14638` |
+| CONTROL ON/OFF | LPD 7 | `0x2450C38` | `0x2633638` |
+
+Every generated OFF above differs from the recorded OFF of the same LPD (which
+sits at a different address, e.g. LPD 20's recorded OFF is `0x292B638`). That is
+the point of the build: it is the only test group whose ON is a recorded code and
+whose OFF differs from the recorded pair **only** in the address.
+
+If these OFFs work, the receiver pairs at the ON's own address and a fresh address
+was the problem. If only the ONs work again, the receiver wants Telldus Live's own
+OFF address — a function of the ON we do not have — and generated devices cannot
+be paired one code at a time.
 
 ---
 

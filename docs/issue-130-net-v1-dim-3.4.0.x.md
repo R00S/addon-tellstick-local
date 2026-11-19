@@ -223,3 +223,63 @@ the current one:
   together and keep separate UIDs.
 
 Version 3.4.0.7 → **3.4.0.8**.
+
+## Session — 2026-11-19 (fifth): both builds retested, no generated OFF
+
+### What the user reported
+
+Both test devices taught to one 50969:
+
+* **v1 (houses 111–116):** B1 reversed and learns with the off press; B2 reversed
+  and refuses to learn but works once B1 is taught; B3 and B4 correct; B5 reversed.
+* **Plaintext pairs (houses 101–106):** learns and turns on, **no OFF works — on
+  all five**.
+* **Both controls** work both ways.
+
+### What that means
+
+1. The receiver **decodes and validates** the payload. A rebuilt ON cannot run
+   *reversed* unless it is decoded, and B2 cannot be *refused* at learn time
+   unless the frame is checked.
+2. The plaintext rebuild — the recorded LPD 7 control bytes `0x86`/`0x46` at a
+   fresh address — is falsified for OFF: five of five failed. So the OFF is not
+   "the same record with the state bits flipped".
+3. Decrypting all 24 recorded pairs adds: payload bits 0–4 never change within a
+   pair (unit, shared); bits 5–7 and 8–23 change in every pair (19 distinct
+   `ON ^ OFF` masks — no single state bit exists); and the seven unit-6 pairs
+   always satisfy `OFF ctrl = ON ctrl ^ 0xC0`, with the **address** as the only
+   other difference.
+
+The one variable the two builds never isolated is the address: a fresh address
+loses the OFF even when its ON is accepted, while the recorded address family
+accepts two of five rebuilt pairs. That is what the new group tests.
+
+### Changed
+
+* `const.py`: `_lx_decrypt_payload()` (inverse cipher, round-trip checked),
+  `LX_LIVE_STATE_XOR = 0xC0`, `_lx_same_address_off()`, `LX_SAME_OFF_LPDS`
+  (LPD 20…24), `LX_SAME_OFF_HOUSES` (121…125), `LX_SAME_OFF_LIST` /
+  `LX_SAME_OFF_CODES`, control house 126 (recorded LPD 7 pair), widget **23** and
+  its catalog entry, `luxorparts_generate_codes()` lookups.
+* `config_flow.py`: `async_step_lx_test_v3()` (widget 23), reusing
+  `_add_lx_test_switches()`.
+* `strings.json` / `translations/en.json`: `lx_test_v3` + `lx_test_v3_added`; the
+  plaintext-pair description no longer claims the receiver derives the OFF.
+* README, USER_GUIDE §15, `LUXORPARTS_PAIRS.md`, `LUXORPARTS_TIMELINE.md`.
+
+### Version
+
+3.4.0.8 → **3.4.0.9** in both `manifest.json` files.
+
+### Verification
+
+* `_lx_decrypt_payload()` inverts the cipher (`0x48A187` → `D5 10 86`); the five
+  ONs are the recorded LPD 20–24 codes verbatim; the five OFFs are new codes, each
+  the ON's address with `ctrl ^ 0xC0`; no clash with the recorded list or widgets
+  21/22; every payload keeps bit 0 set and frame MSB clear; six distinct UIDs.
+* `const.py` doctests, `py_compile`, `tests/test_ha_integration.py`,
+  `strings.json` == `translations/en.json`, mirror copies byte-identical.
+
+### Not verified
+
+* No receiver here — the recorded-ON group is the next hardware test.

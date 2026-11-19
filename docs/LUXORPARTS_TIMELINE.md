@@ -658,6 +658,85 @@ widget 21 so the two groups get separate UIDs and can be added at the same time.
 
 ---
 
+## 2026-11-19 — plaintext pairs and v1 retested: no generated OFF (v3.4.0.9)
+
+**Reported by the project owner** — both test devices taught to one 50969 in the
+same session:
+
+**v1 group (houses 111–116, LPD 7 seeds +1…5):**
+
+1. `LX-B1 v1` is reversed (on/off) and therefore learns with the **off** press.
+2. `LX-B2 v1` is reversed **and cannot learn**, but works once `LX-B1 v1` is taught.
+3. `LX-B3 v1` and `LX-B4 v1` work correctly.
+4. `LX-B5 v1` is reversed.
+
+**Plaintext-pair group (houses 101–106):** every switch learns and turns its socket
+**on**, and **no OFF works on any of the five**.
+
+**Both control switches** (recorded LPD 7 pair, houses 106 and 116) work both ways.
+
+### What the data says
+
+* The receiver **decodes** the payload — otherwise a rebuilt ON could not run
+  *reversed*, and an invalid code could not be *refused* at learn time.
+* It also **validates** it: three different outcomes came out of the same raw
+  `ON ^ OFF` mask, purely from the low payload bits the v1 offsets touched.
+* **A fresh address is never accepted for the OFF.** All five plaintext pairs
+  differ from the recorded LPD 7 pair only in the address (same control bytes
+  `0x86`/`0x46`, same unit 6) and none of their OFFs worked.
+* Rebuilding the pair in the plaintext domain fixed nothing, so the recorded
+  OFF is **not** "the ON's record with the state bits flipped at the same
+  address". The recorded OFF sits at a different address as well.
+
+Decrypting the whole recorded list (new helper `_lx_decrypt_payload()`) narrows it
+further:
+
+| Observation | Consequence |
+| --- | --- |
+| Payload bits 0–4 never change within a pair | the unit field is shared; state is not there |
+| Bits 5–7 and 8–23 change in every pair; 19 distinct masks over 24 pairs | there is **no single state bit** in the frame |
+| The seven unit-6 pairs (LPD 5, 7, 20–24) always have `OFF ctrl = ON ctrl ^ 0xC0` | that XOR **is** the state field; only the address also changes |
+
+So the pairing rule the receiver implements is the encoder we still do not have,
+and a generated OFF can only work if its address is one the receiver derives.
+
+### Changed
+
+* `const.py`: new `_lx_decrypt_payload()` (inverse of `_lx_encrypt_payload()`, the
+  table that round-trips wins), `LX_LIVE_STATE_XOR = 0xC0`,
+  `_lx_same_address_off()`, `LX_SAME_OFF_LPDS = (20, 21, 22, 23, 24)`,
+  `LX_SAME_OFF_HOUSES = (121 … 125)`, `LX_SAME_OFF_LIST` / `LX_SAME_OFF_CODES`,
+  `LX_CONTROL_SAME_OFF_HOUSE = 126` (recorded LPD 7 pair); widget **23**, catalog
+  entry "Luxorparts — Test device v3, recorded ON + own-address OFF (beta, Duo
+  only)"; lookups in `luxorparts_generate_codes()` for 121–126.
+* `config_flow.py`: widget 23 → `async_step_lx_test_v3()`, sharing
+  `_add_lx_test_switches()`.
+* `strings.json` / `translations/en.json`: `lx_test_v3` step, `lx_test_v3_added`
+  abort, and the plaintext-pair description now states the hardware result
+  instead of claiming the receiver derives the OFF.
+* README, USER_GUIDE §15, `LUXORPARTS_PAIRS.md`.
+
+### Version
+
+3.4.0.8 → **3.4.0.9** in both `manifest.json` files.
+
+### Verification
+
+* `_lx_decrypt_payload()` inverts the cipher (`0x48A187` → `D5 10 86`,
+  `0x4C66C7` → `D5 B1 46`); five ONs are the recorded LPD 20–24 codes verbatim;
+  five OFFs are new codes, each one address plus `ON ctrl ^ 0xC0`; no code clashes
+  with the recorded list, widget 21 or widget 22; every payload keeps bit 0 set and
+  the 25-bit frame MSB clear; houses 121–126 give six distinct UIDs.
+* `const.py` doctests, `py_compile`, `tests/test_ha_integration.py`,
+  `strings.json` == `translations/en.json`, mirror copies byte-identical.
+
+### Not verified
+
+* No receiver here. Whether a recorded address with an own-address OFF is accepted
+  is what the next hardware run decides.
+
+---
+
 ## Anti-patterns to avoid
 
 1. **Never switch to inline S repeats** without first testing on hardware.

@@ -73,8 +73,11 @@ from .const import (
     GENERIC_RF_TYPE_SWITCH,
     LX_CONTROL_HOUSE,
     LX_CONTROL_LABEL,
+    LX_CONTROL_SAME_OFF_HOUSE,
+    LX_CONTROL_SAME_OFF_LABEL,
     LX_CONTROL_V1_HOUSE,
     LX_CONTROL_V1_LABEL,
+    LX_SAME_OFF_LIST,
     LX_TEST_LIST,
     LX_TEST_V1_LIST,
     PROTOCOL_GENERIC_RF,
@@ -2254,6 +2257,9 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             if widget == 22:
                 # The same, carrying the first scheme-B pairs (seeds +1…5).
                 return await self.async_step_lx_test_v1()
+            if widget == 23:
+                # Recorded ONs with the OFF rebuilt at the ON's own address.
+                return await self.async_step_lx_test_v3()
             return await self.async_step_params()
 
         return self.async_show_form(
@@ -2563,6 +2569,38 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
 
         return self.async_show_form(
             step_id="lx_test_v1",
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "name": self._new_device.get(CONF_DEVICE_NAME, ""),
+            },
+        )
+
+    async def async_step_lx_test_v3(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Add the v3 Luxorparts test device: recorded ONs, own-address OFFs.
+
+        Same layout as ``async_step_lx_test``, but each of the five switches
+        (houses 121-125) sends a **recorded** LPD 20…24 ON code verbatim and an
+        OFF rebuilt at that same plaintext address (control byte ``^ 0xC0``),
+        plus a control on house 126 that replays the recorded LPD 7 pair.
+
+        This is the one variable the earlier builds never isolated: widget 21
+        changed the address and lost the OFF, widget 22 kept Telldus Live's own
+        address and only some switches worked.
+        """
+        if user_input is not None:
+            switches: list[tuple[int, str]] = [
+                (num, f"LX-S{num - 120}") for num, *_rest in LX_SAME_OFF_LIST
+            ]
+            switches.append(
+                (LX_CONTROL_SAME_OFF_HOUSE, LX_CONTROL_SAME_OFF_LABEL)
+            )
+            await self._add_lx_test_switches(switches)
+            return self.async_abort(reason="lx_test_v3_added")
+
+        return self.async_show_form(
+            step_id="lx_test_v3",
             data_schema=vol.Schema({}),
             description_placeholders={
                 "name": self._new_device.get(CONF_DEVICE_NAME, ""),

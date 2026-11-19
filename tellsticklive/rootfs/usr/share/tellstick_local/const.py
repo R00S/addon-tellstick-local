@@ -335,6 +335,10 @@ WIDGET_PARAMS: dict[int, list[dict]] = {
     #     one session; async_step_lx_test_v1() adds its five switches and a
     #     control.
     22: [],
+    # 23: Luxorparts test device v3 — recorded ONs with the OFF rebuilt at the
+    #     ON's own address.  async_step_lx_test_v3() adds its five switches and
+    #     a control.
+    23: [],
 }
 
 # ---------------------------------------------------------------------------
@@ -400,6 +404,7 @@ DEVICE_CATALOG: list[tuple[str, str, str, int]] = [
     # docs/LUXORPARTS_PROTOCOL_ANALYSIS.md §7.
     ("Luxorparts — Test device, 5 switches (beta, Duo only)", "luxorparts", "selflearning-switch:lx_live", 21),
     ("Luxorparts — Test device v1, seeds +1..5 (beta, Duo only)", "luxorparts", "selflearning-switch:lx_live", 22),
+    ("Luxorparts — Test device v3, recorded ON + own-address OFF (beta, Duo only)", "luxorparts", "selflearning-switch:lx_live", 23),
     ("Luxorparts — On/off (beta, Duo only)", "luxorparts", "selflearning-switch:lx_live", 20),
     ("Nexa — Bell", "arctech", "bell:nexa", 4),
     ("Nexa — Code switch", "arctech", "codeswitch:nexa", 1),
@@ -1263,6 +1268,38 @@ def _lx_encrypt_payload(payload: tuple[int, int, int]) -> int:
     return (enc[0] << 20) | (enc[1] << 16) | (enc[2] << 12) | (enc[3] << 8) | (enc[4] << 4) | enc[5]
 
 
+def _lx_decrypt_payload(cipher24: int) -> tuple[int, int, int]:
+    """Decrypt a 24-bit Luxorparts ciphertext back to its 3-byte plaintext.
+
+    The cipher picks its table from the plaintext's own high byte, so the table
+    that round-trips is the plaintext's table; the other candidate is rejected.
+
+    >>> _lx_decrypt_payload(0x48A187)
+    (213, 16, 134)
+    >>> _lx_decrypt_payload(0x4C66C7)
+    (213, 177, 70)
+    """
+    nib = [(cipher24 >> (4 * i)) & 0xF for i in range(5, -1, -1)]
+    for table in _LX_ENC_TABLE:
+        inv = [0] * 16
+        for index, value in enumerate(table):
+            inv[value] = index
+        n5 = inv[nib[5]]
+        n4 = inv[nib[4]] ^ nib[5]
+        n3 = inv[nib[3]] ^ nib[4]
+        n2 = inv[nib[2]] ^ nib[3]
+        n1 = inv[nib[1]] ^ nib[2]
+        first = nib[0] ^ 9
+        plain = (
+            (first << 4) | n1,
+            (n2 << 4) | n3,
+            (n4 << 4) | n5,
+        )
+        if _lx_encrypt_payload(plain) == cipher24:
+            return plain
+    raise ValueError(f"not a Luxorparts ciphertext: 0x{cipher24:06X}")
+
+
 def _lx_plain_pair(address: int) -> tuple[int, int]:
     """Encrypt one Luxorparts record twice — ON and OFF of the same device.
 
@@ -1301,6 +1338,97 @@ LX_TEST_LIST: list[tuple[int, int, int, str]] = [
 LX_TEST_CODES: dict[tuple[int, int], dict[str, int]] = {
     (num, 1): {"on": on_code, "off": off_code}
     for num, on_code, off_code, _ in LX_TEST_LIST
+}
+
+
+# ---------------------------------------------------------------------------
+# Scheme B v3 — recorded ONs, OFF rebuilt at the ON's own address
+#
+# Hardware, v3.4.0.8 (both test devices taught to one 50969):
+#
+#   * widget 21 (fresh plaintext addresses 0xD601…0xD605): every ON turned its
+#     socket on, **no** OFF worked — five of five.
+#   * widget 22 (LPD 7 seeds +1…5, raw payload offsets): B3 and B4 worked both
+#     ways, B1 and B5 ran reversed (the receiver read our ON as an OFF) and B2
+#     was refused outright.
+#   * both controls (the recorded LPD 7 pair) worked both ways.
+#
+# Decrypting the whole recorded list narrows the pairing rule further:
+#
+#   * payload bits 0-4 never change between the two halves of a recorded pair —
+#     that is the unit field, and it is shared;
+#   * bits 5-7 and bits 8-23 change in every pair — there is no single state bit
+#     anywhere in the frame (19 distinct ON ^ OFF masks over 24 pairs);
+#   * for the seven pairs that share the unit-6 control bytes (LPD 5, 7,
+#     20…24) the OFF control byte is always exactly ``ON ^ 0xC0``
+#     (0x86 -> 0x46).  The *only* other difference is the address.
+#
+# So the recorded OFF differs from its ON in the control byte AND in the address.
+# Widget 21 rebuilt the OFF at the ON's own address and the receiver ignored it;
+# widget 22 kept Telldus Live's own address relation and two of five worked.  The
+# one variable neither build isolated is the address: a fresh address is never
+# accepted, while a recorded address can be.
+#
+# This group keeps a recorded ON **verbatim** — an address that is known to be
+# valid at a receiver — and rebuilds only the OFF: same plaintext address, ON
+# control byte with the state bits flipped (``^ 0xC0``).  LPD 20…24 supply the
+# five ONs and the CONTROL on house 126 replays the recorded LPD 7 pair.
+#
+# What the result decides: if these OFFs work, the receiver pairs at the ON's own
+# address and fresh addresses were the problem.  If only the ONs work again, the
+# receiver wants Telldus Live's own OFF address, i.e. a function of the ON we do
+# not have, and generated devices cannot be paired one code at a time.
+# ---------------------------------------------------------------------------
+
+# ON control byte -> OFF control byte, for the unit-6 pairs: 0x86 -> 0x46.
+LX_LIVE_STATE_XOR = 0xC0
+
+# Recorded pairs whose OFF control byte is exactly ``ON ^ LX_LIVE_STATE_XOR``.
+LX_SAME_OFF_LPDS: tuple[int, ...] = (20, 21, 22, 23, 24)
+LX_SAME_OFF_HOUSES: tuple[int, ...] = (121, 122, 123, 124, 125)
+
+
+def _lx_same_address_off(on_code: int) -> int:
+    """Rebuild a recorded pair's OFF at the ON's own plaintext address.
+
+    The recorded OFF of the same pair sits at a *different* address (LPD 7:
+    ``D5 10 86`` -> ``D5 B1 46``), so this deliberately does not reproduce it.
+
+    >>> hex(_lx_same_address_off(LX_GROUND_TRUTH_CODES[(20, 1)]["on"]))
+    '0x257c638'
+    >>> hex(_lx_same_address_off(LX_GROUND_TRUTH_CODES[(7, 1)]["on"]))
+    '0x210ce38'
+    """
+    hi, lo, ctrl = _lx_decrypt_payload(on_code >> 3)
+    return _lx_encrypt_payload((hi, lo, ctrl ^ LX_LIVE_STATE_XOR)) << 3
+
+
+# Columns: (test_num, on_code, off_code, description)
+LX_SAME_OFF_LIST: list[tuple[int, int, int, str]] = [
+    (
+        house,
+        LX_GROUND_TRUTH_CODES[(lpd, 1)]["on"],
+        _lx_same_address_off(LX_GROUND_TRUTH_CODES[(lpd, 1)]["on"]),
+        f"LPD {lpd} ON verbatim + OFF at the same address (ctrl ^ 0x"
+        f"{LX_LIVE_STATE_XOR:02X})",
+    )
+    for lpd, house in zip(LX_SAME_OFF_LPDS, LX_SAME_OFF_HOUSES)
+]
+
+# Keyed by (house, 1), the same shape as LX_GROUND_TRUTH_CODES.
+LX_SAME_OFF_CODES: dict[tuple[int, int], dict[str, int]] = {
+    (num, 1): {"on": on_code, "off": off_code}
+    for num, on_code, off_code, _ in LX_SAME_OFF_LIST
+}
+
+# Control of this group (house 126): the recorded LPD 7 pair again, so the group
+# carries the same known-good reference as the other test devices.
+LX_CONTROL_SAME_OFF_HOUSE = 126
+LX_CONTROL_SAME_OFF_LABEL = "CONTROL ON/OFF (LPD 7) v3"
+LX_CONTROL_SAME_OFF_CODES: dict[tuple[int, int], dict[str, int]] = {
+    (LX_CONTROL_SAME_OFF_HOUSE, 1): dict(
+        LX_GROUND_TRUTH_CODES[(LX_LIVE_CONTROL_LPD, 1)]
+    )
 }
 
 
@@ -1352,6 +1480,15 @@ def luxorparts_generate_codes(house: int, unit: int) -> dict[str, int]:
     control_v1 = LX_CONTROL_V1_CODES.get((house, unit))
     if control_v1 is not None:
         return dict(control_v1)
+
+    # v3 test pairs (houses 121-125) and their control (126): recorded ONs with
+    # the OFF rebuilt at the ON's own address
+    same_off = LX_SAME_OFF_CODES.get((house, unit))
+    if same_off is not None:
+        return dict(same_off)
+    control_same_off = LX_CONTROL_SAME_OFF_CODES.get((house, unit))
+    if control_same_off is not None:
+        return dict(control_same_off)
 
     # Map UI unit (1-based) to protocol unit (0-based, 5-bit, 0–31)
     proto_unit = max(0, unit - 1) & 0x1F
