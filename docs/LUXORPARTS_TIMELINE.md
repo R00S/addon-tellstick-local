@@ -980,3 +980,53 @@ which frame is the ON.
 
 * No receiver here: 275 of the 304 codes have never been at a 50969, and nothing at
   all has been sent from a TellStick Net v1 (3-frame burst, unverified).
+
+## 2026-11-19 — the generated channels move onto the beta device type (v3.4.0.13)
+
+The separate "Generated channel" device type (widget 25,
+`selflearning-switch:lx_gen`, `luxorparts_codes()`, `luxorparts_lx_gen_*` UIDs) is
+**removed**. It never kept the name the user typed and its on/off sent the generic
+cipher: the synthetic `RawDeviceEvent` publishes the RF-normalised model
+(`selflearning`), so the entity's UID was
+`luxorparts_selflearning_<lpd>_<channel>` and matched no stored device.
+
+It was also not unique: 24 LPDs × 16 channels is 384 combinations, but the 24
+recordings are 19 receivers, so 80 combinations repeated another receiver's codes.
+
+### Changed
+
+* `const.py`: `LX_GEN_VARIANT`, `luxorparts_codes()` and the `lx_gen` timing profile
+  removed; widget 25 and its catalog entry removed. Widget 20 (the beta device type)
+  now takes house = LPD (a `select` of the 19 distinct receivers) and unit = channel
+  1–16. `LX_GEN_FAMILIES` / `LX_GEN_ALIASES` / `LX_GEN_CANONICAL` / `LX_GEN_FIELDS` /
+  `LX_GEN_LPD_OPTIONS` sit above `WIDGET_PARAMS`; `luxorparts_channel_fields()` puts
+  a family's recorded field first, so unit 1 is exactly the beta pair.
+* `luxorparts_generate_codes()` serves the channels itself: ground truth first, then
+  a channel for a recorded LPD house, then the generic cipher.
+* `build_device_uid()`: the `lx_gen` special case is gone — generated channels use
+  the beta UID `luxorparts_selflearning_<lpd>_<channel>`.
+* `config_flow.py`: `_build_params_schema()` understands `type: "select"`; the
+  Luxorparts confirm branch calls `luxorparts_generate_codes()`.
+* `switch.py` / `button.py` / `net_client.py`: same helper, no model variant.
+* README, USER_GUIDE §5/§15, `LUXORPARTS_PAIRS.md`, `LUXORPARTS_PROTOCOL_ANALYSIS.md`
+  §10, issue doc.
+
+### Version
+
+3.4.0.12 → **3.4.0.13** in both `manifest.json` files.
+
+### Verification
+
+* `const.py` doctests, `py_compile` on the touched modules,
+  `tests/test_ha_integration.py`, JSON/strings parity, byte-identical mirror, both
+  manifests 3.4.0.13.
+* Pool: the 304 combinations the picker offers are all distinct; LPD 1–24 unit 1
+  returns the recorded pair unchanged (beta regression check); the five
+  hardware-proven v5 codes still come out of `luxorparts_generate_codes()`.
+* UID: `build_device_uid("luxorparts", "selflearning-switch:lx_live", "7", "4")` is
+  `luxorparts_selflearning_7_4`, which is what the synthetic event builds.
+
+### Not verified
+
+* No receiver here: the added channels and the renumbered channels have not been
+  tried on hardware, and the Net v1 3-frame burst is still unverified.

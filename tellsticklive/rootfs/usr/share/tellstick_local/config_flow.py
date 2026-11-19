@@ -86,7 +86,7 @@ from .const import (
     decode_triq_url,
     luxorparts_build_raw_command,
     parse_rtl433_pulse_analysis,
-    luxorparts_codes,
+    luxorparts_generate_codes,
     normalize_rf_model,
 )
 
@@ -150,6 +150,8 @@ def _build_params_schema(
         elif ptype == "letter":
             letters = [chr(c) for c in range(ord(spec["min"]), ord(spec["max"]) + 1)]
             schema_dict[vol.Required(name, default=default)] = vol.In(letters)
+        elif ptype == "select":
+            schema_dict[vol.Required(name, default=default)] = vol.In(spec["options"])
         elif ptype == "str":
             schema_dict[vol.Required(name, default=default)] = str
         elif ptype == "bool":
@@ -2498,7 +2500,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                         house_int = int(self._new_device.get(CONF_DEVICE_HOUSE, 0))
                         unit_int = int(self._new_device.get(CONF_DEVICE_UNIT, 1))
                         model = self._new_device.get(CONF_DEVICE_MODEL, "")
-                        codes = luxorparts_codes(house_int, unit_int, model)
+                        codes = luxorparts_generate_codes(house_int, unit_int)
                         on_code = codes["on"]
                         variant = model.split(":", 1)[1] if ":" in model else ""
                         raw_cmd = luxorparts_build_raw_command(on_code, variant)

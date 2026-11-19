@@ -2626,7 +2626,7 @@ def _encode_generic_command(
 # Luxorparts pulse encoder constants and functions are in const.py.
 # Import them for use in _encode_luxorparts_variant().
 from .const import (  # noqa: E402 — grouped with the block that uses them
-    luxorparts_codes,
+    luxorparts_generate_codes,
     _LX_VARIANT_PARAMS,
     luxorparts_build_packet,
 )
@@ -3306,9 +3306,9 @@ def _encode_luxorparts_variant(
     wire format (the only format proven to make the Duo flash — see
     ``docs/LUXORPARTS_TIMELINE.md``).
 
-    Looks up the ON/OFF pair for (house, unit) — recorded LPD pair, generated
-    channel (``:lx_gen`` model) or the generic cipher — then builds raw pulse
-    bytes for the ZNet UDP dict.
+    Looks up the ON/OFF pair for (house, unit) — a recorded LPD pair, a
+    generated channel of one of those receivers, or the generic cipher — then
+    builds raw pulse bytes for the ZNet UDP dict.
 
     **Experimental on Net v1.**  The firmware caps an ``S`` payload at
     ``_NET_V1_MAX_PULSES`` bytes, which is shorter than the 10-repeat burst the
@@ -3333,7 +3333,7 @@ def _encode_luxorparts_variant(
         return None
 
     try:
-        codes = luxorparts_codes(house_int, unit_int, model_full)
+        codes = luxorparts_generate_codes(house_int, unit_int)
     except (KeyError, IndexError):
         _LOGGER.warning(
             "Luxorparts: no code for house=%s unit=%s model=%r",

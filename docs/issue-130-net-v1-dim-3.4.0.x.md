@@ -439,3 +439,24 @@ device path:
 
 * 275 of 304 codes have never been at a receiver.
 * Net v1 transmission of a 3-frame burst.
+
+### v3.4.0.13 — the channels are the beta device type, not a second one
+
+The generated pool was re-homed onto the beta path. Its own device type (widget 25,
+`selflearning-switch:lx_gen`) lost the typed name and sent the generic cipher on
+on/off: `RawDeviceEvent` publishes the RF-normalised model (`selflearning`), so the
+entity UID was `luxorparts_selflearning_<lpd>_<channel>` while the stored device was
+`luxorparts_lx_gen_<lpd>_<channel>`. The pool was also not unique — 24 LPD × 16
+channels is 384 combinations, but only 19 of the 24 recordings are distinct
+receivers, so 80 combinations repeated another entry.
+
+Now: beta device type (`selflearning-switch:lx_live`, widget 20), house = LPD (a
+`select` of the 19 distinct receivers), unit = channel 1–16 with unit 1 the recorded
+pair. `luxorparts_generate_codes()` resolves ground truth → generated channel →
+cipher, `luxorparts_codes()`, `LX_GEN_VARIANT`, the `lx_gen` timing profile,
+widget 25 and the variant-aware UID are removed, and every offered combination is a
+distinct code pair (304).
+
+Version 3.4.0.12 → **3.4.0.13**. Verified by doctests, `py_compile`,
+`tests/test_ha_integration.py`, strings/JSON parity, mirror diff and the pool script;
+not verified on hardware.

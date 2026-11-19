@@ -14,8 +14,8 @@ Home assistant support for tellsticks (duo, net, znet) without no need for Telld
 > [!CAUTION]
 > **🟡 Luxorparts / Cleverio 50969, 50970, 50972 — Release candidate (Duo / Net v1)** – On/off
 > works on TellStick Duo and on an original TellStick Net (v1) from v3.4.0.0, using raw RF
-> pulse encoding with pre-captured Telldus Live codes (LPD 1–24). Not available on
-> ZNet / Net v2. See [details below](#known-limitations).
+> pulse encoding with pre-captured Telldus Live codes (LPD 1–24) plus 304 generated
+> channel codes. Not available on ZNet / Net v2. See [details below](#known-limitations).
 
 ![Project Stage][project-stage-shield]
 
@@ -401,9 +401,9 @@ each protocol supports.
 
 > **🟡 Luxorparts / Cleverio 50969, 50970, 50972 (beta, Duo / Net v1):** On/off works
 > on TellStick Duo and an original TellStick Net (v1) via raw RF pulse encoding. Add by
-> brand → "Luxorparts — On/off, recorded LPD 1-24 (beta, Duo + Net v1)" → pick an LPD number (1–24). Put the
-> receiver in learn mode, then press Learn in HA. Not available on ZNet / Net v2. See
-> [Known limitations](#known-limitations) for details.
+> brand → "Luxorparts — On/off, LPD 1-24 + channel 1-16 (beta, Duo + Net v1)" → pick an LPD
+> number and a channel (1–16). Put the receiver in learn mode, then press Learn in HA.
+> Not available on ZNet / Net v2. See [Known limitations](#known-limitations) for details.
 
 ### TX only (can be controlled but not auto-discovered)
 
@@ -607,43 +607,44 @@ so it only relays on/off commands and the Duo handles all dimming.
 
 These Luxorparts / Cleverio 1000W remote-controlled sockets work on
 **TellStick Duo** and on an original **TellStick Net (v1)** from v3.4.0.0, using raw RF
-pulse encoding with pre-captured Telldus Live codes (LPD 1–24).
-**Not available on ZNet / Net v2.**
+pulse encoding with pre-captured Telldus Live codes (LPD 1–24) plus the generated
+channels of those receivers. **Not available on ZNet / Net v2.**
 
 **How to add a Luxorparts device (Duo):**
 
 1. Go to **Configure → Add device → Add by brand**
-2. Select **"Luxorparts — On/off, recorded LPD 1-24 (beta, Duo + Net v1)"**
-3. Pick an **LPD number** (1–24) — each number is a unique code pair
-4. Put the receiver in learn mode (hold button until LED flashes)
-5. Press **Learn** in HA — the Duo sends the ON code to teach the receiver
-6. The receiver should now respond to on/off commands
+2. Select **"Luxorparts — On/off, LPD 1-24 + channel 1-16 (beta, Duo + Net v1)"**
+3. Pick an **LPD number** — one per recorded receiver (the five recordings that
+   duplicate another receiver are not offered; their label names the duplicate)
+4. Pick a **channel (unit) 1–16** — channel 1 is that LPD's recorded pair,
+   channels 2–16 are the other channels of the same receiver
+5. Put the receiver in learn mode (hold button until LED flashes)
+6. Press **Learn** in HA — the Duo sends the ON code to teach the receiver
+7. The receiver should now respond to on/off commands
 
-**Generated channels — the experimental pool (304 codes):**
+**Recorded pairs and generated channels — 304 codes, one device type:**
 
-Device type **"Luxorparts — Generated channel, 304 codes (experimental)"** takes an
-**LPD number** as the *house code* and a **channel 1–16** as the *unit code*.
-Every recorded pair belongs to a family of 16 channels: the payload's low five
-bits are the **channel field**, both halves of a pair carry the same field, and
-channel bit 2 (`0x04`) decides which of the two frames is the ON. Five recordings
-are siblings of another recording with that bit flipped and the roles swapped
-(LPD 4/9, 8/10, 13/18, 14/19, 15/17), so the 24 recordings describe **19
-receivers**. 19 × 16 = **304 device codes**, 29 of which have been at a receiver.
-
-A code is one bit-field move on a recording — no cipher work:
+A generated code is one bit-field move on a recording — no cipher work:
 
 ```
-on  = (recorded_on  & ~0xF8) | (channel << 3)
-off = (recorded_off & ~0xF8) | (channel << 3)
-if (channel ^ recorded_channel) & 0x04:   # channel bit 2 picked the other frame
+field = channel field of the family (0x01 … 0x1F, odd)
+on    = (recorded_on  & ~0xF8) | (field << 3)
+off   = (recorded_off & ~0xF8) | (field << 3)
+if (field ^ recorded_field) & 0x04:   # bit 2 picked the other frame
     on, off = off, on
 ```
 
-`unit = channel 1-16` maps to the field values `0x01, 0x03, … 0x1F`. LPD 7
-channel 4 is that recording itself, so it returns the recorded pair.
+Both halves of a pair carry the same field, and channel bit 2 (`0x04`) decides
+which of the two frames is the ON. Five recordings are the same receiver as an
+earlier one (LPD 4/9, 8/10, 13/18, 14/19, 15/17: bit 2 flipped and the roles
+swapped), so the 24 recordings describe **19 receivers**. Those five numbers are
+not offered in the picker, and devices already stored with them keep working.
+19 × 16 = **304 distinct device codes**, 29 of which have been at a receiver —
+the 24 recordings and LPD 7 channels 7/8, LPD 5 channel 4, LPD 13 channel 12 and
+LPD 6 channel 16.
 
-**No pairing signal is sent** when a generated device is added: put the receiver
-in learn mode and press its **on** button.
+Adding a device sends its ON code once, so put the receiver in learn mode first;
+a generated channel is learned the same way, by its **on** button.
 
 **Hardware results (2026-11-19), one 50969:** scheme A (remote-family clones) was
 refused outright. Scheme B v1 (LPD 7 seeds +1…5) is the only build whose OFF ever

@@ -233,6 +233,10 @@ on (no OFF on either); B2, B4 and B5 could not learn at all; the control worked.
 
 ### v3.4.0.12 — the generated pool replaces the test devices
 
+> The separate device type described here was removed in v3.4.0.13 — see the last
+> section of this file. The codes and the rule below still apply; the pooling now
+> happens on the beta device type.
+
 The four test-device types (widgets 21, 22 and 24, and their catalog entries) are
 **removed**. Their job is done: v5 was built with the rule in
 `LUXORPARTS_PROTOCOL_ANALYSIS.md` §7b and worked **5 of 5** on a 50969, so the rule
@@ -254,7 +258,7 @@ The 24 recordings are **19 families** — five are the same receiver twice (LPD 
 **19 × 16 = 304 device codes**: 24 are the recordings themselves and 280
 were never recorded.
 
-| Base LPD | Sibling | Recorded channel | bit 2 | ON at channel 4 | OFF at channel 4 |
+| Base LPD | Sibling | Recorded field | bit 2 | Recorded ON | Recorded OFF |
 | --- | --- | --- | --- | --- | --- |
 | 1 | — | `0x07` | 1 | `0x5E14538` | `0x5A59738` |
 | 2 | — | `0x15` | 1 | `0x559DB38` | `0x5CCC038` |
@@ -276,15 +280,41 @@ were never recorded.
 | 23 | — | `0x07` | 1 | `0x2709C38` | `0x224A638` |
 | 24 | — | `0x07` | 1 | `0x2A86C38` | `0x2FE8638` |
 
-Channel 4 was used as the sample column because it is the field value
-(`0x07`) that most recordings use, so those rows reproduce recorded codes
-where the recording itself sits on channel 4.
+The two right-hand columns are the recordings themselves; every generated channel
+is the same pair with the field replaced (and the halves swapped when bit 2
+changes).
 
 Why this is believed to work, and what has actually been to a receiver: the 24
 recordings, plus the five v5 channels (LPD 7 channel 7 = `0x2450C68`/`0x2633668`,
-channel 8 = `0x2450C78`/`0x2633678`, LPD 5 channel 3, LPD 13 channel 11, LPD 6
-channel 16). Those five **learned and switched both ways**. Channel 4 of a family is
-its own recording, so it returns the recorded pair unchanged.
+channel 8 = `0x2450C78`/`0x2633678`, LPD 5 channel 4, LPD 13 channel 12, LPD 6
+channel 16). Those five **learned and switched both ways**.
 
-The learn button and "no pairing signal on add" behaviour are unchanged: a receiver
-learns the code it hears, so pair a generated channel by pressing its **on** button.
+The learn button is unchanged: a receiver learns the code it hears, so pair a
+generated channel by pressing its **on** button.
+
+### v3.4.0.13 — the channels are the beta device type, not a second one
+
+The separate "Generated channel" type (widget 25, model `selflearning-switch:lx_gen`)
+is **removed**. Two things were wrong with it:
+
+* **The name and the codes were lost.** A new device is announced to the entity
+  platforms with the RF-normalised model (`selflearning`), so its UID came out as
+  `luxorparts_selflearning_<lpd>_<channel>` while the stored device was
+  `luxorparts_lx_gen_<lpd>_<channel>`. The entity found no stored name (it fell
+  back to `TellStick <uid>`), and the send path saw no `lx_gen` variant, so on/off
+  used the generic cipher instead of a channel code.
+* **Its house space was not unique.** 24 LPDs × 16 channels is 384 combinations,
+  but the 24 recordings are only 19 receivers: the five duplicate LPD numbers
+  produce codes identical to their canonical recording — 80 of the 384
+  combinations collide. 304 are distinct.
+
+Both are gone. The channel picker now lives on the beta device type itself
+(widget 20, model `selflearning-switch:lx_live`, UID
+`luxorparts_selflearning_<lpd>_<channel>`): house = recorded LPD number, unit 1 =
+that LPD's recorded pair, units 2–16 = the remaining field values in ascending
+order. Every combination the picker offers is a distinct code pair, and the five
+duplicate LPD numbers are not offered (their labels name the recording they
+duplicate); devices already stored with them still resolve.
+
+The five hardware-proven channels are now LPD 7 channels 7/8, LPD 5 channel 4,
+LPD 13 channel 12 and LPD 6 channel 16.

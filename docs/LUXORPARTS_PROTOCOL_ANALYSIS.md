@@ -562,15 +562,16 @@ LPD 13 −1 and LPD 6 +4 on houses 131–135, plus the recorded LPD 7 control on
 * No timing, repeats or command-format change is involved — the existing
   `P\x02 R10 S50+` path and the verified pulse widths are unaffected.
 
-## 10. The generated pool — 304 codes (v3.4.0.12)
+## 10. The generated channels — 304 codes on the beta device type (v3.4.0.13)
 
 v5 worked **5 of 5** on hardware, so the rule in §7b is no longer a hypothesis. The
 generator in `const.py` (`luxorparts_channel_codes()`) is that rule and nothing else:
 
 ```python
-on  = (recorded_on  & ~0xF8) | (channel << 3)      # channel = 0x01 … 0x1F, odd
-off = (recorded_off & ~0xF8) | (channel << 3)
-if (channel ^ recorded_channel) & 0x04:            # bit 2 picks the ON frame
+field = the family's channel field (0x01 … 0x1F, odd)
+on    = (recorded_on  & ~0xF8) | (field << 3)
+off   = (recorded_off & ~0xF8) | (field << 3)
+if (field ^ recorded_field) & 0x04:                 # bit 2 picks the ON frame
     on, off = off, on
 ```
 
@@ -605,15 +606,37 @@ receiver seen twice (siblings of §7b). Each family yields 16 channels:
 
 **19 × 16 = 304 distinct device codes.** Twenty-four of them are the recordings
 themselves; the other 280 were never recorded. Twenty-nine have been at a receiver:
-the 24 recordings and the five v5 channels (LPD 7 channels 7 and 8, LPD 5 channel 3,
-LPD 13 channel 11, LPD 6 channel 16). Verified by construction and doctest, not by radio:
-all 384 (LPD, channel) *inputs* build, they map to exactly 304 distinct ordered
-pairs, and the five v5 codes come out of the generator unchanged.
+the 24 recordings and the five v5 channels (LPD 7 channels 7 and 8, LPD 5 channel 4,
+LPD 13 channel 12, LPD 6 channel 16). Verified by construction and doctest, not by
+radio: the five v5 codes come out of the generator unchanged and the 304
+combinations the picker offers are all distinct.
 
-Channel 1 of a family is a real new device (field `0x01`) even when the recording
-itself sits on channel 4 or 6. The generated devices therefore live in a separate
-UID namespace (`luxorparts_lx_gen_<lpd>_<channel>`) from the recorded ones
-(`luxorparts_selflearning_<lpd>_1`) — they would otherwise collide.
+Where the channels live: on the **beta device type** (`selflearning-switch:lx_live`,
+widget 20), with **house = recorded LPD number** and **unit = channel 1–16**.
+`unit 1` is always the recorded pair (`luxorparts_channel_fields()` puts the
+recording's own field first), so an existing beta device keeps its code, and the UID
+stays `luxorparts_selflearning_<lpd>_<channel>` — there is no second namespace.
+
+Only the 19 canonical LPD numbers are offered; the five duplicates are named in the
+picker labels, and stored devices using them still resolve through
+`LX_GROUND_TRUTH_CODES`. That is what makes every offered combination unique:
+19 × 16 = 304, not 24 × 16 = 384, of which 80 would repeat another entry.
+
+### Why the second device type was removed (v3.4.0.13)
+
+v3.4.0.12 shipped the pool as its own device type (widget 25, model
+`selflearning-switch:lx_gen`, UID `luxorparts_lx_gen_<lpd>_<channel>`). It failed in
+two ways:
+
+* the synthetic `RawDeviceEvent` carries the RF-normalised model (`selflearning`),
+  so the entity was created as `luxorparts_selflearning_<lpd>_<channel>` — a UID
+  that matched no stored device. The typed name was not found (the entity fell back
+  to `TellStick <uid>`) and the send path saw no `lx_gen` variant, so on/off used
+  the generic cipher rather than the generated pair;
+* its 24 × 16 input space overlapped itself: the five duplicate recordings produce
+  identical codes, so 80 combinations were repeats.
+
+Both disappear by generating on the beta device type instead.
 
 ### Net v1 (experimental)
 
