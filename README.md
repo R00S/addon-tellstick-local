@@ -613,10 +613,31 @@ codes (LPD 1–24). **Not yet available on TellStick Net/ZNet.**
 5. Press **Learn** in HA — the Duo sends the ON code to teach the receiver
 6. The receiver should now respond to on/off commands
 
+**Generated test codes (LX-T1…LX-T5):**
+
+The flow has a second device type, **"Luxorparts — Generated test codes
+(beta, Duo only)"**. It offers five ON/OFF pairs that were **generated** from
+the remote-family template and have **never been captured from any remote**.
+A receiver that learns one of them proves it accepts fresh codes, not just
+replayed recorded ones:
+
+| Pick | ON | OFF |
+| --- | --- | --- |
+| 101 (LX-T1) | `0xAEABEA8` | `0xAEABEB8` |
+| 102 (LX-T2) | `0xAEAEEA8` | `0xAEAEEB8` |
+| 103 (LX-T3) | `0xAEBFEA8` | `0xAEBFEB8` |
+| 104 (LX-T4) | `0xAEAAEA8` | `0xAEAAEB8` |
+| 105 (LX-T5) | `0xAFABEA8` | `0xAFABEB8` |
+
+Test one pair per receiver: put it in learn mode, add the device with pick 101,
+press **Learn**, then check that **on** and **off** both control it. All five use
+the same pulse timing as the working LPD codes, so a failure is about the
+**code**, not the RF layer. Picks 101–105 cannot collide with a recorded LPD.
+
 **Current limitations:**
 
-- Only 24 pre-captured LPD codes are available. If none of them work with
-  your receiver, you need a different LPD number or a fresh receiver.
+- LPD 1–24 are the only **recorded** codes. If none of them work with your
+  receiver, try one of the generated test pairs above or a different LPD number.
 - The learn button sends the ON command (not a high-repeat learn signal)
   because the actual learn signal does not flash the Duo hardware.
 - **TellStick Net/ZNet:** Not yet implemented. The raw pulse encoding

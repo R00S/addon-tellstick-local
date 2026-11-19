@@ -197,8 +197,10 @@ need to be taught a code before they respond.
 
 > **Luxorparts / Cleverio 50969, 50970, 50972 (beta, Duo only):** Add by brand →
 > "Luxorparts — On/off (beta, Duo only)" → pick an LPD number (1–24). Put the
-> receiver in learn mode, then press Learn. See [Section 15](#15-known-limitations)
-> for details.
+> receiver in learn mode, then press Learn. To test whether a receiver accepts a
+> code that was **generated** rather than recorded, use
+> "Luxorparts — Generated test codes (beta, Duo only)" and pick 101–105
+> (LX-T1…LX-T5). See [Section 15](#15-known-limitations) for details.
 
 ### 5.3 Kjell & Company / Tuya-MOES curtain motor (Duo only)
 
@@ -694,9 +696,16 @@ using raw RF pulse encoding with pre-captured Telldus Live codes (LPD 1–24).
 4. Put the receiver in learn mode (hold button until LED flashes)
 5. Press **Learn** in HA
 
+**Generated test codes (LX-T1…LX-T5):**
+
+Device type **"Luxorparts — Generated test codes (beta, Duo only)"** offers five
+pairs that were generated from the remote template and never captured from any
+remote. Picks 101–105 are LX-T1…LX-T5; the same pulse timing is used, so a
+receiver that learns one of them accepts fresh codes, not replayed ones.
+
 **Current limitations:**
 
-- Only 24 pre-captured LPD codes are available
+- LPD 1–24 are the only **recorded** codes (picks 101–105 are generated tests)
 - The learn button sends the ON command (not a high-repeat learn signal)
 - **TellStick Net/ZNet:** Not yet implemented
 

@@ -326,6 +326,11 @@ WIDGET_PARAMS: dict[int, list[dict]] = {
         {"name": "house", "type": "int", "default": 1, "min": 1, "max": 24},
         {"name": "unit", "type": "int", "default": 1, "min": 1, "max": 1},
     ],
+    # 21: Luxorparts generated test pairs LX-T1..LX-T5 (house 101-105, unit 1)
+    21: [
+        {"name": "house", "type": "int", "default": 101, "min": 101, "max": 105},
+        {"name": "unit", "type": "int", "default": 1, "min": 1, "max": 1},
+    ],
 }
 
 # ---------------------------------------------------------------------------
@@ -386,6 +391,9 @@ DEVICE_CATALOG: list[tuple[str, str, str, int]] = [
     # NOTE: Luxorparts/Cleverio 50969, 50970, 50972 — BETA (Duo only)
     # Uses raw RF pulse encoding via LPD codes.  Pick LPD 1-24 to select
     # a verified Telldus Live code pair.  Not available on Net/ZNet yet.
+    # Generated test pairs LX-T1..LX-T5 (house 101-105) are codes that were
+    # never captured — see docs/LUXORPARTS_PROTOCOL_ANALYSIS.md §7.
+    ("Luxorparts — Generated test codes (beta, Duo only)", "luxorparts", "selflearning-switch:lx_live", 21),
     ("Luxorparts — On/off (beta, Duo only)", "luxorparts", "selflearning-switch:lx_live", 20),
     ("Nexa — Bell", "arctech", "bell:nexa", 4),
     ("Nexa — Code switch", "arctech", "codeswitch:nexa", 1),
@@ -1039,6 +1047,61 @@ LX_GROUND_TRUTH_CODES: dict[tuple[int, int], dict[str, int]] = {
 
 
 # ---------------------------------------------------------------------------
+# LX-T1 … LX-T5 — generated test pairs (never captured from any remote)
+#
+# Scheme A from docs/LUXORPARTS_PROTOCOL_ANALYSIS.md §6: clone the remote-family
+# template ``0x5D55D5`` (bit 1 = state, 0 = ON) with a button-field pattern that
+# no capture contains, keeping the 25-bit frame MSB = 1 (remote-family marker).
+#
+# Purpose: a receiver that learns and obeys one of these pairs has accepted a
+# code that was *generated*, not replayed — none of these ten codes appears in
+# LX_LPD_LIST or in the remote capture set, so a success cannot be a replayed
+# recorded code.
+#
+# Users pick LX-T1…LX-T5 by number (stored as house 101-105, unit 1) in the
+# "Luxorparts — Generated test codes" device type.  They are deliberately kept
+# out of LX_LPD_LIST, which stays the recorded Telldus Live list (LPD 1-24).
+# 101+ was chosen so a test number can never collide with a recorded LPD.
+# ---------------------------------------------------------------------------
+
+LX_REMOTE_TEMPLATE = 0x5D55D5
+LX_REMOTE_FRAME_MSB = 0x1000000  # physical remotes send 25-bit frames with MSB set
+
+
+def _lx_template_pair(button_field: int, remote_bit: int = 0) -> tuple[int, int]:
+    """Build a stored28 (ON, OFF) pair from the remote-family template.
+
+    ``button_field`` sets the button bits (9/11/13); ``remote_bit`` is the
+    optional bit 17 that separates remote 1 from remote 2.
+
+    >>> _lx_template_pair(0x0200)
+    (183156392, 183156408)
+    """
+    payload_on = LX_REMOTE_TEMPLATE | button_field | remote_bit
+    payload_off = payload_on | 0x000002  # bit 1 = state: 0 = ON, 1 = OFF
+    return (
+        (payload_on | LX_REMOTE_FRAME_MSB) << 3,
+        (payload_off | LX_REMOTE_FRAME_MSB) << 3,
+    )
+
+
+# Columns: (test_num, on_code, off_code, button-field description)
+LX_TEST_LIST: list[tuple[int, int, int, str]] = [
+    (101, *_lx_template_pair(0x0200), "bit 9 only"),
+    (102, *_lx_template_pair(0x0800), "bit 11 only"),
+    (103, *_lx_template_pair(0x2A00), "bits 9+11+13"),
+    (104, *_lx_template_pair(0x0000), "no button bits"),
+    (105, *_lx_template_pair(0x0200, 0x20000), "bit 9 + remote 2"),
+]
+
+# Keyed by (test_num, 1), the same shape as LX_GROUND_TRUTH_CODES.
+LX_TEST_CODES: dict[tuple[int, int], dict[str, int]] = {
+    (num, 1): {"on": on_code, "off": off_code}
+    for num, on_code, off_code, _ in LX_TEST_LIST
+}
+
+
+# ---------------------------------------------------------------------------
 # Luxorparts encryption — ported from Homey ``se.luxorparts-1`` app
 #
 # Source: TheHomeyAppBackupRepositories/se.luxorparts-1  lib/PayloadEncryption.js
@@ -1113,6 +1176,8 @@ def luxorparts_generate_codes(house: int, unit: int) -> dict[str, int]:
 
     If the (house, unit) pair exists in ``LX_GROUND_TRUTH_CODES`` (captured
     from Telldus Live via RTL-433), those verified codes are returned instead.
+    The generated test pairs in ``LX_TEST_CODES`` (LPD 101-105) are returned the
+    same way; they are never-captured codes used to test code generation.
 
     Returns 28-bit hex integers (24-bit cipher << 3 with start bit 0).
 
@@ -1124,6 +1189,11 @@ def luxorparts_generate_codes(house: int, unit: int) -> dict[str, int]:
     gt = LX_GROUND_TRUTH_CODES.get((house, unit))
     if gt is not None:
         return dict(gt)
+
+    # Generated test pairs (LPD 101-105) — never-captured codes
+    test = LX_TEST_CODES.get((house, unit))
+    if test is not None:
+        return dict(test)
 
     # Map UI unit (1-based) to protocol unit (0-based, 5-bit, 0–31)
     proto_unit = max(0, unit - 1) & 0x1F
