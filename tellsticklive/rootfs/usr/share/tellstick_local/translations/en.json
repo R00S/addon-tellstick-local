@@ -330,7 +330,7 @@
         "params": {
           "title": "Device parameters",
           "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#52-self-learning-teach-add-device-button",
-          "description": "Enter the parameters for **{device_type}**. Ranges and defaults match the hardware.",
+          "description": "Pick the parameters for **{device_type}**. Numeric fields are sliders and start on the **first free code** — the first house/unit combination no device on this protocol uses yet. If the code you pick is already used, you are warned before anything is paired.",
           "data": {
             "house": "House code",
             "unit": "Unit code",
@@ -340,6 +340,25 @@
             "units": "Units (comma-separated, 1-10)",
             "fade": "Fade (smooth)"
           }
+        },
+        "duplicate_warning": {
+          "title": "This code is already in use",
+          "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#52-self-learning-teach-add-device-button",
+          "description": "**{name}** would use house **{house}**, unit **{unit}**. A signal on that code also triggers:\n\n{devices}\n\nChoose **Change the code** to pick another free combination, or **Add it anyway** if these devices really share the code.",
+          "menu_options": {
+            "duplicate_change": "Change the code",
+            "duplicate_proceed": "Add it anyway"
+          }
+        },
+        "duplicate_change": {
+          "title": "Change the code",
+          "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#52-self-learning-teach-add-device-button",
+          "description": "Pick a different code for **{device_type}**. The form starts on the values you just chose."
+        },
+        "duplicate_proceed": {
+          "title": "Add anyway",
+          "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#52-self-learning-teach-add-device-button",
+          "description": "The device is added on the shared code and will be paired normally."
         },
         "confirm": {
           "title": "Send pairing signal",

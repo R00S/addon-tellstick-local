@@ -1,0 +1,64 @@
+# issue-130-net-v1-dim — 3.4.1.x branch timeline
+
+> Branch: `issue-130-net-v1-dim`. This file continues
+> `docs/issue-130-net-v1-dim-3.4.0.x.md` after the Luxorparts two-path work
+> (3.4.0.12–3.4.0.15) and starts the 3.4.1.x line with the add-flow rework.
+
+## Session — 2026-11-19: add-flow sliders and duplicate warning (3.4.1.0)
+
+### What the user asked for
+
+* Sliders for house code and the other numeric parameters in **every** device
+  add path, defaulting to the **next free** code.
+* When the chosen combination would trigger a device that is already in the
+  system, show a warning with the options to **change** or **proceed**.
+
+### Changed
+
+* `config_flow.py`:
+  * `_build_params_schema()` now takes the stored devices, the protocol and the
+    model. Every `int` field renders as an `int` `NumberSelector` in slider
+    mode, letter houses (Nexa codeswitch A–P) render as a 1–N slider and are
+    mapped back to the letter before storage, and the Luxorparts pair sliders
+    start on the first pair no stored device of that path uses.
+  * New `_next_free_params()` picks the first free `(house, unit)` combination
+    of the same protocol from the stored devices (address first, then unit), so
+    a new device never defaults onto an existing code. The old random seeding
+    of self-learning houses is gone. Text code fields (sartano 10 digits,
+    brateck 8 characters) cannot be sliders but still start on the next free
+    code.
+  * New `_used_rf_identities()` / `_conflicting_devices()` / `_rf_identity()`
+    define the shared-signal rule: same protocol and same house + unit, vendor
+    suffix after `:` ignored, sensors excluded.
+  * `async_step_params()` coerces the slider values (`int(float(...))`, letter →
+    `A`–`P`), resolves Luxorparts pairs, then checks for conflicts. A conflict
+    stores the submitted values and shows `async_step_duplicate_warning()`;
+    otherwise the previous confirm step runs unchanged.
+  * New steps `duplicate_warning` (menu), `duplicate_change` (back to the
+    parameter form, prefilled with the submitted values) and
+    `duplicate_proceed` (pairs on the shared code). `_accept_params()` holds the
+    shared "store parameters and go to confirm" body.
+  * Every add path that asks for parameters (`by_brand`, `by_protocol`,
+    `by_protocol_raw`, `by_protocol_native`, `by_protocol_native_nofix`) goes
+    through this one step, so all of them get sliders and the warning. Discovery
+    add and the Generic RF / Tuya recording flows take their values from the
+    captured signal and have no house/unit form to slide.
+* `strings.json` / `translations/en.json`: new `params` description, new
+  `duplicate_warning`, `duplicate_change` and `duplicate_proceed` steps.
+* `README.md`, `docs/USER_GUIDE.md` §5.2: sliders + first-free default + the
+  duplicate warning and what "same code" means.
+* Both manifests 3.4.0.15 → **3.4.1.0**.
+
+### Verified
+
+* `const.py` doctests, `py_compile`, pyflakes, `tests/test_ha_integration.py`.
+* Byte-identical mirror, `strings.json` == `translations/en.json`.
+* A script that builds the schemas from real stored devices and checks the
+  next-free defaults, slider widgets, letter mapping and conflict detection.
+
+### Not verified
+
+* The forms in the Home Assistant UI (slider rendering, menu buttons) — no HA
+  instance here.
+* Any RF behaviour; the add flow sends the same codes as before for the same
+  stored parameters.

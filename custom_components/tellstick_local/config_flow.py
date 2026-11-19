@@ -121,39 +121,148 @@ STEP_USER_SCHEMA = vol.Schema(
 )
 
 
-def _build_params_schema(
-    widget: int, used_house_codes: set[str] | None = None
-) -> vol.Schema:
-    """Build a voluptuous schema for the given widget's parameter fields.
+def _rf_identity(protocol: str, house: Any, unit: Any) -> tuple[str, str, str]:
+    """Return the RF identity that decides which device a signal triggers."""
+    return (
+        str(protocol).strip().lower(),
+        str(house).strip().upper(),
+        str(unit).strip(),
+    )
 
-    For self-learning devices (fields with ``random=True``), a random value is
-    generated that does not collide with any code in *used_house_codes*.
+
+def _used_rf_identities(
+    existing_devices: dict[str, Any], protocol: str
+) -> set[tuple[str, str]]:
+    """Return ``(house, unit)`` pairs already used by stored devices of *protocol*."""
+    wanted = _rf_identity(protocol, "", "")[0]
+    used: set[tuple[str, str]] = set()
+    for cfg in existing_devices.values():
+        if "sensor_id" in cfg:
+            continue  # sensors have no house/unit
+        if str(cfg.get(CONF_DEVICE_PROTOCOL, "")).strip().lower() != wanted:
+            continue
+        used.add(
+            _rf_identity("", cfg.get(CONF_DEVICE_HOUSE, ""), cfg.get(CONF_DEVICE_UNIT, ""))[1:]
+        )
+    return used
+
+
+def _conflicting_devices(
+    existing_devices: dict[str, Any], protocol: str, house: Any, unit: Any
+) -> list[tuple[str, str]]:
+    """Return stored devices that the same RF signal would trigger.
+
+    Two devices share a signal when they speak the same protocol and use the
+    same house/unit (the vendor suffix after ``:`` does not change the code).
+    """
+    wanted = _rf_identity(protocol, house, unit)
+    hits: list[tuple[str, str]] = []
+    for uid, cfg in existing_devices.items():
+        if "sensor_id" in cfg:
+            continue
+        if (
+            _rf_identity(
+                cfg.get(CONF_DEVICE_PROTOCOL, ""),
+                cfg.get(CONF_DEVICE_HOUSE, ""),
+                cfg.get(CONF_DEVICE_UNIT, ""),
+            )
+            == wanted
+        ):
+            hits.append((uid, str(cfg.get(CONF_DEVICE_NAME, uid))))
+    return hits
+
+
+def _next_free_params(
+    fields: list[dict], existing_devices: dict[str, Any], protocol: str
+) -> dict[str, Any]:
+    """Return the first house/unit combination not used by an existing device.
+
+    The first numeric field is the address (house/system/code) and the second
+    one, when present, is the unit.  Values are taken from the stored devices,
+    so a newly added device starts on a code that cannot trigger an old one.
+    """
+    used = _used_rf_identities(existing_devices, protocol)
+    address_specs = [s for s in fields if s["type"] in ("int", "letter")]
+    if not address_specs:
+        # Sartano/brateck codes are short digit strings, not numbers, but they
+        # can still start on the next code no stored device uses.
+        code_spec = next(
+            (s for s in fields if s["name"] == "code" and s["type"] == "str"),
+            None,
+        )
+        result: dict[str, Any] = {}
+        default_code = str(code_spec.get("default", "")) if code_spec else ""
+        if default_code.isdigit():
+            taken = {pair[0] for pair in used}
+            width = len(default_code)
+            base = int(default_code)
+            for step in range(len(taken) + 1):
+                candidate = str((base + step) % (10**width)).zfill(width)
+                if candidate not in taken:
+                    result["code"] = candidate
+                    break
+        return result
+    address = address_specs[0]
+    unit = next(
+        (s for s in address_specs if s["name"] in ("unit", "units")), None
+    )
+    if address["type"] == "letter":
+        addresses: list[Any] = [
+            chr(c) for c in range(ord(address["min"]), ord(address["max"]) + 1)
+        ]
+    else:
+        addresses = list(range(address["min"], address["max"] + 1))
+    units = (
+        list(range(unit["min"], unit["max"] + 1)) if unit is not None else [None]
+    )
+
+    for house in addresses:
+        house_key = str(house).strip().upper()
+        for unit_value in units:
+            if unit_value is None:
+                if not any(pair[0] == house_key for pair in used):
+                    return {address["name"]: house}
+            elif (house_key, str(unit_value).strip()) not in used:
+                return {address["name"]: house, unit["name"]: unit_value}
+    return {address["name"]: address.get("default", address["min"])}
+
+
+def _build_params_schema(
+    widget: int,
+    existing_devices: dict[str, Any] | None = None,
+    protocol: str = "",
+    model: str = "",
+    prefill: dict[str, Any] | None = None,
+) -> vol.Schema:
+    """Build the parameter form for a widget, everything numeric as a slider.
+
+    Address and unit fields start at the first combination no stored device of
+    the same protocol uses, so adding a device never collides by accident.
+    *prefill* keeps the values the user just submitted when they go back to
+    change a code after the duplicate warning.
     """
     fields = WIDGET_PARAMS[widget]
-    used = used_house_codes or set()
+    devices = existing_devices or {}
+    submitted = prefill or {}
+    defaults = _next_free_params(fields, devices, protocol)
+
+    def _submitted_int(spec: dict) -> int | None:
+        if spec["name"] not in submitted:
+            return None
+        try:
+            return int(float(submitted[spec["name"]]))
+        except (TypeError, ValueError):
+            return None
+
     schema_dict: dict[Any, Any] = {}
     for spec in fields:
         name = spec["name"]
         ptype = spec["type"]
-        default = spec.get("default")
+        default = defaults.get(name, spec.get("default"))
 
         if ptype == "int":
-            lo, hi = spec["min"], spec["max"]
-            if spec.get("random") and hi > 1:
-                # Generate a random value not already used by another device
-                for _ in range(100):
-                    candidate = secrets.randbelow(hi - lo + 1) + lo
-                    if str(candidate) not in used:
-                        break
-                default = candidate
-            schema_dict[vol.Required(name, default=default)] = vol.All(
-                int, vol.Range(min=lo, max=hi)
-            )
-        elif ptype == "letter":
-            letters = [chr(c) for c in range(ord(spec["min"]), ord(spec["max"]) + 1)]
-            schema_dict[vol.Required(name, default=default)] = vol.In(letters)
-        elif ptype == "slider":
-            # One number, one list of pairs — shown as a real slider.
+            value = _submitted_int(spec)
+            default = value if value is not None else int(default)
             schema_dict[vol.Required(name, default=default)] = (
                 selector.NumberSelector(
                     selector.NumberSelectorConfig(
@@ -164,9 +273,56 @@ def _build_params_schema(
                     )
                 )
             )
+        elif ptype == "letter":
+            letters = [
+                chr(c) for c in range(ord(spec["min"]), ord(spec["max"]) + 1)
+            ]
+            value = _submitted_int(spec)
+            if value is None and name in submitted:
+                # The duplicate warning sends the stored letter back here.
+                letter = str(submitted[name]).strip().upper()
+                if letter in letters:
+                    value = letters.index(letter) + 1
+            if value is None:
+                letter = str(default).strip().upper()
+                value = letters.index(letter) + 1 if letter in letters else 1
+            schema_dict[vol.Required(name, default=value)] = (
+                selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1,
+                        max=len(letters),
+                        step=1,
+                        mode=selector.NumberSelectorMode.SLIDER,
+                    )
+                )
+            )
+        elif ptype == "slider":
+            value = _submitted_int(spec)
+            if value is None:
+                # First pair on this path that no stored device uses yet.
+                used = _used_rf_identities(devices, protocol)
+                value = int(spec.get("default", spec["min"]))
+                for index, (lpd, channel) in enumerate(
+                    luxorparts_picker_pairs(model), 1
+                ):
+                    if (str(lpd), str(channel)) not in used:
+                        value = index
+                        break
+            schema_dict[vol.Required(name, default=value)] = (
+                selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=spec["min"],
+                        max=spec["max"],
+                        step=1,
+                        mode=selector.NumberSelectorMode.SLIDER,
+                    )
+                )
+            )
         elif ptype == "str":
+            default = submitted.get(name, default)
             schema_dict[vol.Required(name, default=default)] = str
         elif ptype == "bool":
+            default = submitted.get(name, default)
             schema_dict[vol.Required(name, default=default)] = bool
 
     return vol.Schema(schema_dict)
@@ -2227,6 +2383,12 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
     _device_type: str = ""
     _new_device: dict[str, Any] = {}
     _widget_id: int = 8  # populated by by_brand / by_protocol step
+    # Values the user submitted when the duplicate warning was shown, so the
+    # "change the code" option reopens the form on those values instead of
+    # jumping back to the next free defaults.
+    _params_prefill: dict[str, Any] | None = None
+    # Devices the chosen house/unit would also trigger (set with the warning).
+    _duplicate_conflicts: list[tuple[str, str]] | None = None
     # Curtain motor: built by the Add form, persisted after the pairing screen
     _curtain_device_data: dict[str, Any] | None = None
     _curtain_uid_suffix: str = ""
@@ -2272,6 +2434,8 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 return await self.async_step_tuya_curtain()
             protocol, model, widget = DEVICE_CATALOG_MAP[self._device_type]
             self._widget_id = widget
+            self._params_prefill = None
+            self._duplicate_conflicts = None
             self._new_device = {
                 CONF_DEVICE_NAME: user_input["name"],
                 CONF_DEVICE_PROTOCOL: protocol,
@@ -2303,6 +2467,8 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 return await self.async_step_tuya_curtain()
             protocol, model, widget = PROTOCOL_MODEL_MAP[self._device_type]
             self._widget_id = widget
+            self._params_prefill = None
+            self._duplicate_conflicts = None
             self._new_device = {
                 CONF_DEVICE_NAME: user_input["name"],
                 CONF_DEVICE_PROTOCOL: protocol,
@@ -2336,6 +2502,8 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             self._device_type = user_input["device_type"]
             protocol, model, widget = PROTOCOL_RAW_MAP[self._device_type]
             self._widget_id = widget
+            self._params_prefill = None
+            self._duplicate_conflicts = None
             self._new_device = {
                 CONF_DEVICE_NAME: user_input["name"],
                 CONF_DEVICE_PROTOCOL: protocol,
@@ -2371,6 +2539,8 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             self._device_type = user_input["device_type"]
             protocol, model, widget = PROTOCOL_NATIVE_MAP[self._device_type]
             self._widget_id = widget
+            self._params_prefill = None
+            self._duplicate_conflicts = None
             self._new_device = {
                 CONF_DEVICE_NAME: user_input["name"],
                 CONF_DEVICE_PROTOCOL: protocol,
@@ -2405,6 +2575,8 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             self._device_type = user_input["device_type"]
             protocol, model, widget = PROTOCOL_NATIVE_MAP[self._device_type]
             self._widget_id = widget
+            self._params_prefill = None
+            self._duplicate_conflicts = None
             self._new_device = {
                 CONF_DEVICE_NAME: user_input["name"],
                 CONF_DEVICE_PROTOCOL: protocol,
@@ -2429,9 +2601,19 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
     async def async_step_params(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
-        """Step 2: Enter device-specific parameters with correct ranges."""
+        """Step 2: pick device-specific parameters, every numeric field a slider.
+
+        Reed/unit (or code/system) and every other numeric field render as
+        sliders that start on the first combination no stored device of the
+        same protocol uses.  A combination that would also trigger an existing
+        device goes through ``async_step_duplicate_warning`` before pairing.
+        """
         errors: dict[str, str] = {}
         widget = self._widget_id
+        protocol = self._new_device.get(CONF_DEVICE_PROTOCOL, "")
+        model = self._new_device.get(CONF_DEVICE_MODEL, "")
+        entry = self._get_entry()
+        existing_devices: dict[str, Any] = entry.options.get(CONF_DEVICES, {})
 
         if user_input is not None:
             # Validate non-empty string fields
@@ -2444,45 +2626,51 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             if not valid:
                 errors["base"] = "invalid_code"
             else:
-                # Store the telldusd parameter values
+                # Store the telldusd parameter values.  Letter houses (Nexa
+                # codeswitch A-P) come back from their slider as 1..N, so map
+                # the number back to the letter the protocol expects.
                 params: dict[str, str] = {}
                 for spec in fields:
                     name = spec["name"]
-                    params[name] = str(user_input[name])
+                    raw = user_input[name]
+                    if spec["type"] == "letter":
+                        params[name] = chr(ord(spec["min"]) + int(float(raw)) - 1)
+                    elif spec["type"] in ("int", "slider"):
+                        params[name] = str(int(float(raw)))
+                    else:
+                        params[name] = str(raw)
 
                 # Luxorparts: the slider picks an entry from that path's list
                 # of on/off pairs.  Store the pair's house/unit so the send
                 # paths, the UID and the learn button stay unchanged.
-                if self._new_device.get(CONF_DEVICE_PROTOCOL) == "luxorparts":
-                    resolved = _luxorparts_params(
-                        self._new_device.get(CONF_DEVICE_MODEL, ""), params
-                    )
+                if protocol == "luxorparts":
+                    resolved = _luxorparts_params(model, params)
                     if resolved is None:
                         errors["base"] = "invalid_pair"
                     else:
                         params = resolved
 
             if not errors:
-                # Map to house/unit for UID generation (backward compat)
-                self._new_device[CONF_DEVICE_HOUSE] = params.get(
+                house = params.get(
                     "house", params.get("code", params.get("system", ""))
                 )
-                self._new_device[CONF_DEVICE_UNIT] = params.get(
-                    "unit", params.get("units", "")
+                unit = params.get("unit", params.get("units", ""))
+                conflicts = _conflicting_devices(
+                    existing_devices, protocol, house, unit
                 )
-                self._new_device["params"] = params
-                return await self.async_step_confirm()
+                if conflicts:
+                    self._params_prefill = dict(params)
+                    self._duplicate_conflicts = conflicts
+                    return await self.async_step_duplicate_warning()
+                return await self._accept_params(params)
 
-        # Collect house codes already used by stored devices
-        entry = self._get_entry()
-        existing_devices: dict[str, Any] = entry.options.get(CONF_DEVICES, {})
-        used_house_codes = {
-            dev.get(CONF_DEVICE_HOUSE, "")
-            for dev in existing_devices.values()
-            if dev.get(CONF_DEVICE_HOUSE)
-        }
-
-        schema = _build_params_schema(widget, used_house_codes)
+        schema = _build_params_schema(
+            widget,
+            existing_devices=existing_devices,
+            protocol=protocol,
+            model=model,
+            prefill=self._params_prefill if user_input is None else user_input,
+        )
         return self.async_show_form(
             step_id="params",
             data_schema=schema,
@@ -2491,6 +2679,60 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             },
             errors=errors,
         )
+
+    async def _accept_params(
+        self, params: dict[str, str]
+    ) -> SubentryFlowResult:
+        """Store the chosen parameters on the pending device and pair it."""
+        self._new_device[CONF_DEVICE_HOUSE] = params.get(
+            "house", params.get("code", params.get("system", ""))
+        )
+        self._new_device[CONF_DEVICE_UNIT] = params.get(
+            "unit", params.get("units", "")
+        )
+        self._new_device["params"] = params
+        self._params_prefill = None
+        self._duplicate_conflicts = None
+        return await self.async_step_confirm()
+
+    async def async_step_duplicate_warning(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Warn that the chosen code also triggers an existing device.
+
+        The user can go back and change the parameters or add the device
+        anyway.  Shown for every manual add path, because they all share
+        ``async_step_params``.
+        """
+        conflicts = self._duplicate_conflicts or []
+        names = "\n".join(f"- **{name}** (`{uid}`)" for uid, name in conflicts)
+        params = self._params_prefill or {}
+        return self.async_show_menu(
+            step_id="duplicate_warning",
+            menu_options=["duplicate_change", "duplicate_proceed"],
+            description_placeholders={
+                "name": self._new_device.get(CONF_DEVICE_NAME, ""),
+                "house": str(
+                    params.get(
+                        "house", params.get("code", params.get("system", ""))
+                    )
+                ),
+                "unit": str(params.get("unit", params.get("units", ""))),
+                "devices": names,
+            },
+        )
+
+    async def async_step_duplicate_change(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Go back to the parameter form with the submitted values."""
+        return await self.async_step_params()
+
+    async def async_step_duplicate_proceed(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Add the device on the colliding code anyway."""
+        return await self._accept_params(dict(self._params_prefill or {}))
 
     async def async_step_confirm(
         self, user_input: dict[str, Any] | None = None
