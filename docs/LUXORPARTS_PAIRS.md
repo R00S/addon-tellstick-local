@@ -65,24 +65,31 @@ Internally, LPD number is the lookup key (house=LPD, unit=1).
 | Physical remote | 25–31     | 7     |
 | **Total**       | **1–31**  | **31**|
 
-Plus five **generated** test pairs (picker 101–105) that are not recordings — see
-the section above.
+Plus five **generated** test pairs (houses 101–105 on the test device) that are
+not recordings — see the section below.
 
 ## Generated test pairs (never captured)
 
 Not recorded codes: built with scheme A from
 `docs/LUXORPARTS_PROTOCOL_ANALYSIS.md` §6 (remote template `0x5D55D5`, bit 1 =
-state, frame MSB 1). Offered in the Duo flow as "Luxorparts — Generated test
-codes" (picker 101–105, LX-T1…LX-T5). None of these ten codes appears in any
-capture, so a receiver that learns one accepts a generated code.
+state, frame MSB 1). Offered in the Duo flow as "Luxorparts — Test device, 5
+switches", which adds one Home Assistant device holding all five switches. None
+of these ten codes appears in any capture, so a receiver that obeys a switch has
+accepted a generated code.
 
-| Pick | Button field | ON | OFF |
-|------|--------------|----|-----|
-| 101 (LX-T1) | bit 9 | 0xAEABEA8 | 0xAEABEB8 |
-| 102 (LX-T2) | bit 11 | 0xAEAEEA8 | 0xAEAEEB8 |
-| 103 (LX-T3) | bits 9+11+13 | 0xAEBFEA8 | 0xAEBFEB8 |
-| 104 (LX-T4) | none | 0xAEAAEA8 | 0xAEAAEB8 |
-| 105 (LX-T5) | bit 9 + remote 2 | 0xAFABEA8 | 0xAFABEB8 |
+| Switch | Button field | ON | OFF |
+|--------|--------------|----|-----|
+| LX-T1 | bit 9 | 0xAEABEA8 | 0xAEABEB8 |
+| LX-T2 | bit 11 | 0xAEAEEA8 | 0xAEAEEB8 |
+| LX-T3 | bits 9+11+13 | 0xAEBFEA8 | 0xAEBFEB8 |
+| LX-T4 | none | 0xAEAAEA8 | 0xAEAAEB8 |
+| LX-T5 | bit 9 + remote 2 | 0xAFABEA8 | 0xAFABEB8 |
+
+No pairing signal is sent when the device is added and the switches have no Learn
+button; pair a switch by pressing its **on** button with the receiver in learn
+mode. **Hardware result (2026-11-19):** LX-T1 was offered to a 50969 in learn
+mode and was **not** accepted. LX-T2–LX-T5 differ only in the button bits, so no
+generated pair is confirmed yet.
 
 ---
 

@@ -326,11 +326,10 @@ WIDGET_PARAMS: dict[int, list[dict]] = {
         {"name": "house", "type": "int", "default": 1, "min": 1, "max": 24},
         {"name": "unit", "type": "int", "default": 1, "min": 1, "max": 1},
     ],
-    # 21: Luxorparts generated test pairs LX-T1..LX-T5 (house 101-105, unit 1)
-    21: [
-        {"name": "house", "type": "int", "default": 101, "min": 101, "max": 105},
-        {"name": "unit", "type": "int", "default": 1, "min": 1, "max": 1},
-    ],
+    # 21: Luxorparts test device — five generated ON/OFF pairs on one device.
+    #     No parameter form: async_step_lx_test() adds all five switches
+    #     (LX-T1..LX-T5) in one go, grouped under a single HA device.
+    21: [],
 }
 
 # ---------------------------------------------------------------------------
@@ -391,9 +390,10 @@ DEVICE_CATALOG: list[tuple[str, str, str, int]] = [
     # NOTE: Luxorparts/Cleverio 50969, 50970, 50972 — BETA (Duo only)
     # Uses raw RF pulse encoding via LPD codes.  Pick LPD 1-24 to select
     # a verified Telldus Live code pair.  Not available on Net/ZNet yet.
-    # Generated test pairs LX-T1..LX-T5 (house 101-105) are codes that were
-    # never captured — see docs/LUXORPARTS_PROTOCOL_ANALYSIS.md §7.
-    ("Luxorparts — Generated test codes (beta, Duo only)", "luxorparts", "selflearning-switch:lx_live", 21),
+    # The test device (LX-T1..LX-T5, house 101-105) is one HA device with five
+    # ON/OFF switches built from codes that were never captured — see
+    # docs/LUXORPARTS_PROTOCOL_ANALYSIS.md §7.
+    ("Luxorparts — Test device, 5 switches (beta, Duo only)", "luxorparts", "selflearning-switch:lx_live", 21),
     ("Luxorparts — On/off (beta, Duo only)", "luxorparts", "selflearning-switch:lx_live", 20),
     ("Nexa — Bell", "arctech", "bell:nexa", 4),
     ("Nexa — Code switch", "arctech", "codeswitch:nexa", 1),
@@ -1074,10 +1074,21 @@ LX_GROUND_TRUTH_CODES: dict[tuple[int, int], dict[str, int]] = {
 # LX_LPD_LIST or in the remote capture set, so a success cannot be a replayed
 # recorded code.
 #
-# Users pick LX-T1…LX-T5 by number (stored as house 101-105, unit 1) in the
-# "Luxorparts — Generated test codes" device type.  They are deliberately kept
-# out of LX_LPD_LIST, which stays the recorded Telldus Live list (LPD 1-24).
-# 101+ was chosen so a test number can never collide with a recorded LPD.
+# The "Luxorparts — Test device, 5 switches" entry adds ONE Home Assistant
+# device holding all five pairs as switches LX-T1…LX-T5 (stored as house
+# 101-105, unit 1).  No learn signal is sent when the device is added: a
+# Luxorparts receiver learns whatever code it hears while in learn mode, so a
+# switch is paired by pressing its **on** button, exactly like the ON key of a
+# physical remote.
+#
+# These pairs are deliberately kept out of LX_LPD_LIST, which stays the
+# recorded Telldus Live list (LPD 1-24).  101+ was chosen so a test number can
+# never collide with a recorded LPD.
+#
+# Hardware result so far (2026-11-19): LX-T1, the lowest code, was offered to a
+# 50969 in learn mode and was **not** accepted.  Nothing has ever learned a
+# generated pair — scheme A remains unproven, and LX-T2…LX-T5 differ from LX-T1
+# only in the button-field bits.
 # ---------------------------------------------------------------------------
 
 LX_REMOTE_TEMPLATE = 0x5D55D5

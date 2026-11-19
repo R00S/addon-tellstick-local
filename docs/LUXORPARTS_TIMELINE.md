@@ -545,15 +545,21 @@ What this does **not** settle:
 ### Implemented: scheme A test device (v3.3.3.2)
 
 Scheme A is now an opt-in test device instead of a hand-typed code: device type
-**"Luxorparts — Generated test codes (beta, Duo only)"**, picks **101–105** =
-LX-T1…LX-T5 (`LX_TEST_LIST` / `_lx_template_pair()` in `const.py`). All five are
-the remote-family template with unobserved button fields — bit 9, bit 11,
+**"Luxorparts — Test device, 5 switches (beta, Duo only)"**, which adds **one**
+Home Assistant device holding five switches **LX-T1…LX-T5** (`LX_TEST_LIST` /
+`_lx_template_pair()` in `const.py`, houses 101–105). All five are the
+remote-family template with unobserved button fields — bit 9, bit 11,
 bits 9+11+13, no button bits, and bit 9 + bit 17. None of the ten codes appears in
-any capture, so a receiver that learns one has accepted a generated code. Same
+any capture, so a receiver that obeys a switch has accepted a generated code. Same
 `P\x02 R10 S50+` path and timing as the working LPD codes.
 
-The next test is to teach a receiver one of these five pairs, then scheme B for an
-arbitrary Live-style pair.
+No pairing signal is sent when the device is added, and the switches carry no
+Learn button: a receiver in learn mode learns the code it hears, so a switch is
+paired by pressing its **on** button.
+
+**Result (2026-11-19):** LX-T1, the lowest code, was offered to a 50969 in learn
+mode and was **not** accepted. LX-T2…LX-T5 differ only in the button-field bits,
+so scheme A is unproven; scheme B (an arbitrary Live-style pair) is untested too.
 
 ---
 

@@ -619,26 +619,33 @@ pulse encoding with pre-captured Telldus Live codes (LPD 1–24).
 5. Press **Learn** in HA — the Duo sends the ON code to teach the receiver
 6. The receiver should now respond to on/off commands
 
-**Generated test codes (LX-T1…LX-T5):**
+**Test device — five switches (LX-T1…LX-T5):**
 
-The flow has a second device type, **"Luxorparts — Generated test codes
-(beta, Duo only)"**. It offers five ON/OFF pairs that were **generated** from
-the remote-family template and have **never been captured from any remote**.
-A receiver that learns one of them proves it accepts fresh codes, not just
-replayed recorded ones:
+The flow has a second device type, **"Luxorparts — Test device, 5 switches
+(beta, Duo only)"**. Adding it creates **one Home Assistant device with five
+on/off switches**, using ON/OFF pairs that were **generated** from the
+remote-family template and have **never been captured** from any remote:
 
-| Pick | ON | OFF |
+| Switch | ON | OFF |
 | --- | --- | --- |
-| 101 (LX-T1) | `0xAEABEA8` | `0xAEABEB8` |
-| 102 (LX-T2) | `0xAEAEEA8` | `0xAEAEEB8` |
-| 103 (LX-T3) | `0xAEBFEA8` | `0xAEBFEB8` |
-| 104 (LX-T4) | `0xAEAAEA8` | `0xAEAAEB8` |
-| 105 (LX-T5) | `0xAFABEA8` | `0xAFABEB8` |
+| LX-T1 | `0xAEABEA8` | `0xAEABEB8` |
+| LX-T2 | `0xAEAEEA8` | `0xAEAEEB8` |
+| LX-T3 | `0xAEBFEA8` | `0xAEBFEB8` |
+| LX-T4 | `0xAEAAEA8` | `0xAEAAEB8` |
+| LX-T5 | `0xAFABEA8` | `0xAFABEB8` |
 
-Test one pair per receiver: put it in learn mode, add the device with pick 101,
-press **Learn**, then check that **on** and **off** both control it. All five use
-the same pulse timing as the working LPD codes, so a failure is about the
-**code**, not the RF layer. Picks 101–105 cannot collide with a recorded LPD.
+**No pairing signal is sent when the device is added**, and the switches have no
+Learn button: a receiver in learn mode learns the code it hears, so pair a switch
+by pressing its **on** button. A receiver that obeys a switch has accepted a
+fresh code, not a replayed recording.
+
+All five use the same pulse timing as the working LPD codes, so a failure is
+about the **code**, not the RF layer.
+
+> **Hardware result (2026-11-19):** LX-T1 was offered to a 50969 in learn mode
+> and was **not** accepted. LX-T2…LX-T5 differ from it only in the button-field
+> bits, so no generated pair is confirmed to work yet — LPD 1–24 remain the only
+> verified codes.
 
 **Current limitations:**
 

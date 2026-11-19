@@ -350,9 +350,12 @@ swapping one unvalidated mapping for another is not progress.
 ## 7. What to test on hardware
 
 Scheme A is implemented as an opt-in test device: device type
-**"Luxorparts — Generated test codes (beta, Duo only)"**, picker 101–105. Each
+**"Luxorparts — Test device, 5 switches (beta, Duo only)"**, which adds **one**
+Home Assistant device holding five switches LX-T1…LX-T5 (houses 101–105). Each
 pair comes from `_lx_template_pair()` in `const.py` — the remote template with an
-unobserved button field, so none of the ten codes appears in any capture.
+unobserved button field, so none of the ten codes appears in any capture. The
+flow sends no pairing signal and the switches have no Learn button: pairing is
+the receiver learning the switch's ON code while in learn mode.
 
 | Pick | Button field | ON (stored28) | OFF (stored28) |
 | --- | --- | --- | --- |
@@ -362,14 +365,19 @@ unobserved button field, so none of the ten codes appears in any capture.
 | 104 (LX-T4) | `0x0000` (no button bits) | `0xAEAAEA8` | `0xAEAAEB8` |
 | 105 (LX-T5) | `0x0200` + bit 17 | `0xAFABEA8` | `0xAFABEB8` |
 
-1. Add one test device on the Duo, pick 101, put a 50969 in learn mode and press
-   Learn. Confirm the receiver learns it and then responds to ON and OFF.
-2. If 101 fails, try 102–105 — they differ only in the button field, so a partial
-   success tells you which bits the receiver checks.
+1. Add the test device on the Duo, put a 50969 in learn mode and press LX-T1's
+   **on** button. Confirm the receiver learns it and then responds to ON and OFF.
+2. If LX-T1 fails, try LX-T2…LX-T5 — they differ only in the button field, so a
+   partial success tells you which bits the receiver checks.
 3. If A works, repeat with scheme B (a Live-style pair), which is the real
    target: arbitrary codes on demand.
 4. If A works and B fails, the receiver validates part of the remote template and
    generation must stay inside family A.
+
+**Result (2026-11-19):** LX-T1, the lowest code, was offered to a 50969 in learn
+mode and was **not** accepted. Steps 2–4 stay open. LX-T2…LX-T5 differ from LX-T1
+only in the button-field bits, so a rejection caused by the frame itself (the
+remote-family template or its set 25th bit) would affect all five equally.
 
 ## 8. Still unknown
 
@@ -384,7 +392,8 @@ unobserved button field, so none of the ten codes appears in any capture.
 
 ## 9. What this changes in the code
 
-* The opt-in scheme-A test device now exists (`LX_TEST_LIST`, picker 101–105).
+* The opt-in scheme-A test device now exists (`LX_TEST_LIST`, five switches on
+  one device).
   Do not retire the Homey cipher until A and B are hardware-tested — swapping one
   unvalidated mapping for another is not progress.
 * If A succeeds, `luxorparts_generate_codes()` can return scheme A or B

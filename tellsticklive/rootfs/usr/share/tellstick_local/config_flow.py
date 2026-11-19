@@ -71,6 +71,7 @@ from .const import (
     GENERIC_RF_TYPE_COVER,
     GENERIC_RF_TYPE_LIGHT,
     GENERIC_RF_TYPE_SWITCH,
+    LX_TEST_LIST,
     PROTOCOL_GENERIC_RF,
     PROTOCOL_MODEL_LABELS,
     PROTOCOL_MODEL_MAP,
@@ -2241,6 +2242,10 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 CONF_DEVICE_PROTOCOL: protocol,
                 CONF_DEVICE_MODEL: model,
             }
+            if widget == 21:
+                # Luxorparts test device: five switches on one device, added
+                # in a single step and with no pairing signal of its own.
+                return await self.async_step_lx_test()
             return await self.async_step_params()
 
         return self.async_show_form(
@@ -2441,6 +2446,78 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 "device_type": self._device_type,
             },
             errors=errors,
+        )
+
+    async def async_step_lx_test(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Add the Luxorparts test device: one device, five ON/OFF switches.
+
+        The five switches are LX-T1 … LX-T5 — the generated pairs in
+        ``LX_TEST_CODES`` (houses 101–105).  They are added together, grouped
+        under a single Home Assistant device, and nothing is transmitted here:
+        a Luxorparts receiver learns whatever code it hears while in learn
+        mode, so each switch is paired by pressing its **on** button.
+        """
+        if user_input is not None:
+            entry = self._get_entry()
+            entry_data = self.hass.data[DOMAIN].get(entry.entry_id, {})
+            group_name = (
+                self._new_device.get(CONF_DEVICE_NAME, "") or "Luxorparts test"
+            )
+            model = self._new_device[CONF_DEVICE_MODEL]
+            rf_model = normalize_rf_model(model)
+            existing_devices = dict(entry.options.get(CONF_DEVICES, {}))
+            discovered: set[str] = entry_data.setdefault("_discovered_uids", set())
+
+            for num, _on_code, _off_code, _desc in LX_TEST_LIST:
+                house = str(num)
+                device_uid = build_device_uid("luxorparts", model, house, "1")
+                existing_devices[device_uid] = {
+                    CONF_DEVICE_NAME: f"LX-T{num - 100}",
+                    CONF_DEVICE_PROTOCOL: "luxorparts",
+                    CONF_DEVICE_MODEL: model,
+                    CONF_DEVICE_HOUSE: house,
+                    CONF_DEVICE_UNIT: "1",
+                    CONF_DEVICE_ENCODING: "",
+                    "params": {"house": house, "unit": "1"},
+                    # Every switch of the test device shares one HA device.
+                    "group_uid": group_name,
+                    # Paired by pressing the switch's ON code, so no
+                    # "Send learn signal" button is created for it.
+                    "no_learn_button": True,
+                }
+                discovered.add(device_uid)
+
+            new_options = dict(entry.options)
+            new_options[CONF_DEVICES] = existing_devices
+            self.hass.config_entries.async_update_entry(entry, options=new_options)
+
+            # Dispatch a synthetic event per switch so the entities appear
+            # immediately, without waiting for a reload.
+            for num, _on_code, _off_code, _desc in LX_TEST_LIST:
+                synthetic = RawDeviceEvent(
+                    raw=(
+                        f"class:command;protocol:luxorparts;model:{rf_model};"
+                        f"house:{num};unit:1;method:turnon;"
+                        f"_catalog_model:{model};"
+                    ),
+                    controller_id=0,
+                )
+                async_dispatcher_send(
+                    self.hass,
+                    SIGNAL_NEW_DEVICE.format(entry.entry_id),
+                    synthetic,
+                )
+
+            return self.async_abort(reason="lx_test_added")
+
+        return self.async_show_form(
+            step_id="lx_test",
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "name": self._new_device.get(CONF_DEVICE_NAME, ""),
+            },
         )
 
     async def async_step_confirm(

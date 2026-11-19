@@ -72,6 +72,11 @@ async def async_setup_entry(
         if device_cfg.get("curtain_identity"):
             continue
 
+        # Luxorparts test device: its receivers learn from the ON code itself,
+        # so the switches carry no Learn button of their own.
+        if device_cfg.get("no_learn_button"):
+            continue
+
         # EF test "sequence ALL" markers → create the appropriate sequence button
         # Maps model → (variants_list, translation_key, protocol, uid_prefix)
         _SEQ_MODELS: dict[str, tuple[list[tuple[str, str]], str, str, str]] = {
@@ -127,6 +132,8 @@ async def async_setup_entry(
         known.add(uid)
         stored = entry.options.get(CONF_DEVICES, {}).get(uid, {})
         if stored.get("curtain_identity"):
+            return
+        if stored.get("no_learn_button"):
             return
         name = stored.get(CONF_DEVICE_NAME) or f"TellStick {uid}"
         entity = TellStickLearnButton(
