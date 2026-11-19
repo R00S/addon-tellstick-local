@@ -200,8 +200,9 @@ need to be taught a code before they respond.
 > receiver in learn mode, then press Learn. To test whether a receiver accepts a
 > code that was **generated** rather than recorded, add
 > "Luxorparts — Test device, 5 switches (beta, Duo only)": it creates one device
-> with five switches (LX-T1…LX-T5) and sends no pairing signal — put the receiver
-> in learn mode and press a switch's **on** button. See
+> with five generated switches plus a **CONTROL ON/OFF** that replays the
+> recorded LPD 7 pair, and sends no pairing signal — put the receiver in learn
+> mode and press a switch's **on** button. See
 > [Section 15](#15-known-limitations) for details.
 
 ### 5.3 Kjell & Company / Tuya-MOES curtain motor (Duo only)
@@ -725,18 +726,22 @@ with pre-captured Telldus Live codes (LPD 1–24). **Not available on ZNet / Net
 4. Put the receiver in learn mode (hold button until LED flashes)
 5. Press **Learn** in HA
 
-**Test device — five switches (LX-T1…LX-T5):**
+**Test device — five generated switches + a working control:**
 
 Device type **"Luxorparts — Test device, 5 switches (beta, Duo only)"** adds one
-Home Assistant device with five on/off switches (LX-T1…LX-T5). Their pairs were
-generated from the remote template and never captured from any remote. No
+Home Assistant device with six switches: five generated pairs (LX-B1…LX-B5) and
+a **CONTROL ON/OFF** that replays the recorded LPD 7 pair byte for byte. No
 pairing signal is sent when the device is added and the switches have no Learn
-button — put the receiver in learn mode and press a switch's **on** button. The
-same pulse timing as the LPD codes is used, so a receiver that obeys one of them
-accepts fresh codes, not replayed ones.
+button — put the receiver in learn mode and press a switch's **on** button.
 
-LX-T1 (the lowest code) was **not** accepted by a 50969 on 2026-11-19; the other
-four differ only in the button-field bits, so no generated pair is confirmed yet.
+The generated pairs are scheme B: Live-family frame shape, seeded from the
+working LPD 7 pair with 1…5 added (`0x2450C48`…`0x2450C88` and their OFF
+partners), so each sits one seed step from a code that works.
+
+Scheme A (five remote-family clones, LX-T1…LX-T5) was tested on 2026-11-19 and
+**all five were refused** by a 50969 in learn mode. The control exists to tell
+the two failure modes apart: if CONTROL works and a LX-Bx switch does not, the
+receiver is validating the payload, not learning any code it hears.
 
 **Current limitations:**
 

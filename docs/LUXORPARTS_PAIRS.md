@@ -70,26 +70,31 @@ not recordings — see the section below.
 
 ## Generated test pairs (never captured)
 
-Not recorded codes: built with scheme A from
-`docs/LUXORPARTS_PROTOCOL_ANALYSIS.md` §6 (remote template `0x5D55D5`, bit 1 =
-state, frame MSB 1). Offered in the Duo flow as "Luxorparts — Test device, 5
-switches", which adds one Home Assistant device holding all five switches. None
-of these ten codes appears in any capture, so a receiver that obeys a switch has
-accepted a generated code.
+Not recorded codes, with one recorded control. The test device adds one Home
+Assistant device with six switches: five **scheme B** pairs (Live-family shape,
+`payload24 = ((seed & 0x7FFFFF) << 1) | 1`, `stored28 = payload24 << 3`) and a
+**CONTROL ON/OFF** that replays the recorded LPD 7 pair.
 
-| Switch | Button field | ON | OFF |
-|--------|--------------|----|-----|
-| LX-T1 | bit 9 | 0xAEABEA8 | 0xAEABEB8 |
-| LX-T2 | bit 11 | 0xAEAEEA8 | 0xAEAEEB8 |
-| LX-T3 | bits 9+11+13 | 0xAEBFEA8 | 0xAEBFEB8 |
-| LX-T4 | none | 0xAEAAEA8 | 0xAEAAEB8 |
-| LX-T5 | bit 9 + remote 2 | 0xAFABEA8 | 0xAFABEB8 |
+The scheme-B seeds are the working LPD 7 seeds with 1–5 added, so each test pair
+is one seed step away from a code that works:
+
+| Switch | Seeds (ON / OFF) | ON | OFF |
+|--------|------------------|----|-----|
+| LX-B1 | 0x2450C4 / 0x263364 | 0x2450C48 | 0x2633648 |
+| LX-B2 | 0x2450C5 / 0x263365 | 0x2450C58 | 0x2633658 |
+| LX-B3 | 0x2450C6 / 0x263366 | 0x2450C68 | 0x2633668 |
+| LX-B4 | 0x2450C7 / 0x263367 | 0x2450C78 | 0x2633678 |
+| LX-B5 | 0x2450C8 / 0x263368 | 0x2450C88 | 0x2633688 |
+| CONTROL | 0x2450C3 / 0x263363 | 0x2450C38 | 0x2633638 |
 
 No pairing signal is sent when the device is added and the switches have no Learn
 button; pair a switch by pressing its **on** button with the receiver in learn
-mode. **Hardware result (2026-11-19):** LX-T1 was offered to a 50969 in learn
-mode and was **not** accepted. LX-T2–LX-T5 differ only in the button bits, so no
-generated pair is confirmed yet.
+mode.
+
+**Hardware results:** scheme A (five remote-family clones, LX-T1…LX-T5,
+`0xAEABEA8`…`0xAFABEB8`) was tested on 2026-11-19 and **all five were refused** by
+a 50969 in learn mode — scheme A is dead and removed from the code. Scheme B and
+the control are untested.
 
 ---
 

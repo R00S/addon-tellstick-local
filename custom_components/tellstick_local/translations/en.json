@@ -343,7 +343,7 @@
         "lx_test": {
           "title": "Luxorparts test device",
           "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#15-known-limitations",
-          "description": "Adds **{name}** — one device with five on/off switches, LX-T1 … LX-T5.\n\nThese five ON/OFF pairs are **generated**, not recorded: none of them was ever captured from a remote or from Telldus Live. They exist to test whether a receiver accepts a code that no remote ever sent.\n\n**No pairing signal is sent here.** A Luxorparts receiver learns whatever code it hears while in learn mode, so pairing is done by pressing the switch's **on** button — exactly like the ON key on a physical remote.\n\nAll five switches appear under this one Home Assistant device."
+          "description": "Adds **{name}** — one device with six on/off switches.\n\n**CONTROL ON/OFF** replays the recorded LPD 7 pair byte for byte — the same code the working Luxorparts path sends — so a reference that is known to work sits in the same device.\n\n**LX-B1 … LX-B5** are **generated** (scheme B, Live-family shape). Each takes the seeds of that LPD 7 pair and adds 1…5, so every one is a single seed step away from a code that works. None of them was ever captured.\n\n**No pairing signal is sent here.** A Luxorparts receiver learns whatever code it hears while in learn mode, so pairing is done by pressing the switch's **on** button — exactly like the ON key on a physical remote."
         },
         "confirm": {
           "title": "Send pairing signal",

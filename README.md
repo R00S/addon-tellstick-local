@@ -619,33 +619,36 @@ pulse encoding with pre-captured Telldus Live codes (LPD 1–24).
 5. Press **Learn** in HA — the Duo sends the ON code to teach the receiver
 6. The receiver should now respond to on/off commands
 
-**Test device — five switches (LX-T1…LX-T5):**
+**Test device — five generated switches + a working control:**
 
 The flow has a second device type, **"Luxorparts — Test device, 5 switches
-(beta, Duo only)"**. Adding it creates **one Home Assistant device with five
-on/off switches**, using ON/OFF pairs that were **generated** from the
-remote-family template and have **never been captured** from any remote:
+(beta, Duo only)"**. Adding it creates **one Home Assistant device with six
+switches**: five **generated** pairs (LX-B1…LX-B5) plus a **CONTROL ON/OFF**
+switch that replays the recorded LPD 7 pair byte for byte — the same code the
+working Luxorparts path sends.
+
+The generated pairs use scheme B: the Live-family frame shape, seeded from the
+working LPD 7 pair with 1…5 added, so each is one seed step away from a code
+that works:
 
 | Switch | ON | OFF |
 | --- | --- | --- |
-| LX-T1 | `0xAEABEA8` | `0xAEABEB8` |
-| LX-T2 | `0xAEAEEA8` | `0xAEAEEB8` |
-| LX-T3 | `0xAEBFEA8` | `0xAEBFEB8` |
-| LX-T4 | `0xAEAAEA8` | `0xAEAAEB8` |
-| LX-T5 | `0xAFABEA8` | `0xAFABEB8` |
+| LX-B1 | `0x2450C48` | `0x2633648` |
+| LX-B2 | `0x2450C58` | `0x2633658` |
+| LX-B3 | `0x2450C68` | `0x2633668` |
+| LX-B4 | `0x2450C78` | `0x2633678` |
+| LX-B5 | `0x2450C88` | `0x2633688` |
+| CONTROL ON/OFF | `0x2450C38` | `0x2633638` |
 
 **No pairing signal is sent when the device is added**, and the switches have no
 Learn button: a receiver in learn mode learns the code it hears, so pair a switch
-by pressing its **on** button. A receiver that obeys a switch has accepted a
-fresh code, not a replayed recording.
+by pressing its **on** button.
 
-All five use the same pulse timing as the working LPD codes, so a failure is
-about the **code**, not the RF layer.
-
-> **Hardware result (2026-11-19):** LX-T1 was offered to a 50969 in learn mode
-> and was **not** accepted. LX-T2…LX-T5 differ from it only in the button-field
-> bits, so no generated pair is confirmed to work yet — LPD 1–24 remain the only
-> verified codes.
+> **Hardware result (2026-11-19):** scheme A (five remote-family clones) was
+> tested first and **all five were refused** by a 50969 in learn mode. Scheme B
+> with the LPD 7 control is the current test: if **CONTROL** works and a LX-Bx
+> switch does not, the receiver validates the payload instead of learning
+> whatever code it hears.
 
 **Current limitations:**
 

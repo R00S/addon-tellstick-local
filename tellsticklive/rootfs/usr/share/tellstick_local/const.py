@@ -1063,68 +1063,86 @@ LX_GROUND_TRUTH_CODES: dict[tuple[int, int], dict[str, int]] = {
 
 
 # ---------------------------------------------------------------------------
-# LX-T1 … LX-T5 — generated test pairs (never captured from any remote)
+# Generated test pairs — scheme B (Live-family shape) plus a working control
 #
-# Scheme A from docs/LUXORPARTS_PROTOCOL_ANALYSIS.md §6: clone the remote-family
-# template ``0x5D55D5`` (bit 1 = state, 0 = ON) with a button-field pattern that
-# no capture contains, keeping the 25-bit frame MSB = 1 (remote-family marker).
+# Scheme A (cloning the remote-family template, ``_lx_template_pair()``) was
+# tested on hardware on 2026-11-19: **all five pairs were refused** by a 50969
+# in learn mode.  Scheme A is therefore dead and removed.
 #
-# Purpose: a receiver that learns and obeys one of these pairs has accepted a
-# code that was *generated*, not replayed — none of these ten codes appears in
-# LX_LPD_LIST or in the remote capture set, so a success cannot be a replayed
-# recorded code.
+# Scheme B from docs/LUXORPARTS_PROTOCOL_ANALYSIS.md §6 produces the *shape* of
+# the Telldus Live codes instead of the remote ones::
+#
+#     payload24 = ((seed & 0x7FFFFF) << 1) | 1     # bit 0 always 1, frame MSB 0
+#     stored28  = payload24 << 3
+#
+# The five test pairs take the seeds of the working LPD 7 pair (whose recorded
+# codes are ``0x2450C38`` / ``0x2633638``) and add 1…5.  Each switch is therefore
+# one seed step away from a code that is known to work on this exact Duo path,
+# so a failure is about the receiver validating the payload, not about timing or
+# about the remote-vs-Live family marker.
 #
 # The "Luxorparts — Test device, 5 switches" entry adds ONE Home Assistant
-# device holding all five pairs as switches LX-T1…LX-T5 (stored as house
-# 101-105, unit 1).  No learn signal is sent when the device is added: a
-# Luxorparts receiver learns whatever code it hears while in learn mode, so a
-# switch is paired by pressing its **on** button, exactly like the ON key of a
-# physical remote.
+# device holding the five test pairs as switches LX-B1…LX-B5 (stored as house
+# 101-105, unit 1) **and** a CONTROL switch.
 #
-# These pairs are deliberately kept out of LX_LPD_LIST, which stays the
-# recorded Telldus Live list (LPD 1-24).  101+ was chosen so a test number can
-# never collide with a recorded LPD.
+# House 106 is the control: it emits the recorded LPD 7 pair byte for byte
+# (``LX_CONTROL_CODES``), so the same device carries a reference that is known
+# to work.  House 106 rather than 7 keeps the control out of the normal LPD 7
+# device's UID, so adding the test device never renames or regroups an existing
+# LPD 7 switch.
 #
-# Hardware result so far (2026-11-19): LX-T1, the lowest code, was offered to a
-# 50969 in learn mode and was **not** accepted.  Nothing has ever learned a
-# generated pair — scheme A remains unproven, and LX-T2…LX-T5 differ from LX-T1
-# only in the button-field bits.
+# No learn signal is sent when the device is added: a Luxorparts receiver learns
+# whatever code it hears while in learn mode, so a switch is paired by pressing
+# its **on** button, exactly like the ON key of a physical remote.
+#
+# These pairs are deliberately kept out of LX_LPD_LIST, which stays the recorded
+# Telldus Live list (LPD 1-24).  101+ was chosen so a test number can never
+# collide with a recorded LPD.
 # ---------------------------------------------------------------------------
 
-LX_REMOTE_TEMPLATE = 0x5D55D5
-LX_REMOTE_FRAME_MSB = 0x1000000  # physical remotes send 25-bit frames with MSB set
 
+def _lx_live_pair(seed_on: int, seed_off: int) -> tuple[int, int]:
+    """Build a stored28 (ON, OFF) pair in the Live-family shape (scheme B).
 
-def _lx_template_pair(button_field: int, remote_bit: int = 0) -> tuple[int, int]:
-    """Build a stored28 (ON, OFF) pair from the remote-family template.
-
-    ``button_field`` sets the button bits (9/11/13); ``remote_bit`` is the
-    optional bit 17 that separates remote 1 from remote 2.
-
-    >>> _lx_template_pair(0x0200)
-    (183156392, 183156408)
+    >>> _lx_live_pair(0x2450C3, 0x263363)
+    (38079544, 40056376)
+    >>> hex(_lx_live_pair(0x2450C3, 0x263363)[0]), hex(_lx_live_pair(0x2450C3, 0x263363)[1])
+    ('0x2450c38', '0x2633638')
     """
-    payload_on = LX_REMOTE_TEMPLATE | button_field | remote_bit
-    payload_off = payload_on | 0x000002  # bit 1 = state: 0 = ON, 1 = OFF
-    return (
-        (payload_on | LX_REMOTE_FRAME_MSB) << 3,
-        (payload_off | LX_REMOTE_FRAME_MSB) << 3,
-    )
+
+    def _store(seed: int) -> int:
+        payload = ((seed & 0x7FFFFF) << 1) | 1  # payload bit 0 is always 1
+        return payload << 3
+
+    return _store(seed_on), _store(seed_off)
 
 
-# Columns: (test_num, on_code, off_code, button-field description)
+LX_LIVE_CONTROL_LPD = 7
+LX_LIVE_CONTROL_SEED_ON = 0x2450C3  # = LPD 7 ON seed (payload24 >> 1)
+LX_LIVE_CONTROL_SEED_OFF = 0x263363  # = LPD 7 OFF seed
+
+# Columns: (test_num, on_code, off_code, seed description)
 LX_TEST_LIST: list[tuple[int, int, int, str]] = [
-    (101, *_lx_template_pair(0x0200), "bit 9 only"),
-    (102, *_lx_template_pair(0x0800), "bit 11 only"),
-    (103, *_lx_template_pair(0x2A00), "bits 9+11+13"),
-    (104, *_lx_template_pair(0x0000), "no button bits"),
-    (105, *_lx_template_pair(0x0200, 0x20000), "bit 9 + remote 2"),
+    (101, *_lx_live_pair(0x2450C4, 0x263364), "LPD 7 seeds + 1"),
+    (102, *_lx_live_pair(0x2450C5, 0x263365), "LPD 7 seeds + 2"),
+    (103, *_lx_live_pair(0x2450C6, 0x263366), "LPD 7 seeds + 3"),
+    (104, *_lx_live_pair(0x2450C7, 0x263367), "LPD 7 seeds + 4"),
+    (105, *_lx_live_pair(0x2450C8, 0x263368), "LPD 7 seeds + 5"),
 ]
 
 # Keyed by (test_num, 1), the same shape as LX_GROUND_TRUTH_CODES.
 LX_TEST_CODES: dict[tuple[int, int], dict[str, int]] = {
     (num, 1): {"on": on_code, "off": off_code}
     for num, on_code, off_code, _ in LX_TEST_LIST
+}
+
+# The control switch of the test device (house 106): the recorded LPD 7 pair,
+# byte for byte.  Kept out of LX_GROUND_TRUTH_CODES so the LPD picker still
+# offers LPD 1-24 only.
+LX_CONTROL_HOUSE = 106
+LX_CONTROL_LABEL = "CONTROL ON/OFF (LPD 7)"
+LX_CONTROL_CODES: dict[tuple[int, int], dict[str, int]] = {
+    (LX_CONTROL_HOUSE, 1): dict(LX_GROUND_TRUTH_CODES[(LX_LIVE_CONTROL_LPD, 1)])
 }
 
 
@@ -1203,8 +1221,10 @@ def luxorparts_generate_codes(house: int, unit: int) -> dict[str, int]:
 
     If the (house, unit) pair exists in ``LX_GROUND_TRUTH_CODES`` (captured
     from Telldus Live via RTL-433), those verified codes are returned instead.
-    The generated test pairs in ``LX_TEST_CODES`` (LPD 101-105) are returned the
-    same way; they are never-captured codes used to test code generation.
+    The generated test pairs in ``LX_TEST_CODES`` (houses 101-105) are returned
+    the same way; they are never-captured codes used to test code generation.
+    House 106 (``LX_CONTROL_CODES``) returns the recorded LPD 7 pair, so the test
+    device carries a control that is known to work.
 
     Returns 28-bit hex integers (24-bit cipher << 3 with start bit 0).
 
@@ -1217,7 +1237,12 @@ def luxorparts_generate_codes(house: int, unit: int) -> dict[str, int]:
     if gt is not None:
         return dict(gt)
 
-    # Generated test pairs (LPD 101-105) — never-captured codes
+    # Control of the test device (house 106) — the recorded LPD 7 pair
+    control = LX_CONTROL_CODES.get((house, unit))
+    if control is not None:
+        return dict(control)
+
+    # Generated test pairs (houses 101-105) — never-captured codes
     test = LX_TEST_CODES.get((house, unit))
     if test is not None:
         return dict(test)

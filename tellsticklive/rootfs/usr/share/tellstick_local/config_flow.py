@@ -71,6 +71,8 @@ from .const import (
     GENERIC_RF_TYPE_COVER,
     GENERIC_RF_TYPE_LIGHT,
     GENERIC_RF_TYPE_SWITCH,
+    LX_CONTROL_HOUSE,
+    LX_CONTROL_LABEL,
     LX_TEST_LIST,
     PROTOCOL_GENERIC_RF,
     PROTOCOL_MODEL_LABELS,
@@ -2453,11 +2455,13 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
     ) -> SubentryFlowResult:
         """Add the Luxorparts test device: one device, five ON/OFF switches.
 
-        The five switches are LX-T1 … LX-T5 — the generated pairs in
-        ``LX_TEST_CODES`` (houses 101–105).  They are added together, grouped
-        under a single Home Assistant device, and nothing is transmitted here:
-        a Luxorparts receiver learns whatever code it hears while in learn
-        mode, so each switch is paired by pressing its **on** button.
+        Five switches carry the scheme-B pairs in ``LX_TEST_CODES`` (houses
+        101–105, live-family shape, one seed step each from the working LPD 7
+        pair) and a sixth — **CONTROL ON/OFF** — replays the recorded LPD 7 pair
+        byte for byte (house 106).  They are added together, grouped under a
+        single Home Assistant device, and nothing is transmitted here: a
+        Luxorparts receiver learns whatever code it hears while in learn mode,
+        so each switch is paired by pressing its **on** button.
         """
         if user_input is not None:
             entry = self._get_entry()
@@ -2470,11 +2474,17 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             existing_devices = dict(entry.options.get(CONF_DEVICES, {}))
             discovered: set[str] = entry_data.setdefault("_discovered_uids", set())
 
-            for num, _on_code, _off_code, _desc in LX_TEST_LIST:
+            # Five scheme-B switches, plus the control that replays LPD 7.
+            switches: list[tuple[int, str]] = [
+                (num, f"LX-B{num - 100}") for num, *_rest in LX_TEST_LIST
+            ]
+            switches.append((LX_CONTROL_HOUSE, LX_CONTROL_LABEL))
+
+            for num, switch_name in switches:
                 house = str(num)
                 device_uid = build_device_uid("luxorparts", model, house, "1")
                 existing_devices[device_uid] = {
-                    CONF_DEVICE_NAME: f"LX-T{num - 100}",
+                    CONF_DEVICE_NAME: switch_name,
                     CONF_DEVICE_PROTOCOL: "luxorparts",
                     CONF_DEVICE_MODEL: model,
                     CONF_DEVICE_HOUSE: house,
@@ -2495,7 +2505,7 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
 
             # Dispatch a synthetic event per switch so the entities appear
             # immediately, without waiting for a reload.
-            for num, _on_code, _off_code, _desc in LX_TEST_LIST:
+            for num, _switch_name in switches:
                 synthetic = RawDeviceEvent(
                     raw=(
                         f"class:command;protocol:luxorparts;model:{rf_model};"

@@ -542,24 +542,44 @@ What this does **not** settle:
   nothing about whether those two entries are the same physical device captured at
   two field values.
 
-### Implemented: scheme A test device (v3.3.3.2)
+### Scheme A failed — scheme B with a control (v3.4.0.5)
 
-Scheme A is now an opt-in test device instead of a hand-typed code: device type
-**"Luxorparts — Test device, 5 switches (beta, Duo only)"**, which adds **one**
-Home Assistant device holding five switches **LX-T1…LX-T5** (`LX_TEST_LIST` /
-`_lx_template_pair()` in `const.py`, houses 101–105). All five are the
-remote-family template with unobserved button fields — bit 9, bit 11,
-bits 9+11+13, no button bits, and bit 9 + bit 17. None of the ten codes appears in
-any capture, so a receiver that obeys a switch has accepted a generated code. Same
-`P\x02 R10 S50+` path and timing as the working LPD codes.
+Scheme A (`_lx_template_pair()`: the remote template with an unobserved button
+field, frame MSB 1) was tested on 2026-11-19: **all five pairs were refused** by a
+50969 in learn mode. The helper and its five codes are removed; the family clone
+is falsified on that receiver.
 
-No pairing signal is sent when the device is added, and the switches carry no
-Learn button: a receiver in learn mode learns the code it hears, so a switch is
-paired by pressing its **on** button.
+Scheme B is the test device now: device type **"Luxorparts — Test device, 5
+switches (beta, Duo only)"**, which adds **one** Home Assistant device with
+**LX-B1…LX-B5** plus **CONTROL ON/OFF** (houses 101–106).
 
-**Result (2026-11-19):** LX-T1, the lowest code, was offered to a 50969 in learn
-mode and was **not** accepted. LX-T2…LX-T5 differ only in the button-field bits,
-so scheme A is unproven; scheme B (an arbitrary Live-style pair) is untested too.
+```
+payload24 = ((seed & 0x7FFFFF) << 1) | 1     # bit 0 always 1, frame MSB 0
+stored28  = payload24 << 3
+```
+
+The five pairs take the working LPD 7 seeds (`0x2450C3` / `0x263363`) and add 1…5,
+so each is one seed step from a code that works:
+
+| Switch | ON | OFF |
+| --- | --- | --- |
+| LX-B1 | `0x2450C48` | `0x2633648` |
+| LX-B2 | `0x2450C58` | `0x2633658` |
+| LX-B3 | `0x2450C68` | `0x2633668` |
+| LX-B4 | `0x2450C78` | `0x2633678` |
+| LX-B5 | `0x2450C88` | `0x2633688` |
+| CONTROL | `0x2450C38` | `0x2633638` |
+
+The control (house 106) replays the recorded LPD 7 pair byte for byte, so the
+device holds a reference that is known to work on the same Duo path; house 106
+instead of 7 keeps it out of the normal LPD 7 device's UID.
+
+No pairing signal is sent when the device is added and the switches carry no Learn
+button: pair by pressing a switch's **on** button with the receiver in learn mode.
+
+**Open:** if CONTROL works and an LX-Bx switch does not, the receiver validates the
+payload instead of learning any code it hears — generation then needs the real
+encoder, not the frame shape.
 
 ---
 

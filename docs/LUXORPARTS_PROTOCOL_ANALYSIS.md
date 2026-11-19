@@ -272,6 +272,9 @@ what the hardware test in §7 settles.
 
 Limitation: no real device space. Use A to prove the mechanism, B to actually scale.
 
+**Tested on hardware 2026-11-19: all five A pairs were refused by a 50969 in
+learn mode (see §7). Scheme A is falsified and removed from the code.**
+
 ### B. Live-family style — unlimited codes, matches the codes we already ship
 
 ```
@@ -349,35 +352,49 @@ swapping one unvalidated mapping for another is not progress.
 
 ## 7. What to test on hardware
 
-Scheme A is implemented as an opt-in test device: device type
-**"Luxorparts — Test device, 5 switches (beta, Duo only)"**, which adds **one**
-Home Assistant device holding five switches LX-T1…LX-T5 (houses 101–105). Each
-pair comes from `_lx_template_pair()` in `const.py` — the remote template with an
-unobserved button field, so none of the ten codes appears in any capture. The
-flow sends no pairing signal and the switches have no Learn button: pairing is
-the receiver learning the switch's ON code while in learn mode.
+Scheme A is falsified: on 2026-11-19 **all five pairs** (LX-T1…LX-T5,
+`0xAEABEA8`…`0xAFABEB8`) were refused by a 50969 in learn mode.
+`_lx_template_pair()` and those codes are removed from `const.py`.
 
-| Pick | Button field | ON (stored28) | OFF (stored28) |
+Scheme B is the test device now: device type **"Luxorparts — Test device, 5
+switches (beta, Duo only)"**, which adds **one** Home Assistant device with five
+generated switches **LX-B1…LX-B5** (houses 101–105) plus **CONTROL ON/OFF**
+(house 106).
+
+```
+payload24 = ((seed & 0x7FFFFF) << 1) | 1     # bit 0 always 1, frame MSB 0
+stored28  = payload24 << 3
+```
+
+The generated seeds are the working LPD 7 seeds with 1…5 added, so every test pair
+sits one seed step from a code that works on this Duo path:
+
+| Switch | Seeds (ON / OFF) | ON (stored28) | OFF (stored28) |
 | --- | --- | --- | --- |
-| 101 (LX-T1) | `0x0200` (bit 9) | `0xAEABEA8` | `0xAEABEB8` |
-| 102 (LX-T2) | `0x0800` (bit 11) | `0xAEAEEA8` | `0xAEAEEB8` |
-| 103 (LX-T3) | `0x2A00` (bits 9+11+13) | `0xAEBFEA8` | `0xAEBFEB8` |
-| 104 (LX-T4) | `0x0000` (no button bits) | `0xAEAAEA8` | `0xAEAAEB8` |
-| 105 (LX-T5) | `0x0200` + bit 17 | `0xAFABEA8` | `0xAFABEB8` |
+| LX-B1 | `0x2450C4` / `0x263364` | `0x2450C48` | `0x2633648` |
+| LX-B2 | `0x2450C5` / `0x263365` | `0x2450C58` | `0x2633658` |
+| LX-B3 | `0x2450C6` / `0x263366` | `0x2450C68` | `0x2633668` |
+| LX-B4 | `0x2450C7` / `0x263367` | `0x2450C78` | `0x2633678` |
+| LX-B5 | `0x2450C8` / `0x263368` | `0x2450C88` | `0x2633688` |
+| CONTROL (LPD 7) | `0x2450C3` / `0x263363` | `0x2450C38` | `0x2633638` |
 
-1. Add the test device on the Duo, put a 50969 in learn mode and press LX-T1's
-   **on** button. Confirm the receiver learns it and then responds to ON and OFF.
-2. If LX-T1 fails, try LX-T2…LX-T5 — they differ only in the button field, so a
-   partial success tells you which bits the receiver checks.
-3. If A works, repeat with scheme B (a Live-style pair), which is the real
-   target: arbitrary codes on demand.
-4. If A works and B fails, the receiver validates part of the remote template and
-   generation must stay inside family A.
+The control returns LPD 7's recorded pair from `luxorparts_generate_codes(106, 1)`
+— house 106 rather than 7 so the test device never shares the normal LPD 7
+device's UID. No pairing signal is sent and the switches have no Learn button:
+pair by pressing a switch's **on** button with the receiver in learn mode.
 
-**Result (2026-11-19):** LX-T1, the lowest code, was offered to a 50969 in learn
-mode and was **not** accepted. Steps 2–4 stay open. LX-T2…LX-T5 differ from LX-T1
-only in the button-field bits, so a rejection caused by the frame itself (the
-remote-family template or its set 25th bit) would affect all five equally.
+1. Teach **CONTROL** first: receiver in learn mode, press CONTROL's **on**, then
+   check that its on and off both work. If CONTROL fails, the test device's own
+   wiring is at fault and the B results mean nothing.
+2. Then teach LX-B1 the same way — it differs from CONTROL by one seed step
+   (`0x2450C4` vs `0x2450C3`).
+3. If LX-B1 is accepted, try LX-B2…LX-B5 (two to five steps away).
+4. If CONTROL works and none of the B switches do, the receiver validates the
+   payload: generation then needs the real encoder, not the Live-family shape.
+
+**What this decides:** whether a receiver stores whole codes and compares them (then
+any plausible code is accepted) or decodes a field and rejects what it cannot
+validate.
 
 ## 8. Still unknown
 
@@ -392,13 +409,13 @@ remote-family template or its set 25th bit) would affect all five equally.
 
 ## 9. What this changes in the code
 
-* The opt-in scheme-A test device now exists (`LX_TEST_LIST`, five switches on
-  one device).
-  Do not retire the Homey cipher until A and B are hardware-tested — swapping one
-  unvalidated mapping for another is not progress.
-* If A succeeds, `luxorparts_generate_codes()` can return scheme A or B
-  values; the recorded pairs stay authoritative for LPD 1–24.
-* **If** A and B pass their hardware tests, the LPD picker could grow past 24 by
+* The test device now carries scheme B (`LX_TEST_LIST`, houses 101–105) and the
+  LPD 7 control (house 106, `LX_CONTROL_CODES`). Scheme A is falsified and gone.
+  Do not retire the Homey cipher until B and the control are hardware-tested —
+  swapping one unvalidated mapping for another is not progress.
+* If B succeeds, `luxorparts_generate_codes()` can return scheme-B values for
+  unknown houses; the recorded pairs stay authoritative for LPD 1–24.
+* **If** B passes its hardware test, the LPD picker could grow past 24 by
   generating additional pairs, so users would no longer be limited to the captured
   list and no two installs would need to share a code. Until then, the picker stays
   at the recorded pairs.
