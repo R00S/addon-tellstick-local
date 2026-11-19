@@ -490,3 +490,22 @@ Version 3.4.0.13 → **3.4.0.14**. Verified: doctests, `py_compile`, pyflakes,
 checks 24 + 280 pairs (disjoint, 304 distinct code pairs, slider → house/unit → same
 code pair, both sliders serialize as `NumberSelector` sliders). Not verified on
 hardware.
+
+### v3.4.0.15 — deleting a grouped device removes it for real
+
+The v3.4.0.14 fix only covered cards whose identifier is the stored device UID.
+The removed Luxorparts test paths added their switches as ONE grouped card
+(identifier `{entry_id}_group_{group_uid}`), so deleting that card matched no
+stored device: nothing was removed from `devices`, nothing was ignored, and the
+platforms rebuilt the card — with its switches — on the next reload or restart.
+
+`async_remove_config_entry_device()` now resolves a `group_` card to every stored
+device carrying that `group_uid`, removes all of them from `devices` and from
+telldusd, deletes their entities (learn buttons included), and records each UID in
+`ignored_uids`. A card that matches no stored device is ignored as well, so a
+leftover registry UID cannot be re-imported by auto-add, the discovery flow or
+`_import_app_configured_devices()`.
+
+Version 3.4.0.14 → **3.4.0.15**. Verified: doctests, `py_compile`, pyflakes,
+`tests/test_ha_integration.py`, mirror diff, strings/JSON parity. Not verified in
+the HA UI or on hardware.

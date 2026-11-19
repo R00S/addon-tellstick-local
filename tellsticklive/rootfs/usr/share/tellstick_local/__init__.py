@@ -1566,7 +1566,30 @@ async def async_remove_config_entry_device(
     removed_uids: list[str] = []
     removed_names: dict[str, str] = {}
 
-    if device_uid.startswith("sensor_") and device_uid in stored_devices:
+    if device_uid.startswith("group_") and device_uid not in stored_devices:
+        # A grouped device is ONE Home Assistant card shared by several stored
+        # switches (identifier "{entry_id}_group_{group_uid}").  Deleting that
+        # card used to remove nothing: the stored switches kept their configs,
+        # so the platforms rebuilt the card after every reload and the device
+        # "came back".  Remove — and ignore — every switch in the group.
+        group_name = device_uid[len("group_"):]
+        for uid, cfg in list(stored_devices.items()):
+            if cfg.get("group_uid") != group_name:
+                continue
+            stored_devices.pop(uid)
+            removed_names[uid] = cfg.get(CONF_DEVICE_NAME, uid)
+            removed_any = True
+            removed_uids.append(uid)
+            discovered.discard(uid)
+            if controller and uid in device_id_map:
+                try:
+                    await controller.remove_device(device_id_map[uid])
+                except Exception:  # noqa: BLE001
+                    _LOGGER.warning(
+                        "Could not remove device %s from telldusd", uid
+                    )
+                device_id_map.pop(uid, None)
+    elif device_uid.startswith("sensor_") and device_uid in stored_devices:
         # Exact match (unlikely — sensors use sensor_{id} without suffix)
         cfg = stored_devices.pop(device_uid)
         removed_names[device_uid] = cfg.get(CONF_DEVICE_NAME, device_uid)
@@ -1612,6 +1635,20 @@ async def async_remove_config_entry_device(
                 )
             device_id_map.pop(device_uid, None)
 
+    if not removed_any:
+        # The card matched no stored device.  Ignore its identifier anyway:
+        # a leftover UID that is not ignored is picked up again by auto-add,
+        # the discovery flow or the app-config import, which is how a device
+        # deleted from an older build kept coming back.
+        ignored = dict(entry.options.get(CONF_IGNORED_UIDS, {}))
+        if device_uid not in ignored:
+            ignored[device_uid] = (
+                device_entry.name_by_user or device_entry.name or device_uid
+            )
+            new_options = dict(entry.options)
+            new_options[CONF_IGNORED_UIDS] = ignored
+            hass.config_entries.async_update_entry(entry, options=new_options)
+
     if removed_any:
         new_options = dict(entry.options)
         new_options[CONF_DEVICES] = stored_devices
@@ -1630,9 +1667,15 @@ async def async_remove_config_entry_device(
         # re-added with a new name it gets fresh entity_ids instead of
         # inheriting the old ones.  Issue #33.
         ent_reg = er.async_get(hass)
+        # A device owns its entity ({entry_id}_{uid}) and, when it has one, the
+        # learn button ({entry_id}_{uid}_learn); leaving the button behind keeps
+        # a stale entity on the removed device card.
         remove_unique_ids = {f"{entry.entry_id}_{u}" for u in removed_uids}
+        remove_unique_prefixes = tuple(f"{u}_" for u in remove_unique_ids)
         for ent in list(er.async_entries_for_config_entry(ent_reg, entry.entry_id)):
-            if ent.unique_id in remove_unique_ids:
+            if ent.unique_id in remove_unique_ids or ent.unique_id.startswith(
+                remove_unique_prefixes
+            ):
                 try:
                     ent_reg.async_remove(ent.entity_id)
                     # Clear the DeletedRegistryEntry tombstone so that the old
