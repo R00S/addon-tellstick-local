@@ -24,6 +24,7 @@ except ImportError:
 from homeassistant.helpers import (
     device_registry as dr,
     entity_registry as er,
+    selector,
 )
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import homeassistant.helpers.config_validation as cv
@@ -87,6 +88,7 @@ from .const import (
     luxorparts_build_raw_command,
     parse_rtl433_pulse_analysis,
     luxorparts_generate_codes,
+    luxorparts_picker_pairs,
     normalize_rf_model,
 )
 
@@ -150,14 +152,46 @@ def _build_params_schema(
         elif ptype == "letter":
             letters = [chr(c) for c in range(ord(spec["min"]), ord(spec["max"]) + 1)]
             schema_dict[vol.Required(name, default=default)] = vol.In(letters)
-        elif ptype == "select":
-            schema_dict[vol.Required(name, default=default)] = vol.In(spec["options"])
+        elif ptype == "slider":
+            # One number, one list of pairs — shown as a real slider.
+            schema_dict[vol.Required(name, default=default)] = (
+                selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=spec["min"],
+                        max=spec["max"],
+                        step=1,
+                        mode=selector.NumberSelectorMode.SLIDER,
+                    )
+                )
+            )
         elif ptype == "str":
             schema_dict[vol.Required(name, default=default)] = str
         elif ptype == "bool":
             schema_dict[vol.Required(name, default=default)] = bool
 
     return vol.Schema(schema_dict)
+
+
+def _luxorparts_params(
+    model: str, params: dict[str, str]
+) -> dict[str, str] | None:
+    """Turn a Luxorparts path's slider value into house/unit parameters.
+
+    Each path is one list of on/off pairs and the slider value is the 1-based
+    entry in that list.  The pair behind it is stored as house = recorded LPD
+    number and unit = channel, which is what ``luxorparts_generate_codes()``,
+    the device UID and the send paths expect.  Returns ``None`` when the value
+    is not on the list.
+    """
+    pairs = luxorparts_picker_pairs(model)
+    try:
+        index = int(float(params.get("pair", "")))
+    except (TypeError, ValueError):
+        return None
+    if not 1 <= index <= len(pairs):
+        return None
+    lpd, channel = pairs[index - 1]
+    return {"pair": str(index), "house": str(lpd), "unit": str(channel)}
 
 
 def _extract_sensor_suffix(uid: str) -> str:
@@ -2416,6 +2450,19 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                     name = spec["name"]
                     params[name] = str(user_input[name])
 
+                # Luxorparts: the slider picks an entry from that path's list
+                # of on/off pairs.  Store the pair's house/unit so the send
+                # paths, the UID and the learn button stay unchanged.
+                if self._new_device.get(CONF_DEVICE_PROTOCOL) == "luxorparts":
+                    resolved = _luxorparts_params(
+                        self._new_device.get(CONF_DEVICE_MODEL, ""), params
+                    )
+                    if resolved is None:
+                        errors["base"] = "invalid_pair"
+                    else:
+                        params = resolved
+
+            if not errors:
                 # Map to house/unit for UID generation (backward compat)
                 self._new_device[CONF_DEVICE_HOUSE] = params.get(
                     "house", params.get("code", params.get("system", ""))

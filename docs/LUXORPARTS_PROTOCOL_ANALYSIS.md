@@ -562,7 +562,7 @@ LPD 13 −1 and LPD 6 +4 on houses 131–135, plus the recorded LPD 7 control on
 * No timing, repeats or command-format change is involved — the existing
   `P\x02 R10 S50+` path and the verified pulse widths are unaffected.
 
-## 10. The generated channels — 304 codes on the beta device type (v3.4.0.13)
+## 10. The generated codes — two paths, one list of pairs each (v3.4.0.14)
 
 v5 worked **5 of 5** on hardware, so the rule in §7b is no longer a hypothesis. The
 generator in `const.py` (`luxorparts_channel_codes()`) is that rule and nothing else:
@@ -611,16 +611,33 @@ LPD 13 channel 12, LPD 6 channel 16). Verified by construction and doctest, not 
 radio: the five v5 codes come out of the generator unchanged and the 304
 combinations the picker offers are all distinct.
 
-Where the channels live: on the **beta device type** (`selflearning-switch:lx_live`,
-widget 20), with **house = recorded LPD number** and **unit = channel 1–16**.
-`unit 1` is always the recorded pair (`luxorparts_channel_fields()` puts the
-recording's own field first), so an existing beta device keeps its code, and the UID
-stays `luxorparts_selflearning_<lpd>_<channel>` — there is no second namespace.
+Where the pairs live (v3.4.0.14): two device types, each **one list of on/off pairs
+behind one slider**.
 
-Only the 19 canonical LPD numbers are offered; the five duplicates are named in the
-picker labels, and stored devices using them still resolve through
-`LX_GROUND_TRUTH_CODES`. That is what makes every offered combination unique:
-19 × 16 = 304, not 24 × 16 = 384, of which 80 would repeat another entry.
+* **beta** — `selflearning-switch:lx_live`, widget 20, slider 1–24: `LX_BETA_PAIRS`
+  is the 19 recordings (`(lpd, 1)` in family order) followed by the five generated
+  pairs confirmed on hardware.
+* **experimental** — `selflearning-switch:lx_exp`, widget 21, slider 1–280:
+  `LX_EXPERIMENTAL_PAIRS` is every other `(lpd, channel)` pair.
+
+At add time the slider number is resolved to **house = recorded LPD number, unit =
+channel 1–16** (`_luxorparts_params()`), so the UID stays
+`luxorparts_selflearning_<lpd>_<channel>`, `unit 1` is always the recorded pair
+(`luxorparts_channel_fields()` puts the recording's own field first) and every send
+path is unchanged. The lists are disjoint and their 304 pairs are distinct code
+pairs; `lx_exp` exists so the same pair added on both paths cannot share a UID.
+
+The five duplicate recordings (LPD 9, 10, 17, 18, 19) are on neither list — each is
+one of the generated channels of its canonical family — and stored devices using
+them still resolve through `LX_GROUND_TRUTH_CODES`. That is what makes every offered
+pair unique: 19 × 16 = 304, not 24 × 16 = 384, of which 80 would repeat another
+entry.
+
+**Why folding the channels into one device type was reverted (v3.4.0.13 →
+v3.4.0.14):** v3.4.0.13 offered the pool on the beta type as an LPD `select` plus a
+unit 1–16. It was arithmetically right but replaced the beta path's single number
+with two fields and a dropdown. The paths are separate again, each with the
+one-slider form the beta path always had.
 
 ### Why the second device type was removed (v3.4.0.13)
 

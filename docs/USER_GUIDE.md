@@ -195,11 +195,12 @@ need to be taught a code before they respond.
 > button on its device page. Use it to re-pair a receiver without deleting and
 > re-adding the device — put the receiver in learn mode and press the button.
 
-> **Luxorparts / Cleverio 50969, 50970, 50972 (beta, Duo + Net v1):** Add by brand →
-> "Luxorparts — On/off, LPD 1-24 + channel 1-16 (beta, Duo + Net v1)" → pick an LPD
-> number, then a channel: unit 1 is that LPD's recorded pair, units 2–16 are the
-> other channels of the same receiver. Put the receiver in learn mode, then press
-> Learn. See [Section 15](#15-known-limitations) for details.
+> **Luxorparts / Cleverio 50969, 50970, 50972 (beta + experimental, Duo + Net v1):**
+> Add by brand → "Luxorparts — Recorded + confirmed pairs, one slider (beta, Duo + Net
+> v1)" → pick a pair number on the slider. The untested pairs are the separate
+> "Luxorparts — Generated pairs, untested, one slider (experimental, Duo + Net v1)"
+> type. Put the receiver in learn mode, then press Learn.
+> See [Section 15](#15-known-limitations) for details.
 
 ### 5.3 Kjell & Company / Tuya-MOES curtain motor (Duo only)
 
@@ -718,15 +719,22 @@ receivers. **Not available on ZNet / Net v2**
 **How to add a Luxorparts device (Duo):**
 
 1. **Configure → Add device → Add by brand**
-2. Select **"Luxorparts — On/off, LPD 1-24 + channel 1-16 (beta, Duo + Net v1)"**
-3. Pick an **LPD number** — one per recorded receiver (the five recordings that
-   duplicate another receiver are not offered; their label names the duplicate)
-4. Pick a **channel (unit) 1–16** — channel 1 is that LPD's recorded pair,
-   channels 2–16 are the other channels of the same receiver
-5. Put the receiver in learn mode (hold button until LED flashes)
-6. Press **Learn** in HA
+2. Select **"Luxorparts — Recorded + confirmed pairs, one slider (beta, Duo + Net v1)"**
+3. Pick a **pair number** on the slider. Pairs 1–19 are the 19 recorded receivers in
+   LPD order (1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 13, 14, 15, 16, 20, 21, 22, 23, 24);
+   pairs 20–24 are the five generated pairs that have been confirmed at a receiver —
+   LPD 7 channel 7, LPD 7 channel 8, LPD 5 channel 4, LPD 13 channel 12, LPD 6
+   channel 16
+4. Put the receiver in learn mode (hold button until LED flashes)
+5. Press **Learn** in HA
 
-**Recorded pairs and generated channels — 304 codes, one device type:**
+The other **280 generated pairs** are the separate
+**"Luxorparts — Generated pairs, untested, one slider (experimental, Duo + Net v1)"**
+type — one slider, pair 1 = LPD 1 channel 2, running LPD by LPD in channel order and
+skipping the 24 beta pairs. The full table is in
+[docs/LUXORPARTS_PAIRS.md](LUXORPARTS_PAIRS.md).
+
+**Two separate paths, one slider each:**
 
 A generated code is one bit-field move on a recording — no cipher work:
 
@@ -741,8 +749,8 @@ if (field ^ recorded_field) & 0x04:   # bit 2 picked the other frame
 Both halves of a pair carry the same field, and channel bit 2 (`0x04`) decides
 which of the two frames is the ON. Five recordings are the same receiver as an
 earlier one (LPD 4/9, 8/10, 13/18, 14/19, 15/17: bit 2 flipped and the roles
-swapped), so the 24 recordings describe **19 receivers**. Those five numbers are
-not offered in the picker, and devices already stored with them keep working.
+swapped), so the 24 recordings describe **19 receivers**. Those five recordings are
+not offered again, and devices already stored with them keep working.
 19 × 16 = **304 distinct device codes**, 29 of which have been at a receiver —
 the 24 recordings and LPD 7 channels 7/8, LPD 5 channel 4, LPD 13 channel 12 and
 LPD 6 channel 16.
@@ -762,8 +770,11 @@ produced those results have been removed.
 
 **Current limitations:**
 
-- 24 recorded pairs (LPD 1–24) and 304 generated codes; only 5 generated codes
-  have been verified on hardware
+- The pool is split into the beta list (19 recorded pairs + the 5 confirmed
+  generated pairs) and the experimental list (the 280 remaining generated pairs);
+  only the recordings and the 5 confirmed pairs have been at a receiver
+- A device deleted from its device page is remembered as ignored, so it cannot
+  re-add itself from an RF event or the app-config import on the next restart
 - The learn button sends the ON command (not a high-repeat learn signal) because
   the real learn signal does not flash the Duo hardware
 - **TellStick Net v1:** sends the same raw pulse bytes, but the v1 `S` payload

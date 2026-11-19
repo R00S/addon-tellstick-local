@@ -1564,10 +1564,12 @@ async def async_remove_config_entry_device(
     stored_devices: dict[str, Any] = dict(entry.options.get(CONF_DEVICES, {}))
     removed_any = False
     removed_uids: list[str] = []
+    removed_names: dict[str, str] = {}
 
     if device_uid.startswith("sensor_") and device_uid in stored_devices:
         # Exact match (unlikely — sensors use sensor_{id} without suffix)
-        del stored_devices[device_uid]
+        cfg = stored_devices.pop(device_uid)
+        removed_names[device_uid] = cfg.get(CONF_DEVICE_NAME, device_uid)
         removed_any = True
         removed_uids.append(device_uid)
         discovered.discard(device_uid)
@@ -1577,7 +1579,8 @@ async def async_remove_config_entry_device(
         sensor_prefix = f"{device_uid}_"
         for uid in list(stored_devices.keys()):
             if uid.startswith(sensor_prefix):
-                del stored_devices[uid]
+                cfg = stored_devices.pop(uid)
+                removed_names[uid] = cfg.get(CONF_DEVICE_NAME, uid)
                 removed_any = True
                 removed_uids.append(uid)
                 discovered.discard(uid)
@@ -1595,7 +1598,8 @@ async def async_remove_config_entry_device(
         discovered.discard(device_uid)
     elif device_uid in stored_devices:
         # Non-sensor device: exact UID match
-        del stored_devices[device_uid]
+        cfg = stored_devices.pop(device_uid)
+        removed_names[device_uid] = cfg.get(CONF_DEVICE_NAME, device_uid)
         removed_any = True
         removed_uids.append(device_uid)
         discovered.discard(device_uid)
@@ -1611,6 +1615,15 @@ async def async_remove_config_entry_device(
     if removed_any:
         new_options = dict(entry.options)
         new_options[CONF_DEVICES] = stored_devices
+        # A device deleted from its device page must not come back by itself.
+        # Without this, the next RF event (auto-add or discovery) or the
+        # app-config import on the next restart re-creates it.  Remember the
+        # UID as permanently ignored, exactly like the options-flow delete
+        # does when its "ignore" box is ticked.
+        ignored = dict(entry.options.get(CONF_IGNORED_UIDS, {}))
+        for uid in removed_uids:
+            ignored[uid] = removed_names.get(uid, uid)
+        new_options[CONF_IGNORED_UIDS] = ignored
         hass.config_entries.async_update_entry(entry, options=new_options)
 
         # Remove entity registry entries so that if the same device is later

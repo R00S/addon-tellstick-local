@@ -224,13 +224,19 @@ PROTOCOL_DEFAULT_MODELS: dict[str, str] = {
 }
 
 # ---------------------------------------------------------------------------
-# Luxorparts recorded families — the LPD picker's options
+# Luxorparts pair lists — one list per device path
 # ---------------------------------------------------------------------------
-# The 24 recorded Telldus Live pairs describe 19 distinct receivers: five
-# recordings are the same receiver as an earlier one (identical address pair,
-# bit 2 of the channel field flipped and the ON/OFF roles swapped), so they
-# produce identical codes and are not offered in the picker.  Devices already
-# stored with those LPD numbers keep working through LX_GROUND_TRUTH_CODES.
+# Every Luxorparts device is ONE on/off pair from ONE list: the beta list holds
+# what has been at a receiver, the experimental list everything else.  A single
+# slider picks the number; the pair behind it is stored as house = recorded LPD
+# number and unit = channel (1 = the recording), which is what the send paths
+# and the device UID already use.
+#
+# The 24 recorded pairs describe 19 distinct receivers: five recordings are the
+# same receiver as an earlier one (identical address pair, bit 2 of the channel
+# field flipped and the ON/OFF roles swapped), so they repeat codes already on
+# the list.  They are not offered again, and devices already stored with those
+# LPD numbers keep working through LX_GROUND_TRUTH_CODES.
 # See docs/LUXORPARTS_PROTOCOL_ANALYSIS.md §10.
 LX_GEN_ALIASES: dict[int, tuple[int, ...]] = {
     4: (9,),
@@ -250,21 +256,52 @@ LX_GEN_CANONICAL: dict[int, int] = {
     alias: base for base, aliases in LX_GEN_ALIASES.items() for alias in aliases
 }
 
-#: Picker labels; aliases are named so a stored LPD number can be recognised.
-LX_GEN_LPD_OPTIONS: dict[int, str] = {
-    lpd: (
-        f"LPD {lpd} (also recorded as {', '.join(map(str, LX_GEN_ALIASES[lpd]))})"
-        if lpd in LX_GEN_ALIASES
-        else f"LPD {lpd}"
-    )
-    for lpd in LX_GEN_FAMILIES
-}
-
 #: The 16 channel field values a device family can carry (bits 3-7, odd only).
 LX_GEN_FIELDS: tuple[int, ...] = tuple(range(1, 32, 2))
 
 #: Number of distinct device codes the generator can produce.
 LX_GEN_CODE_COUNT = len(LX_GEN_FAMILIES) * len(LX_GEN_FIELDS)
+
+#: Beta path — model (also the timing variant) and its pair list.
+LX_BETA_MODEL = "selflearning-switch:lx_live"
+
+#: Experimental path — its own model, so beta and experimental devices of the
+#: same pair never share a UID, and its own timing variant name.
+LX_EXPERIMENTAL_MODEL = "selflearning-switch:lx_exp"
+
+#: Beta list: the 19 distinct recorded pairs (channel 1 = the recording, in
+#: LX_GEN_FAMILIES order) followed by the five generated pairs confirmed at a
+#: receiver on 2026-11-19.
+LX_BETA_PAIRS: tuple[tuple[int, int], ...] = (
+    tuple((lpd, 1) for lpd in LX_GEN_FAMILIES)
+    + ((7, 7), (7, 8), (5, 4), (13, 12), (6, 16))
+)
+
+#: Experimental list: every generated pair the beta list does not carry.
+LX_EXPERIMENTAL_PAIRS: tuple[tuple[int, int], ...] = tuple(
+    (lpd, channel)
+    for lpd in LX_GEN_FAMILIES
+    for channel in range(1, len(LX_GEN_FIELDS) + 1)
+    if (lpd, channel) not in LX_BETA_PAIRS
+)
+
+
+def luxorparts_picker_pairs(model: str) -> tuple[tuple[int, int], ...]:
+    """Return the pair list behind a Luxorparts device type.
+
+    >>> len(luxorparts_picker_pairs(LX_BETA_MODEL))
+    24
+    >>> len(luxorparts_picker_pairs(LX_EXPERIMENTAL_MODEL))
+    280
+    >>> len(luxorparts_picker_pairs("selflearning-switch:hasta"))
+    0
+    """
+    variant = model.split(":", 1)[1] if ":" in model else ""
+    if variant == "lx_exp":
+        return LX_EXPERIMENTAL_PAIRS
+    if variant == "lx_live":
+        return LX_BETA_PAIRS
+    return ()
 
 # ---------------------------------------------------------------------------
 # Widget parameter definitions — from TelldusCenter 2.1.2
@@ -272,10 +309,10 @@ LX_GEN_CODE_COUNT = len(LX_GEN_FAMILIES) * len(LX_GEN_FIELDS)
 #
 # Each widget ID maps to a list of field specs.  A field spec is a dict:
 #   name     – telldusd parameter name (e.g. "house", "unit", "code")
-#   type     – "int", "letter", "str", "bool", or "select"
+#   type     – "int", "letter", "str", "bool", or "slider"
 #   default  – default value
 #   min/max  – for "int": numeric bounds; for "letter": start/end character
-#   options  – for "select": {value: label}
+#   (a "slider" field is one number, min..max, shown as an HA slider)
 #   random   – True if the field should get a random default
 # ---------------------------------------------------------------------------
 WIDGET_PARAMS: dict[int, list[dict]] = {
@@ -365,13 +402,16 @@ WIDGET_PARAMS: dict[int, list[dict]] = {
         {"name": "house", "type": "int", "default": 1, "min": 1, "max": 65535, "random": True},
         {"name": "unit", "type": "int", "default": 1, "min": 1, "max": 126},
     ],
-    # 20: Luxorparts — house = recorded LPD number, unit = channel 1-16.
-    #     Unit 1 is that LPD's recorded pair (the beta behaviour); units 2-16
-    #     are the other 15 channel fields of the same receiver.  Same device
-    #     type, model and UID as the beta path — only the unit range grew.
+    # 20: Luxorparts beta — one slider over the 24 pairs that have been at a
+    #     receiver (19 recordings + the 5 confirmed generated pairs).  There is
+    #     no house/unit form: the slider number IS the pair.
     20: [
-        {"name": "house", "type": "select", "default": 1, "options": LX_GEN_LPD_OPTIONS},
-        {"name": "unit", "type": "int", "default": 1, "min": 1, "max": 16},
+        {"name": "pair", "type": "slider", "default": 1, "min": 1, "max": len(LX_BETA_PAIRS)},
+    ],
+    # 21: Luxorparts experimental — one slider over the 280 generated pairs
+    #     that have never been at a receiver.
+    21: [
+        {"name": "pair", "type": "slider", "default": 1, "min": 1, "max": len(LX_EXPERIMENTAL_PAIRS)},
     ],
 }
 
@@ -430,12 +470,14 @@ DEVICE_CATALOG: list[tuple[str, str, str, int]] = [
     ("KlikAanKlikUit — Self-learning on/off", "arctech", "selflearning-switch:klikaanklikuit", 8),
     # Lidl/Silvercrest 433 MHz sockets use arctech selflearning protocol
     ("Lidl (Silvercrest) — Self-learning on/off", "arctech", "selflearning-switch:silvercrest", 8),
-    # NOTE: Luxorparts/Cleverio 50969, 50970, 50972 — BETA (Duo + Net v1)
-    # Raw RF pulse encoding, no telldusd protocol.  House = recorded LPD number,
-    # unit = channel 1-16 of that receiver's family (unit 1 = the recording).
-    # 19 families x 16 channels = 304 distinct codes, 29 hardware-verified —
-    # see docs/LUXORPARTS_PROTOCOL_ANALYSIS.md §8 and §10.
-    ("Luxorparts — On/off, LPD 1-24 + channel 1-16 (beta, Duo + Net v1)", "luxorparts", "selflearning-switch:lx_live", 20),
+    # NOTE: Luxorparts/Cleverio 50969, 50970, 50972 — BETA and EXPERIMENTAL
+    # (Duo + Net v1).  Raw RF pulse encoding, no telldusd protocol.  Each path
+    # is ONE list of on/off pairs behind ONE slider: the beta list holds the 19
+    # recorded pairs plus the 5 confirmed generated ones, the experimental list
+    # the 280 generated pairs that have never been at a receiver.
+    # See docs/LUXORPARTS_PROTOCOL_ANALYSIS.md §10 and docs/LUXORPARTS_PAIRS.md.
+    ("Luxorparts — Recorded + confirmed pairs, one slider (beta, Duo + Net v1)", "luxorparts", LX_BETA_MODEL, 20),
+    ("Luxorparts — Generated pairs, untested, one slider (experimental, Duo + Net v1)", "luxorparts", LX_EXPERIMENTAL_MODEL, 21),
     ("Nexa — Bell", "arctech", "bell:nexa", 4),
     ("Nexa — Code switch", "arctech", "codeswitch:nexa", 1),
     ("Nexa — Self-learning dimmer", "arctech", "selflearning-dimmer:nexa", 8),
@@ -1198,9 +1240,9 @@ def _lx_decrypt_payload(cipher24: int) -> tuple[int, int, int]:
 
 
 # ---------------------------------------------------------------------------
-# Generated channels — the other 15 channels of every recorded device family
+# Generated pairs — every recorded receiver address with another channel field
 # ---------------------------------------------------------------------------
-# A device pair is one recorded pair with the payload's low five bits (the
+# A generated pair is one recorded pair with the payload's low five bits (the
 # "channel field", bits 3-7 of the 28-bit code) retuned; both halves move
 # together.  Channel bit 2 (field value 0x04) decides which half the receiver
 # treats as ON, so when the new channel's bit 2 differs from the recording's
@@ -1209,10 +1251,10 @@ def _lx_decrypt_payload(cipher24: int) -> tuple[int, int, int]:
 # Confirmed on hardware (2026-11-19, 5/5): the five v5 test pairs were built
 # with exactly this rule and every one of them worked.
 #
-# This extends the beta device type instead of adding a second one: house is
-# the recorded LPD number and unit 1 is that LPD's recorded pair, exactly as
-# before.  Units 2-16 are its remaining field values in ascending order, so
-# every (LPD, unit) the picker offers is a distinct code pair.
+# The two device paths split these pairs between them: LX_BETA_PAIRS holds the
+# 19 recordings and the 5 confirmed pairs, LX_EXPERIMENTAL_PAIRS the remaining
+# 280 generated ones.  The send paths call luxorparts_generate_codes(house,
+# unit) for both — only the pair list behind the slider differs.
 
 #: Clears the channel field (bits 3-7) of a stored 28-bit code.
 LX_GEN_CHANNEL_MASK = 0x7FFFFF07
@@ -1422,6 +1464,9 @@ _LX_VARIANT_PARAMS: dict[str, tuple[int, int, int, int, int]] = {
     # gap_inter=LX_GAP_INTER for Net path; Duo path overrides with
     # LX_GAP_INTER_DUO to compensate for additive P-prefix pause.
     "lx_live": (10, LX_PULSE_SHORT, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
+    # Experimental pairs use the same timing as the recordings — only the pair
+    # list differs.  Separate name so a log line names the path it came from.
+    "lx_exp": (10, LX_PULSE_SHORT, LX_GAP_SHORT, LX_GAP_LONG, LX_GAP_INTER),
 }
 
 # Default parameters when variant is not found

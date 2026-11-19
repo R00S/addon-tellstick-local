@@ -1030,3 +1030,21 @@ recordings are 19 receivers, so 80 combinations repeated another receiver's code
 
 * No receiver here: the added channels and the renumbered channels have not been
   tried on hardware, and the Net v1 3-frame burst is still unverified.
+
+### v3.4.0.14 — separate paths, one slider each
+
+3.4.0.13 folded the generated channels into the beta device type with an LPD
+`select` and a 1–16 unit. That was not what the beta path was: the beta path was
+one number (the LPD), and the dropdown replaced it with two fields. Reverted and
+split:
+
+* **beta** (widget 20, `selflearning-switch:lx_live`): one slider, 1–24 — the 19
+  distinct recordings, then the five pairs confirmed on hardware.
+* **experimental** (widget 21, `selflearning-switch:lx_exp`): one slider, 1–280 —
+  the generated pairs that are not on the beta list.
+
+Each slider number is stored as house = LPD, unit = channel, so the send path,
+UID and learn button did not change; `_LX_VARIANT_PARAMS["lx_exp"]` names the
+experimental path in logs. Also fixed: a device deleted from its device page is
+now added to `ignored_uids`, so an RF event or the app-config import on the next
+restart cannot bring it back.

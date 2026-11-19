@@ -460,3 +460,33 @@ distinct code pair (304).
 Version 3.4.0.12 → **3.4.0.13**. Verified by doctests, `py_compile`,
 `tests/test_ha_integration.py`, strings/JSON parity, mirror diff and the pool script;
 not verified on hardware.
+
+### v3.4.0.14 — separate paths, one slider each
+
+v3.4.0.13 folded the generated channels into the beta device type: an LPD `select`
+plus a unit 1–16. That was not the beta path — the beta path was one number — and it
+was worse than the type it replaced. Split back into two device types, each ONE list
+of on/off pairs behind ONE slider:
+
+* beta — widget 20, `selflearning-switch:lx_live`, slider 1–24: the 19 distinct
+  recordings (the five duplicate recordings are not offered) then the five generated
+  pairs confirmed on hardware.
+* experimental — widget 21, `selflearning-switch:lx_exp`, slider 1–280: the remaining
+  generated pairs, none ever at a receiver.
+
+The slider value is resolved to house = LPD, unit = channel, so `switch.py`,
+`button.py`, `net_client.py`, `luxorparts_generate_codes()` and the device UID are
+unchanged. `LX_GEN_LPD_OPTIONS`, the `select` field type and the `select` branch of
+`_build_params_schema()` are removed; a `slider` field type renders an HA
+`NumberSelector` in slider mode.
+
+Deleting devices no longer resurrects them: `async_remove_config_entry_device()` now
+records every removed UID in `ignored_uids`, so auto-add, the discovery flow and
+`_import_app_configured_devices()` all skip it. Previously a deleted device came back
+on the next RF event or the next restart.
+
+Version 3.4.0.13 → **3.4.0.14**. Verified: doctests, `py_compile`, pyflakes,
+`tests/test_ha_integration.py`, mirror diff, strings/JSON parity, and a script that
+checks 24 + 280 pairs (disjoint, 304 distinct code pairs, slider → house/unit → same
+code pair, both sliders serialize as `NumberSelector` sliders). Not verified on
+hardware.

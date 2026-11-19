@@ -365,10 +365,16 @@ Once paired, you can control the device with normal on/off commands through the
 ### 🟡 Luxorparts / Cleverio 50969, 50970, 50972 — Beta (Duo / Net v1)
 
 On/off works on **TellStick Duo** and on an original **TellStick Net (v1)** using raw
-RF pulse encoding with pre-captured Telldus Live codes. Add by brand →
-"Luxorparts — On/off, LPD 1-24 + channel 1-16 (beta, Duo + Net v1)" → pick an LPD
-number and a channel (unit 1 = the recorded pair) → put receiver in learn mode →
-press Learn.
+RF pulse encoding with pre-captured Telldus Live codes. Two separate device types,
+each with one list of on/off pairs behind one slider:
+
+* **"Luxorparts — Recorded + confirmed pairs, one slider (beta, Duo + Net v1)"** —
+  pairs 1–19 are the recorded receivers in LPD order, 20–24 the five generated pairs
+  confirmed at a receiver.
+* **"Luxorparts — Generated pairs, untested, one slider (experimental, Duo + Net v1)"**
+  — the 280 remaining generated pairs, none ever at a receiver.
+
+Pick the pair number, put the receiver in learn mode, then press Learn.
 
 **Not available on TellStick ZNet / Net v2.** If you need Net/ZNet support
 or have additional working codes, please
