@@ -122,3 +122,68 @@ firmware-free route to Duo-level protocol support.
 **Not done:** no attempt to decompile the whole rootfs, no vendor source
 committed. `morluto/rea` was evaluated and rejected: it targets native, JS,
 .NET and Android binaries (via Ghidra/IDA/Hopper), not Python 2.7 bytecode.
+
+## Session — 2026-11-19 — Luxorparts: protocol re-analysis and generated test codes
+
+**Trigger:** the owner reported that all 24 recorded Luxorparts LPD pairs work
+through the Duo path. That confirmed the replay path but reopened the real
+question — can codes be generated instead of only replayed? An earlier claim
+("no cipher; any payload will do") did not survive review of the 62 captures and
+was withdrawn.
+
+### Research — `docs/LUXORPARTS_PROTOCOL_ANALYSIS.md`
+
+- The frame is 25 bits. Only payload bit 0 is constant; there is no preamble and
+  no checksum. The frame MSB is a family marker (`0` Live, `1` remote).
+- Remote family (7 buttons, 14 codes) is a fixed template `0x5D55D5` with five
+  data bits: state (bit 1), buttons (9/11/13), remote (17).
+- Live family (24 pairs, 48 codes) has no constant bit except bit 0, and ON/OFF
+  are independent codes rather than a state-bit pair.
+- The 48 Live codes collapse to 19 distinct `ON^OFF` values: five pairs of LPD
+  entries are one bit apart in a criss-cross (`0x04`) — LPD 4/9, 8/10, 13/18,
+  14/19, 15/17. That is an unexplained field, not 24 independent devices.
+- The Homey nibble cipher is ruled out for the remote family (a chain cipher
+  cannot flip a single bit); it stays an unconfirmed candidate for Live.
+- Seeds: all 48 Live codes regenerate from `payload24 >> 1` in
+  `0x206CC3`–`0x6DB763`; B-wide reproduces all 62 including the remote seeds
+  `0xAEAFEB`–`0xAFBEEB`.
+- Generation remains unproven: every code that has ever worked is a recording.
+
+### Test device
+
+Opt-in device type **"Luxorparts — Generated test codes (beta, Duo only)"**,
+picks 101–105 = LX-T1…LX-T5 (`LX_TEST_LIST` / `LX_TEST_CODES`, widget 21). Each
+pair clones the remote template with a button field no capture contains (bit 9,
+bit 11, bits 9+11+13, none, bit 9 + bit 17), frame MSB set. The recorded LPD
+picker stays 1–24 and the codes are deliberately outside it. Timing and the
+`P\x02 R10 S50+` path are unchanged.
+
+### Documentation corrections
+
+- §6's `stored28` examples had dropped the frame MSB (`0x2EBBEA8` instead of
+  `0xAEBBEA8`); corrected.
+- LPD 26/27 are cross-assembled: each row carries one ON and one OFF code from
+  different buttons. The field table and the anomalies paragraph were rewritten,
+  and `docs/LUXORPARTS_PAIRS.md` now flags the rows and records R1-B/R1-D as
+  half-pairs.
+- `docs/LUXORPARTS_RF_PROTOCOL.md` §4/§7.1 carry explicit superseded markers.
+
+### Version
+
+3.3.3.1 → **3.3.3.2** for the test device; 3.3.3.2 → **3.3.3.3** with this
+chores pass (manifests only, no further code change).
+
+### Verification
+
+- `tests/test_ha_integration.py` ALL PASS at 3.3.3.2 (HA 2025.1.4); `py_compile`
+  and the `const.py` doctests pass.
+- Script assertions: five pairs / ten unique codes, MSB set, ON/OFF differ only
+  in bit 1, zero overlap with the 48 recorded codes, widget 21 accepts 101–105
+  and rejects 106.
+- Every table in the analysis was re-derived from the captures.
+
+### Not verified
+
+- No Luxorparts receiver here: whether a 50969 learns a generated pair is the
+  whole point of the test device and is still untested.
+- No Net v1 hardware: the dim fix still awaits the reporter's confirmation.
