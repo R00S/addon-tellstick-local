@@ -343,3 +343,55 @@ which is why no OFF ever matched.
 
 * No receiver here: whether units other than 6 are separate devices at a 50969 is
   the next hardware test.
+
+## Session — 2026-11-19 (seventh): v4 failed; the reversal in v1 explained
+
+### What the user reported
+
+v3.4.0.10 (houses 101–106, new units of the recorded LPD 7 address pair): only **B1
+and B3** learned and turned on, with **no OFF**; **B2, B4 and B5 could not learn at
+all**; control fine. The owner also restated the hard facts: scheme A never worked,
+and v1 is the only build whose OFF ever worked — two correct, two reversed but
+working, one reversed and flawed.
+
+### What the data says
+
+* Every generated build has now failed: A, v2, the plaintext pairs, v3 and v4.
+  Every one of them invented the encrypted part of the frame.
+* v1 differs in exactly one way: it is a **recorded** pair shifted by `+2·offset`,
+  and the cipher's nibble chain means that shift rewrites only the control byte —
+  both recorded addresses survive.
+* The payload's low 5 bits are the **channel field**, shared by both halves of every
+  recorded pair. Channel bit 2 (`0x04`) decides which of the two frames is ON: five
+  recorded pairs are siblings with that bit flipped and the roles swapped
+  (LPD 4/9, 8/10, 13/18, 14/19, 15/17).
+* v1's +1, +2 and +5 offsets cleared bit 2 and ran reversed; +3 and +4 kept it and
+  worked — exactly the hardware result. +5 also carried into bit 5, which is why it
+  was flawed as well.
+
+### Changed
+
+* `const.py`: v5 group `LX_TEST_V5_LIST` / `LX_TEST_V5_CODES` (houses 131–135),
+  `LX_CONTROL_V5_HOUSE = 136` / `LX_CONTROL_V5_CODES`, lookups in
+  `luxorparts_generate_codes()`; widget **24** plus its catalog entry.
+* `config_flow.py`: `async_step_lx_test_v5()`, reusing `_add_lx_test_switches()`.
+* `strings.json` / `translations/en.json`: `lx_test_v5`, `lx_test_v5_added`.
+* README, USER_GUIDE §15, `LUXORPARTS_PAIRS.md`, `LUXORPARTS_TIMELINE.md`,
+  `LUXORPARTS_PROTOCOL_ANALYSIS.md` §7/§9.
+
+### Version
+
+3.4.0.10 → **3.4.0.11**.
+
+### Verification
+
+* All five v5 pairs keep their recording's two addresses, channel bit 2, payload bit
+  0 in both halves, and ON ≠ OFF; ten distinct codes; 131/132 are v1's B3/B4 on
+  purpose; control 136 is the recorded LPD 7 pair.
+* `const.py` doctests, `py_compile`, `tests/test_ha_integration.py`,
+  `strings.json` == `translations/en.json`, mirror copies byte-identical.
+
+### Not verified
+
+* No receiver here: whether a shifted recording is accepted as a separate device,
+  and whether B3…B5 behave like B1/B2, is the next hardware test.

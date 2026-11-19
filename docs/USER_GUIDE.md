@@ -756,12 +756,32 @@ only)"**, keeps the first build beside it (houses 111–115 plus its own control
 both can be taught in one session.
 
 Hardware results on a 50969 (2026-11-19): scheme A (five remote-family clones)
-was **refused outright**; scheme B v1 is the only build whose switches worked
-**both ways** — B3 and B4 correct, B1 and B5 reversed, B2 refused. Every later
-build learned every ON and answered **no OFF**. Decrypting the v1 codes shows why:
-**bit 6 of the control byte is the state bit** (0 = ON, 1 = OFF), so a pair only
-runs the right way up when its ON half has bit 6 clear — and every failed build had
-replaced the recorded pair's second address with one of its own.
+was **refused outright**. Scheme B v1 is the only build whose OFF ever worked: of
+its five switches, two were correct both ways, two were reversed but working, one
+was reversed and flawed. Every later build — v2's address offset, the plaintext
+pairs, v3's rebuilt OFF and v4's new units — either refused to learn or answered
+**ON only, never an OFF**.
+
+The v1 codes explain the split, because they are the recorded LPD 7 pair shifted
+inside the frame's 5-bit channel field. Channel bit 2 carries the on/off side of a
+pair: five recorded pairs appear as siblings that are the same two frames with that
+bit flipped and the roles swapped (LPD 4/9, 8/10, 13/18, 14/19, 15/17). v1's
+offsets +1, +2 and +5 cleared that bit and ran reversed; +3 and +4 kept it and
+worked.
+
+Device type **"Luxorparts — Test device v5, corrected shifts (beta, Duo only)"**
+applies that rule on purpose: five recorded pairs, each shifted only inside the
+channel field with bit 2 held, plus a CONTROL that replays the recorded LPD 7 pair.
+LPD 7 +3 and +4 are v1's two working pairs, shipped again as the reference.
+
+| Switch | Pair | Channel | ON | OFF |
+| --- | --- | --- | --- | --- |
+| LX-B1 v5 | LPD 7 +3 | `0x0D` | `0x2450C68` | `0x2633668` |
+| LX-B2 v5 | LPD 7 +4 | `0x0F` | `0x2450C78` | `0x2633678` |
+| LX-B3 v5 | LPD 5 −1 | `0x05` | `0x6BD1C28` | `0x6DB7628` |
+| LX-B4 v5 | LPD 13 −1 | `0x15` | `0x53F5EA8` | `0x5C548A8` |
+| LX-B5 v5 | LPD 6 +4 | `0x1F` | `0x32128F8` | `0x3E2CDF8` |
+| CONTROL ON/OFF v5 | LPD 7 | `0x07` | `0x2450C38` | `0x2633638` |
 
 **Current limitations:**
 

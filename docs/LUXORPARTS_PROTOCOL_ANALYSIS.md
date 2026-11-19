@@ -477,6 +477,55 @@ The open question is now narrow: does a 50969 treat a different unit value as a
 different device? If yes, recorded address pair × 16 valid units gives 384
 distinct devices without ever knowing the encoder.
 
+## 7b. v4 failed; the channel field carries the state (v3.4.0.11)
+
+**Hardware (2026-11-19, v3.4.0.10):** only B1 and B3 (units 9 and 7) learned and
+turned their socket on, with **no OFF** on either; B2, B4 and B5 were refused at
+learn time; the control worked. Every build that invents the encrypted part of the
+frame has now failed — five of them.
+
+The v1 group is still the only source of working OFFs, and it is enough. A v1 code
+is the recorded LPD 7 pair shifted by `+2·offset` in the 24-bit payload. Because the
+cipher is a nibble chain running from the payload's least-significant nibble
+upwards, that shift rewrites only the control byte: both recorded addresses
+(`0xD510` on, `0xD5B1` off) survive untouched. "v1 kept two addresses" is therefore
+not a property of the code but of the arithmetic — v1 is the only build that never
+touched the encrypted part.
+
+The payload's low five bits — the **channel field** — are shared by the two halves
+of every recorded pair (bits 1–4 never differ within a pair; bit 0 is always 1 over
+all 62 captured codes). And the channel field is what decides the ON/OFF side: five
+recorded pairs are siblings that are the same two frames with channel bit 2 (`0x04`)
+flipped and the roles swapped.
+
+| Pair | channel | sibling | channel |
+| --- | --- | --- | --- |
+| LPD 4 | `0x1F` | LPD 9 | `0x1B` |
+| LPD 8 | `0x07` | LPD 10 | `0x03` |
+| LPD 13 | `0x17` | LPD 18 | `0x13` |
+| LPD 14 | `0x1D` | LPD 19 | `0x19` |
+| LPD 15 | `0x01` | LPD 17 | `0x05` |
+
+v1 sits on channel `0x07` and its offsets walked that bit:
+
+| offset | channel | bit 2 | result |
+| --- | --- | --- | --- |
+| +1 | `0x09` | 0 | reversed |
+| +2 | `0x0B` | 0 | reversed |
+| +3 | `0x0D` | 1 | correct |
+| +4 | `0x0F` | 1 | correct |
+| +5 | `0x11` | 0 | reversed; the shift also carried into bit 5 (encrypted field) |
+
+That is the answer to "why were the reversed ones reversed": their ON frame decoded
+as an OFF frame because the shifted channel cleared bit 2. The earlier bit-6 reading
+of the control byte agreed with all five v1 outcomes but is a property of the v1
+family only — it does not survive the shift into other recordings, so the channel
+field is the better model.
+
+**v5 (`v3.4.0.11`)** therefore keeps the recorded frames and moves only inside the
+channel field with bit 2 held: LPD 7 +3 and +4 (v1's two working pairs), LPD 5 −1,
+LPD 13 −1 and LPD 6 +4 on houses 131–135, plus the recorded LPD 7 control on 136.
+
 ## 8. Still unknown
 
 * What the `0x04` field in §3.3 is (counter, state or parity), and whether the
@@ -502,6 +551,8 @@ distinct devices without ever knowing the encoder.
   (`LX_TEST_UNITS = (9, 11, 7, 8, 10)`), so every switch is a distinct device.
   `_lx_decrypt_payload()` stays (it is how the state bit and the unit space were
   established). The v3 group and `LX_LIVE_STATE_XOR` are removed.
+* **v3.4.0.11** adds v5 (widget 24): recorded pairs shifted only inside the channel
+  field with channel bit 2 held — houses 131–135, control 136.
 * If B succeeds, `luxorparts_generate_codes()` can return scheme-B values for
   unknown houses; the recorded pairs stay authoritative for LPD 1–24.
 * **If** B passes its hardware test, the LPD picker could grow past 24 by

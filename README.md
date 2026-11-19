@@ -663,15 +663,36 @@ be taught in one session and compared.
 Learn button: a receiver in learn mode learns the code it hears, so pair a switch
 by pressing its **on** button.
 
+A third device type, **"Luxorparts — Test device v5, corrected shifts (beta, Duo
+only)"**, is the build that follows from that result. Its pairs are **recorded**
+pairs shifted by a few counts inside the frame's 5-bit channel field — nothing in
+the encrypted part of the frame is invented, which is the one thing every other
+build got wrong:
+
+| Switch | Pair | Channel | ON | OFF |
+| --- | --- | --- | --- | --- |
+| LX-B1 v5 | LPD 7 +3 | `0x0D` | `0x2450C68` | `0x2633668` |
+| LX-B2 v5 | LPD 7 +4 | `0x0F` | `0x2450C78` | `0x2633678` |
+| LX-B3 v5 | LPD 5 −1 | `0x05` | `0x6BD1C28` | `0x6DB7628` |
+| LX-B4 v5 | LPD 13 −1 | `0x15` | `0x53F5EA8` | `0x5C548A8` |
+| LX-B5 v5 | LPD 6 +4 | `0x1F` | `0x32128F8` | `0x3E2CDF8` |
+| CONTROL ON/OFF v5 | LPD 7 | `0x07` | `0x2450C38` | `0x2633638` |
+
+Channel bit 2 (`0x04`) carries the on/off side of a pair: five recorded pairs are
+siblings that are the same two frames with that bit flipped and the ON/OFF roles
+swapped (LPD 4/9, 8/10, 13/18, 14/19, 15/17). v1's offsets walked that bit — +1, +2
+and +5 cleared it and ran reversed, +3 and +4 kept it and worked — which is why
+LX-B1 and LX-B2 are v1's two working pairs again.
+
 > **Hardware results (2026-11-19), one 50969:** scheme A (remote-family clones) was
-> refused outright. Scheme B v1 (LPD 7 seeds +1…5) is the only build with switches
-> that worked **both ways**: B3/B4 correct, B1/B5 reversed, B2 refused. Every later
-> build — address-bit offsets, one plaintext record encrypted twice, and a recorded
-> ON with the OFF rebuilt at its own address — learned every ON and answered **no
-> OFF**. Decrypting the v1 codes explains all of it: **bit 6 of the control byte is
-> the state bit** (0 = ON, 1 = OFF), so the three reversed switches were exactly the
-> three whose ON half carried bit 6 = 1 — and every failed build had thrown away the
-> recorded pair's second address.
+> refused outright. Scheme B v1 (LPD 7 seeds +1…5) is the only build whose OFF ever
+> worked: two switches correct both ways, two reversed but working, one reversed and
+> flawed. Every later build — address-bit offsets, one plaintext record encrypted
+> twice, a recorded ON with the OFF rebuilt at its own address, and new units of the
+> recorded address pair — either refused to learn or learned every ON and answered
+> **no OFF**. The reason is in the v1 codes: they are a recorded pair shifted inside
+> the frame's channel field, so the encrypted part of the frame — the part that
+> carries the pair's own ON/OFF relation — was never invented.
 
 **Current limitations:**
 

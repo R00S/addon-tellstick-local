@@ -75,8 +75,11 @@ from .const import (
     LX_CONTROL_LABEL,
     LX_CONTROL_V1_HOUSE,
     LX_CONTROL_V1_LABEL,
+    LX_CONTROL_V5_HOUSE,
+    LX_CONTROL_V5_LABEL,
     LX_TEST_LIST,
     LX_TEST_V1_LIST,
+    LX_TEST_V5_LIST,
     PROTOCOL_GENERIC_RF,
     PROTOCOL_MODEL_LABELS,
     PROTOCOL_MODEL_MAP,
@@ -2254,6 +2257,9 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
             if widget == 22:
                 # The same, carrying the first scheme-B pairs (seeds +1…5).
                 return await self.async_step_lx_test_v1()
+            if widget == 24:
+                # v1's arithmetic with the channel's bit 2 held.
+                return await self.async_step_lx_test_v5()
             return await self.async_step_params()
 
         return self.async_show_form(
@@ -2563,6 +2569,33 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
 
         return self.async_show_form(
             step_id="lx_test_v1",
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "name": self._new_device.get(CONF_DEVICE_NAME, ""),
+            },
+        )
+
+    async def async_step_lx_test_v5(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Add the v5 Luxorparts test device: v1's arithmetic, rule made explicit.
+
+        Every pair is a **recorded** pair shifted inside the frame's channel
+        field — nothing in the encrypted part is invented — and the shift keeps
+        channel bit 2 unchanged, which is what made v1's B3 and B4 work and its
+        B1, B2 and B5 run reversed.  Five switches (houses 131-135) plus a
+        control on house 136 that replays the recorded LPD 7 pair.
+        """
+        if user_input is not None:
+            switches: list[tuple[int, str]] = [
+                (num, f"LX-B{num - 130} v5") for num, *_rest in LX_TEST_V5_LIST
+            ]
+            switches.append((LX_CONTROL_V5_HOUSE, LX_CONTROL_V5_LABEL))
+            await self._add_lx_test_switches(switches)
+            return self.async_abort(reason="lx_test_v5_added")
+
+        return self.async_show_form(
+            step_id="lx_test_v5",
             data_schema=vol.Schema({}),
             description_placeholders={
                 "name": self._new_device.get(CONF_DEVICE_NAME, ""),

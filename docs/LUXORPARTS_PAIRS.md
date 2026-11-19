@@ -193,3 +193,39 @@ Sixteen of the 32 unit values are unusable: their frames would not have payload
 bit 0 set, and bit 0 = 1 is the one bit fixed in all 62 captured codes
 (`LUXORPARTS_PROTOCOL_ANALYSIS.md` §2). The skipped units are 0–5, 13, 15–21, 29
 and 31.
+
+### v5 — v1 with the channel bit held
+
+Device type **"Luxorparts — Test device v5, corrected shifts (beta, Duo only)"**
+(widget 24, houses 131–136). v1 is the only build whose OFF ever worked, and the
+reason is now pinned down:
+
+* a v1 code is a **recorded pair shifted by `+2·offset`** in the 24-bit payload;
+  the cipher's nibble chain runs from the payload's least-significant nibble
+  upwards, so only the control byte changes — both recorded addresses stay put;
+* the payload's low five bits are the **channel field**, shared by the two halves
+  of every recorded pair;
+* channel bit 2 (`0x04`) selects which of the two frames is the ON: five recorded
+  pairs are siblings that are the same frames with that bit flipped and the roles
+  swapped (LPD 4/9, 8/10, 13/18, 14/19, 15/17).
+
+v1's offsets walked that bit. `+3` (`0x0D`) and `+4` (`0x0F`) kept it and worked;
+`+1` (`0x09`), `+2` (`0x0B`) and `+5` (`0x11`) cleared it and ran reversed, and
+`+5` also carried into bit 5, which is why that one was flawed as well.
+
+| Switch | Pair | Channel | ON | OFF |
+|--------|------|---------|----|-----|
+| LX-B1 v5 | LPD 7 +3 | `0x0D` | `0x2450C68` | `0x2633668` |
+| LX-B2 v5 | LPD 7 +4 | `0x0F` | `0x2450C78` | `0x2633678` |
+| LX-B3 v5 | LPD 5 −1 | `0x05` | `0x6BD1C28` | `0x6DB7628` |
+| LX-B4 v5 | LPD 13 −1 | `0x15` | `0x53F5EA8` | `0x5C548A8` |
+| LX-B5 v5 | LPD 6 +4 | `0x1F` | `0x32128F8` | `0x3E2CDF8` |
+| CONTROL v5 | LPD 7 | `0x07` | `0x2450C38` | `0x2633638` |
+
+B1 and B2 are v1's two working pairs, shipped again as the reference; B3…B5 apply
+the same rule to other recordings so the five switches cannot be variants of one
+pair. Nothing in the encrypted part of the frame is invented — the one thing every
+build after v1 got wrong.
+
+**Hardware result (2026-11-19, v3.4.0.10):** only v4's B1 and B3 learned and turned
+on (no OFF on either); B2, B4 and B5 could not learn at all; the control worked.

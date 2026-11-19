@@ -336,6 +336,11 @@ WIDGET_PARAMS: dict[int, list[dict]] = {
     #     one session; async_step_lx_test_v1() adds its five switches and a
     #     control.
     22: [],
+    # 24: Luxorparts test device v5 — v1's arithmetic with the rule it stumbled
+    #     on made explicit (recorded pair shifted inside the channel field, bit
+    #     2 of the channel kept).  async_step_lx_test_v5() adds its five
+    #     switches and a control.
+    24: [],
 }
 
 # ---------------------------------------------------------------------------
@@ -401,6 +406,7 @@ DEVICE_CATALOG: list[tuple[str, str, str, int]] = [
     # docs/LUXORPARTS_PROTOCOL_ANALYSIS.md §7.
     ("Luxorparts — Test device, 5 switches (beta, Duo only)", "luxorparts", "selflearning-switch:lx_live", 21),
     ("Luxorparts — Test device v1, seeds +1..5 (beta, Duo only)", "luxorparts", "selflearning-switch:lx_live", 22),
+    ("Luxorparts — Test device v5, corrected shifts (beta, Duo only)", "luxorparts", "selflearning-switch:lx_live", 24),
     ("Luxorparts — On/off (beta, Duo only)", "luxorparts", "selflearning-switch:lx_live", 20),
     ("Nexa — Bell", "arctech", "bell:nexa", 4),
     ("Nexa — Code switch", "arctech", "codeswitch:nexa", 1),
@@ -1211,6 +1217,80 @@ LX_CONTROL_V1_CODES: dict[tuple[int, int], dict[str, int]] = {
     (LX_CONTROL_V1_HOUSE, 1): dict(LX_GROUND_TRUTH_CODES[(LX_LIVE_CONTROL_LPD, 1)])
 }
 
+# ---------------------------------------------------------------------------
+# Scheme B v5 — v1's arithmetic, with the rule it stumbled on made explicit
+#
+# Hardware history (one 50969, 2026-11-19):
+#
+#   * Scheme A (remote-family clones): never worked, removed.
+#   * v1 (LPD 7 seeds +1…5): the ONLY build whose OFF ever worked.  B3 and B4
+#     (offsets +3, +4) were right both ways; B1 and B2 (offsets +1, +2) worked
+#     both ways but with on/off reversed; B5 (offset +5) was reversed and flawed.
+#   * v2, plaintext pairs, v3, v4: every one failed — refused at learn, or ON
+#     only, never an OFF.
+#
+# v1's five codes are the recorded LPD 7 pair shifted by +2·offset in the
+# 24-bit payload.  The cipher is a nibble chain that runs from the payload's
+# least-significant nibble upwards, so such a shift changes only the last
+# plaintext byte — the control byte — and leaves both addresses (0xD510 for ON,
+# 0xD5B1 for OFF) exactly as recorded.  That is why v1 could work at all: it
+# never invents an address, it only retunes the channel field of a real pair.
+#
+# The frame's low five bits are that channel field, and they are shared by the
+# two halves of every recorded pair (verified over all 24 pairs: payload bits
+# 1-4 never differ between the halves, and bit 0 is always 1).  The captures
+# also show how the field carries the state: five pairs come in siblings that
+# are the SAME two frames with channel bit 2 (0x04) flipped and the ON/OFF
+# roles swapped — LPD 4/9, 8/10, 13/18, 14/19 and 15/17.  For a fixed pair of
+# frames, then, channel bit 2 selects which one is ON.
+#
+# v1 walked that bit without knowing it:
+#
+#     offset  channel  channel bit 2   result
+#     +1      0x09     0               reversed (bit 2 flipped vs 0x07)
+#     +2      0x0B     0               reversed (bit 2 flipped vs 0x07)
+#     +3      0x0D     1               correct  (bit 2 kept)
+#     +4      0x0F     1               correct  (bit 2 kept)
+#     +5      0x11     0               reversed, and the shift carried into bit
+#                                     5 — part of the encrypted field — which is
+#                                     why this one was also "flawed"
+#
+# Read the other way round: the two switches that worked are exactly the two
+# whose channel kept bit 2 of the recorded pair's channel (0x07).  That is why
+# the reversed ones were reversed — their ON frame decoded as an OFF frame.
+#
+# v5 repeats v1's arithmetic with that rule made explicit: take a recorded
+# pair, shift both halves by the same small even amount, keep the channel's
+# bit 2 unchanged, and stay inside the 4-bit channel field so the shift never
+# carries into the encrypted part.  Nothing in the encrypted part of the frame
+# is invented — the one thing every other build got wrong.
+#
+# B1 and B2 are v1's offsets +3 and +4 on LPD 7, the two pairs that worked
+# both ways on hardware; B3…B5 apply the same rule to other recordings so the
+# five switches cannot be variants of one pair.
+# ---------------------------------------------------------------------------
+
+# Columns: (test_num, on_code, off_code, description)
+LX_TEST_V5_LIST: list[tuple[int, int, int, str]] = [
+    (131, 0x2450C68, 0x2633668, "LPD 7 +3, channel 0x0D (v1 B3, proven)"),
+    (132, 0x2450C78, 0x2633678, "LPD 7 +4, channel 0x0F (v1 B4, proven)"),
+    (133, 0x6BD1C28, 0x6DB7628, "LPD 5 -1, channel 0x05"),
+    (134, 0x53F5EA8, 0x5C548A8, "LPD 13 -1, channel 0x15"),
+    (135, 0x32128F8, 0x3E2CDF8, "LPD 6 +4, channel 0x1F"),
+]
+
+LX_TEST_V5_CODES: dict[tuple[int, int], dict[str, int]] = {
+    (num, 1): {"on": on_code, "off": off_code}
+    for num, on_code, off_code, _ in LX_TEST_V5_LIST
+}
+
+# Control of the v5 test device (house 136): the recorded LPD 7 pair again.
+LX_CONTROL_V5_HOUSE = 136
+LX_CONTROL_V5_LABEL = "CONTROL ON/OFF (LPD 7) v5"
+LX_CONTROL_V5_CODES: dict[tuple[int, int], dict[str, int]] = {
+    (LX_CONTROL_V5_HOUSE, 1): dict(LX_GROUND_TRUTH_CODES[(LX_LIVE_CONTROL_LPD, 1)])
+}
+
 # The control switch of the test device (house 106): the recorded LPD 7 pair,
 # byte for byte.  Kept out of LX_GROUND_TRUTH_CODES so the LPD picker still
 # offers LPD 1-24 only.
@@ -1401,6 +1481,15 @@ def luxorparts_generate_codes(house: int, unit: int) -> dict[str, int]:
     control_v1 = LX_CONTROL_V1_CODES.get((house, unit))
     if control_v1 is not None:
         return dict(control_v1)
+
+    # v5 test pairs (houses 131-135) and their control (136) — v1's arithmetic
+    # with the channel's bit 2 held, see the block above.
+    test_v5 = LX_TEST_V5_CODES.get((house, unit))
+    if test_v5 is not None:
+        return dict(test_v5)
+    control_v5 = LX_CONTROL_V5_CODES.get((house, unit))
+    if control_v5 is not None:
+        return dict(control_v5)
 
     # Map UI unit (1-based) to protocol unit (0-based, 5-bit, 0–31)
     proto_unit = max(0, unit - 1) & 0x1F

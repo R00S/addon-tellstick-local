@@ -807,6 +807,96 @@ addresses with a different unit.
 
 ---
 
+## 2026-11-19 — v4 tested; the v1 reversal explained (v3.4.0.11)
+
+**Reported by the project owner** (v3.4.0.10, widget 21, houses 101–106): only
+**B1 and B3** learned and turned their socket on — with **no OFF** on either — while
+**B2, B4 and B5 could not learn at all**. The control worked as usual. The owner
+also restated the two hard facts: scheme A never worked, and **v1 is the only build
+whose OFF ever worked** — two switches correct, two reversed but working, one
+reversed and flawed.
+
+### Why the reversed ones were reversed
+
+v1's five codes are the recorded LPD 7 pair shifted by `+2·offset` in the 24-bit
+payload. The cipher is a nibble chain that runs from the payload's least-significant
+nibble upwards, so that shift changes only the last plaintext byte — the control
+byte — and leaves both recorded addresses (`0xD510` on, `0xD5B1` off) untouched.
+That is the whole reason v1 could work: it never invents an address.
+
+The frame's low five bits are the **channel field**, shared by the two halves of
+every recorded pair (all 24: payload bits 1–4 never differ inside a pair, bit 0 is
+always 1). The captures show what that field does with the state: five recorded
+pairs come as **siblings** that are the same two frames with channel bit 2 (`0x04`)
+flipped and the ON/OFF roles swapped.
+
+| Pair | channel | sibling | channel |
+| --- | --- | --- | --- |
+| LPD 4 | `0x1F` | LPD 9 | `0x1B` |
+| LPD 8 | `0x07` | LPD 10 | `0x03` |
+| LPD 13 | `0x17` | LPD 18 | `0x13` |
+| LPD 14 | `0x1D` | LPD 19 | `0x19` |
+| LPD 15 | `0x01` | LPD 17 | `0x05` |
+
+So for a fixed pair of frames, channel bit 2 decides which frame is the ON. v1
+walked that bit without knowing it — the recorded pair sits on channel `0x07`
+(bit 2 set):
+
+| offset | channel | bit 2 | result |
+| --- | --- | --- | --- |
+| +1 | `0x09` | 0 | reversed |
+| +2 | `0x0B` | 0 | reversed |
+| +3 | `0x0D` | 1 | correct |
+| +4 | `0x0F` | 1 | correct |
+| +5 | `0x11` | 0 | reversed, and the shift carried into bit 5 (part of the encrypted field) — the flawed one |
+
+The two that worked are exactly the two whose channel kept bit 2. The reversed ones
+sent an ON press that the receiver decoded as an OFF.
+
+### v4 on hardware
+
+v4 replaced the recorded frames with synthetic ones (`encrypt(D5,0x10,0x80|unit)`
+and `encrypt(D5,0xB1,0x40|unit)`) — the same mistake as every build after v1: the
+encrypted part of the frame is invented, so its channel/state relation is not the
+one the receiver knows. Two of five learned, three did not, and neither learned
+switch answered an OFF.
+
+### Changed
+
+* `const.py`: new v5 group — `LX_TEST_V5_LIST` / `LX_TEST_V5_CODES` (houses
+  131–135), `LX_CONTROL_V5_HOUSE = 136`, `LX_CONTROL_V5_CODES` and lookups in
+  `luxorparts_generate_codes()`; widget **24** and its catalog entry
+  "Luxorparts — Test device v5, corrected shifts (beta, Duo only)".
+* `config_flow.py`: `async_step_lx_test_v5()` (widget 24), reusing
+  `_add_lx_test_switches()`.
+* `strings.json` / `translations/en.json`: `lx_test_v5` step and `lx_test_v5_added`
+  abort.
+* README, USER_GUIDE §15, `LUXORPARTS_PAIRS.md`,
+  `LUXORPARTS_PROTOCOL_ANALYSIS.md` §7/§9.
+
+### Version
+
+3.4.0.10 → **3.4.0.11** in both `manifest.json` files.
+
+### Verification
+
+* Every v5 pair decrypts to its recording's two addresses unchanged (so no shift
+  carried into the encrypted part), keeps channel bit 2, keeps payload bit 0 set in
+  both halves, and has ON ≠ OFF.
+* Ten distinct v5 codes; the only overlap with earlier groups is deliberate — 131
+  and 132 are v1's B3 and B4 (the pairs that worked), shipped again as the
+  reference. Control (136) is the recorded LPD 7 pair byte for byte.
+* `const.py` doctests, `py_compile`, `tests/test_ha_integration.py`,
+  `strings.json` == `translations/en.json`, mirror copies byte-identical.
+
+### Not verified
+
+* No receiver here: whether a recorded pair shifted inside the channel field is
+  accepted as a separate device, and whether B3…B5 (recordings other than LPD 7)
+  behave like B1/B2, is what the next hardware run decides.
+
+---
+
 ## Anti-patterns to avoid
 
 1. **Never switch to inline S repeats** without first testing on hardware.
