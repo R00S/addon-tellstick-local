@@ -1,6 +1,12 @@
 # RFC: Luxorparts 50969/50970/50972 RF Protocol (rev 4)
 
-**Status:** Working — ON/OFF verified on hardware (2026-04-08)
+**Status:** Working — all 24 recorded LPD pairs confirmed on hardware through the
+Duo path (owner report 2026-11-19). **Frame-structure
+and encoding sections superseded** by `docs/LUXORPARTS_PROTOCOL_ANALYSIS.md`
+(2026-11-19), which maps the frame and separates a fixed-template remote family from
+a Live family that is still only partly explained. It also narrows earlier claims:
+no generated code has been tested on hardware, and the Live captures contain an
+unexplained 1-bit field.
 **Date:** 2026-04-08
 **Author:** R00S
 **Source:** RTL-SDR capture via pbkhrv/rtl_433-hass-addons + Telldus Core source (telldus/telldus on GitHub)
@@ -110,12 +116,22 @@ bits — confirming ON/OFF is not a single bit flip:
 
 ### 7.4 Encoding algorithm status
 
-The mapping from Telldus house integer + unit integer to the 20-bit variable payload
-is **unknown**. Attempts to match against:
+**Superseded — see `docs/LUXORPARTS_PROTOCOL_ANALYSIS.md` §3–§4.**
+
+The mapping from Telldus house integer + unit integer to the payload does not exist
+as a cipher to crack: the receiver stores whole 25-bit codes, the frame carries no
+checksum, and the seven physical-remote captures use a fixed template with only
+five data bits. Earlier attempts to match:
 
 - `ProtocolNexa::getStringSelflearning` — no match
 - `ProtocolSilvanChip::getString` (20-bit house) — no match
 - Simple bit-split of house integer — no match
+
+searched for a mapping the protocol does not expose in any obvious form. The Homey
+`PayloadEncryption` cipher is ruled out for the **remote** family (a chain cipher
+cannot change a single bit between ON and OFF), but it remains an unconfirmed
+candidate for the Live family — see §3.3 of the analysis for why the Live captures
+cannot settle it.
 
 ## 8. rtl_433 Flex Decoder
 
@@ -146,22 +162,26 @@ For sniffing/verification only:
 
 ### Current implementation (working as of v3.1.8.15)
 
-**Hash-based code generation:** The integration generates unique ON/OFF code pairs
-from a `(house, unit)` tuple using a deterministic hash. This avoids needing to
-reverse Telldus Live's proprietary encoding algorithm.
+**Code generation — see `docs/LUXORPARTS_PROTOCOL_ANALYSIS.md` §6.**
 
-Each `(house, unit)` pair maps to a unique 25-bit ON code and a unique 25-bit OFF
-code. The codes follow the Luxorparts packet structure:
-```
-[0101][20 variable bits][1]
- ^^^^                    ^
- fixed preamble          fixed suffix
-```
+The current generator uses a nibble chain cipher borrowed from the Homey
+`se.luxorparts-1` app. That cipher does **not** describe the captured signal (see
+`docs/LUXORPARTS_PROTOCOL_ANALYSIS.md` §4) and should be replaced by one of the two
+evidence-based schemes documented there:
 
-The 20 variable bits are derived from a CRC32 hash of `(house, unit, command)`.
-Different `(house, unit)` pairs always produce different codes. The receiver
-doesn't care about the structure of the variable bits — it memorizes whatever
-code it hears during learn mode.
+- **A — template cloning:** `0x5D55D5` plus the five data bits (state 1,
+  device 9/11/13/17). Sixteen device codes that are byte-for-byte legal remote
+  frames.
+- **B — Live-family style:** `payload = (seed << 1) | 1`, the same shape as the
+  LPD 1–24 codes already verified on hardware; 2^23 unique codes.
+
+There is no `[0101][20 bits][1]` frame: in the 24-bit payload only bit 0 is constant,
+and the old preamble/suffix description was an artefact of the first six captures
+(the frame MSB is additionally fixed per family — 0 on Live codes, 1 on remote
+codes). "The receiver memorises whatever it hears" is still an assumption, not a
+proven fact: every code accepted in testing is a recorded one — all 24 LPD pairs
+have now been confirmed working on the Duo path, but no generated code has been
+tried.
 
 **Ground truth codes** from Telldus Live captures are also stored for reference
 and backward compatibility. If a user happens to use the exact Telldus Live

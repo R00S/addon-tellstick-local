@@ -521,6 +521,42 @@ succeed inside the base image with this change applied.
 
 ---
 
+## 2026-11-19 — all 24 LPD pairs confirmed on the Duo path
+
+**Reported by the project owner:** every LPD in the shipped picker (1–24) works
+through the Duo raw-pulse path.
+
+What this settles:
+
+* The Duo TX format (`P\x02 R10 S50+`, OOK-PWM, `LX_GAP_INTER_DUO = 25`) is correct
+  for the whole shipped code list, not just LPD 3 (H14268/U4). The 2026-04-08 result
+  was the *first* accepted pair, not the only one.
+* The LPD list itself is sound: 24 pairs = 48 distinct 25-bit codes, no duplicates.
+
+What this does **not** settle:
+
+* **Generation.** Every code that has ever worked is a recorded Telldus Live
+  capture. No generated code has been transmitted at a receiver.
+* The `0x04` criss-cross in `docs/LUXORPARTS_PROTOCOL_ANALYSIS.md` §3.3. Five pairs of
+  LPD entries are one bit apart with crossed ON/OFF labels; replaying all 24 says
+  nothing about whether those two entries are the same physical device captured at
+  two field values.
+
+### Implemented: scheme A test device (v3.3.3.2)
+
+Scheme A is now an opt-in test device instead of a hand-typed code: device type
+**"Luxorparts — Generated test codes (beta, Duo only)"**, picks **101–105** =
+LX-T1…LX-T5 (`LX_TEST_LIST` / `_lx_template_pair()` in `const.py`). All five are
+the remote-family template with unobserved button fields — bit 9, bit 11,
+bits 9+11+13, no button bits, and bit 9 + bit 17. None of the ten codes appears in
+any capture, so a receiver that learns one has accepted a generated code. Same
+`P\x02 R10 S50+` path and timing as the working LPD codes.
+
+The next test is to teach a receiver one of these five pairs, then scheme B for an
+arbitrary Live-style pair.
+
+---
+
 ## Anti-patterns to avoid
 
 1. **Never switch to inline S repeats** without first testing on hardware.
