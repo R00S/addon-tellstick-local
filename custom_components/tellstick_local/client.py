@@ -150,6 +150,10 @@ class RawDeviceEvent:
     def device_id(self) -> str:
         """Build a stable, unique device identifier from RF parameters."""
         p = self.params
+        # Synthetic events dispatched by the add flow may carry the stored key
+        # explicitly (shared RF codes get a ``_2`` suffix in the device store).
+        if stored_uid := p.get("_device_uid", ""):
+            return stored_uid
         parts = [
             p.get("protocol", ""),
             p.get("model", ""),

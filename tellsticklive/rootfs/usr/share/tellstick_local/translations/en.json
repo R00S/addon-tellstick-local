@@ -358,7 +358,7 @@
         "duplicate_proceed": {
           "title": "Add anyway",
           "description_url": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md#52-self-learning-teach-add-device-button",
-          "description": "The device is added on the shared code and will be paired normally."
+          "description": "A **separate device** is added on the shared code and paired normally. The device that already uses the code is left untouched."
         },
         "confirm": {
           "title": "Send pairing signal",

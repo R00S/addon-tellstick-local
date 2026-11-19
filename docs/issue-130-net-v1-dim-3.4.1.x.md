@@ -62,3 +62,51 @@
   instance here.
 * Any RF behaviour; the add flow sends the same codes as before for the same
   stored parameters.
+
+## Session — 2026-11-19: "Add it anyway" creates a second device (3.4.1.1)
+
+### What the user reported
+
+Adding a device on a code another device already used, then choosing
+**Add it anyway**, replaced the existing device instead of adding a second one
+with the same codes (tested with an Anslut/comen device).
+
+### Cause
+
+Stored devices are keyed by `protocol_model_house_unit` (`build_device_uid()`).
+The second device therefore reused the first device's key and wrote over its
+entry in `CONF_DEVICES`, so only one device remained (the old entity was just
+renamed).
+
+### Changed
+
+* `config_flow.py`: new `_unique_device_uid()` returns the plain key when it is
+  free, otherwise the first free `_2`, `_3`… suffix. The confirm step builds the
+  key with it, so **Add it anyway** stores a second device with the same
+  house/unit — the stored RF codes, and therefore the transmitted signal, are
+  unchanged. Editing a device's house/unit goes through the same helper with
+  the device's own key ignored, so changing only the name of a shared-code
+  device no longer moves it back onto the other device's key.
+* `client.py`: `RawDeviceEvent.device_id` honours an explicit `_device_uid`
+  parameter. The synthetic event that creates the entity right after pairing
+  now carries the stored key, so the suffixed device gets its own entity instead
+  of matching the existing one.
+* `strings.json` / `translations/en.json`: the `duplicate_proceed` description
+  says a separate device is added and the device already using the code is left
+  untouched.
+* `README.md`, `docs/USER_GUIDE.md` §5.2: same wording.
+* Both manifests 3.4.1.0 → **3.4.1.1**.
+
+### Verified
+
+* `const.py` doctests, `py_compile`, pyflakes, `tests/test_ha_integration.py`.
+* Byte-identical mirror, `strings.json` == `translations/en.json`.
+* A harness against the real modules: a taken key gets `_2` then `_3`, a free
+  key is unchanged, editing keeps its own key, and a synthetic event with
+  `_device_uid` resolves to the suffixed key while a normal RF event still
+  resolves to the base key.
+
+### Not verified
+
+* The Home Assistant UI end to end and any RF behaviour — no HA instance or
+  TellStick hardware here.

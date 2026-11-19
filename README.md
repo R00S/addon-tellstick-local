@@ -202,14 +202,15 @@ that need to be taught a code before they respond.
    - **Add by protocol** — pick directly by protocol name (e.g. "arctech — Self-learning on/off") — useful if your brand is not listed
 4. Pick your device type and enter a name, then click **Submit**
 5. Set the house code, unit code and any other numeric parameter with the **sliders** — they start on the **first free code**, i.e. the first house/unit combination no device on that protocol uses yet
-6. If that code is already used by another device, a warning lists it and offers **Change the code** (sliders keep your values) or **Add it anyway**
+6. If that code is already used by another device, a warning lists it and offers **Change the code** (sliders keep your values) or **Add it anyway**, which adds a second, separate device on that code
 7. Put the receiver in **learn mode** (hold its button until it blinks)
 8. HA sends the pairing signal — the receiver learns the code
 9. The device appears in HA and can now be controlled
 
 > **Two devices on one code:** the same protocol + house + unit is the same RF
 > signal, so it would trigger both. The warning lets you pick a free code, or
-> add it anyway when you really want two entities on one receiver.
+> add it anyway to create a second, independent device on the same code — the
+> device that already uses it is left untouched.
 
 > **Re-teaching a device:** Each switch/light device has a **"Send learn signal"**
 > button on its device page. Use it to re-pair a receiver without deleting and

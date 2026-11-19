@@ -192,15 +192,17 @@ need to be taught a code before they respond.
    collides with an old one by accident. Click **Submit**
 6. If the code you picked is already used by another device, a warning lists
    the device(s) it would also trigger and offers **Change the code** (back to
-   the sliders, keeping your values) or **Add it anyway**
+   the sliders, keeping your values) or **Add it anyway**, which adds a second,
+   separate device on that code
 7. Put the receiver in **learn mode** (hold its button until it blinks)
 8. HA sends the pairing signal — the receiver learns the code and blinks confirmation
 9. The device appears in HA and can now be controlled
 
 > **Codes that share a signal:** two devices on the same protocol with the same
 > house and unit respond to the same RF command. The warning is there so you can
-> pick a free combination; **Add it anyway** is for the cases where you really do
-> want both entities on one code (e.g. a second entity for the same receiver).
+> pick a free combination; **Add it anyway** creates a second, independent entity
+> on the same code (both send and receive the identical signal) and leaves the
+> device that already uses the code untouched.
 
 > **Re-teaching a device:** Each switch/light device has a **"Send learn signal"**
 > button on its device page. Use it to re-pair a receiver without deleting and

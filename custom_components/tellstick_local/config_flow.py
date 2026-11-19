@@ -172,6 +172,31 @@ def _conflicting_devices(
     return hits
 
 
+def _unique_device_uid(
+    base_uid: str,
+    existing_devices: dict[str, Any],
+    ignore: str | None = None,
+) -> str:
+    """Return *base_uid*, or the first free ``_2`` / ``_3``… variant of it.
+
+    The stored device key is protocol + model + house + unit, so a second
+    device on the same RF code (the "Add it anyway" choice) would reuse the
+    first device's key and overwrite it.  Suffixing keeps both devices; the
+    house/unit stored on each one — and therefore the signal sent — stays the
+    same.  *ignore* is the device being edited, which may keep its own key.
+    """
+
+    def _free(candidate: str) -> bool:
+        return candidate not in existing_devices or candidate == ignore
+
+    if _free(base_uid):
+        return base_uid
+    index = 2
+    while not _free(f"{base_uid}_{index}"):
+        index += 1
+    return f"{base_uid}_{index}"
+
+
 def _next_free_params(
     fields: list[dict], existing_devices: dict[str, Any], protocol: str
 ) -> dict[str, Any]:
@@ -1729,11 +1754,15 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
                     if "unit" in user_input:
                         params["unit"] = str(user_input["unit"])
                     cfg["params"] = params
-                new_uid = build_device_uid(
-                    cfg.get(CONF_DEVICE_PROTOCOL, ""),
-                    cfg.get(CONF_DEVICE_MODEL, ""),
-                    cfg.get(CONF_DEVICE_HOUSE, ""),
-                    cfg.get(CONF_DEVICE_UNIT, ""),
+                new_uid = _unique_device_uid(
+                    build_device_uid(
+                        cfg.get(CONF_DEVICE_PROTOCOL, ""),
+                        cfg.get(CONF_DEVICE_MODEL, ""),
+                        cfg.get(CONF_DEVICE_HOUSE, ""),
+                        cfg.get(CONF_DEVICE_UNIT, ""),
+                    ),
+                    devices,
+                    ignore=uid,
                 )
                 if new_uid != uid:
                     new_options = _migrate_device_uid(
@@ -2820,11 +2849,19 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                 _LOGGER.exception("Failed to teach device")
                 errors["base"] = "teach_failed"
             else:
-                device_uid = build_device_uid(
-                    self._new_device[CONF_DEVICE_PROTOCOL],
-                    self._new_device.get(CONF_DEVICE_MODEL, ""),
-                    self._new_device.get(CONF_DEVICE_HOUSE, ""),
-                    self._new_device.get(CONF_DEVICE_UNIT, ""),
+                # Keys are protocol + model + house + unit, so a device added on
+                # a code another device already uses ("Add it anyway") needs a
+                # unique key — otherwise it overwrites that device instead of
+                # becoming a second one.  The RF codes stay identical.
+                existing_devices = dict(entry.options.get(CONF_DEVICES, {}))
+                device_uid = _unique_device_uid(
+                    build_device_uid(
+                        self._new_device[CONF_DEVICE_PROTOCOL],
+                        self._new_device.get(CONF_DEVICE_MODEL, ""),
+                        self._new_device.get(CONF_DEVICE_HOUSE, ""),
+                        self._new_device.get(CONF_DEVICE_UNIT, ""),
+                    ),
+                    existing_devices,
                 )
 
                 # Store device ID / dict in runtime map so the entity can
@@ -2850,7 +2887,6 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                     )
 
                 # Persist in entry.options[CONF_DEVICES]
-                existing_devices = dict(entry.options.get(CONF_DEVICES, {}))
                 existing_devices[device_uid] = {
                     CONF_DEVICE_NAME: self._new_device[CONF_DEVICE_NAME],
                     CONF_DEVICE_PROTOCOL: self._new_device[CONF_DEVICE_PROTOCOL],
@@ -2890,6 +2926,9 @@ class TellStickLocalAddDeviceFlow(_SubentryBase):  # type: ignore[misc]
                         f"class:command;protocol:{protocol};model:{rf_model};"
                         f"house:{house_str};unit:{unit_str};method:turnon;"
                         f"_catalog_model:{catalog_model};"
+                        # The stored key may carry a ``_2`` suffix when the code
+                        # is shared, so hand the entity its exact key.
+                        f"_device_uid:{device_uid};"
                     ),
                     controller_id=0,
                 )
