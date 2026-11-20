@@ -22,11 +22,13 @@ Telldus software, or any cloud service.
 > but have not been verified on a v1 yet. Expect rough edges — feedback and bug reports are
 > very welcome.
 
-> **🟡 Luxorparts / Cleverio 50969, 50970, 50972 — Beta on Duo, untested on Net v1** – On/off
-> works on TellStick Duo via raw RF pulse encoding with pre-captured Telldus Live codes
-> (LPD 1–24) plus 304 generated channel codes. An original TellStick Net (v1) sends the same
-> pulse trains from v3.4.0.0, but that has not been tested on hardware. Not available on
-> ZNet / Net v2. See [details below](#known-limitations).
+> **🟡 Luxorparts / Cleverio 50969, 50970, 50972 — Beta on Duo** – On/off works on
+> TellStick Duo via raw RF pulse encoding with pre-captured Telldus Live codes (LPD 1–24)
+> plus 304 generated channel codes. See [details below](#known-limitations).
+>
+> **Net v1: untested. Net v2 / ZNet: not supported.** An original TellStick Net (v1) sends
+> the same pulse trains from v3.4.0.0, but that has not been tested on hardware. ZNet /
+> Net v2 cannot send them.
 
 ![Project Stage][project-stage-shield]
 
@@ -673,9 +675,11 @@ the same pulses a Duo sends, so the full Duo protocol list is available on it.
 
 These Luxorparts / Cleverio 1000W remote-controlled sockets work on
 **TellStick Duo** via raw RF pulse encoding with pre-captured Telldus Live codes
-(LPD 1–24) plus the generated channels of those receivers, verified at a receiver. An
-original **TellStick Net (v1)** sends the same bytes from v3.4.0.0, but that path has not
-been tested on hardware. **Not available on ZNet / Net v2.**
+(LPD 1–24) plus the generated channels of those receivers, verified at a receiver.
+
+**TellStick Net (v1):** sends the same bytes from v3.4.0.0, but that path has not been
+tested on hardware. **ZNet / Net v2:** not supported — their firmware discards raw pulse
+packets.
 
 **How to add a Luxorparts device (Duo):**
 

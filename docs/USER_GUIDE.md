@@ -224,8 +224,10 @@ need to be taught a code before they respond.
 > Recorded + confirmed pairs, one slider (beta, Duo + Net v1)" → pick a pair number on
 > the slider. The untested pairs are the separate "Luxorparts — Generated pairs,
 > untested, one slider (experimental, Duo + Net v1)" type. Put the receiver in learn
-> mode, then press Learn. An original **TellStick Net (v1)** sends the same pulse trains
-> from v3.4.0.0, but that path is untested; **ZNet / Net v2** cannot send them at all.
+> mode, then press Learn.
+>
+> **TellStick Net (v1):** sends the same pulse trains from v3.4.0.0, but that path is
+> untested. **ZNet / Net v2:** cannot send them at all.
 > See [Section 15](#15-known-limitations) for details.
 
 ### 5.3 Kjell & Company / Tuya-MOES curtain motor (Duo only)
@@ -772,10 +774,11 @@ Two further v1 limits:
 
 These Luxorparts / Cleverio 1000W remote-controlled sockets work on **TellStick Duo**
 via raw RF pulse encoding with pre-captured Telldus Live codes (LPD 1–24) plus the
-generated channels of those receivers, verified at a receiver. An original
-**TellStick Net (v1)** sends the same bytes from v3.4.0.0, but that path has not been
-tested on hardware. **Not available on ZNet / Net v2**
-(their firmware discards raw pulse packets).
+generated channels of those receivers, verified at a receiver.
+
+**TellStick Net (v1):** sends the same bytes from v3.4.0.0, but that path has not been
+tested on hardware. **ZNet / Net v2:** not supported — their firmware discards raw pulse
+packets.
 
 **How to add a Luxorparts device (Duo):**
 
