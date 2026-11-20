@@ -110,3 +110,44 @@ renamed).
 
 * The Home Assistant UI end to end and any RF behaviour — no HA instance or
   TellStick hardware here.
+
+## Session — 2026-11-20: user-facing changelog for HAOS (no version bump)
+
+### What the user asked for
+
+Better "what's new" information for HAOS users before merging to `main` and
+cutting the first stable release: research how other Home Assistant apps show
+their changelog, then implement it.
+
+### Finding
+
+Supervisor serves `GET /store/addons/<slug>/changelog` from
+`tellsticklive/CHANGELOG.md` (read from the repository, also for apps that are
+not installed). With no file it answers "No changelog found for app
+tellsticklive!". `create-stable-release.yaml` only wrote a `git log` into the
+GitHub release body, which HAOS never shows. Neither this repository nor the
+dev-channel repository had a changelog file, so both channels showed nothing.
+
+### Changed
+
+* `tellsticklive/CHANGELOG.md` (new): sections for 3.4.1.1, 3.4.1.0, 3.4.0.15
+  and a 3.4.0.0–3.4.0.14 rollup, written for users, plus the "coming from
+  3.3.3.0" note a stable user needs.
+* `.github/workflows/ci.yaml`: new `lint-changelog` job — the newest `## `
+  heading must match the first four segments of the manifest version.
+* `.github/workflows/create-stable-release.yaml`: the GitHub release body now
+  carries the top changelog section instead of `git log --oneline`.
+* `.github/workflows/create-test-release.yaml` and `create-release.yaml`: the
+  `update-dev-repo` job writes a one-entry `tellsticklive/CHANGELOG.md` into
+  `addon-tellsticklive-roosfork`, which had none.
+* `AGENTS.md`: a "Changelog (what HAOS users see)" section with the rules.
+
+### Version
+
+Unchanged at 3.4.1.1 — docs and workflow only, no integration code touched, so
+the manifests and the bundled mirror stay as they are.
+
+### Not verified
+
+* The HAOS app page and update card, which need a Supervisor reading the
+  repository — not available here.

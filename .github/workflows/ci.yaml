@@ -143,3 +143,39 @@ jobs:
             exit 1
           fi
           echo "✅ Versions match: ${SRC_VER}"
+
+  lint-changelog:
+    name: Changelog version
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⤵️ Check out code from GitHub
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: 🔍 Verify the newest changelog entry matches the manifest
+        run: |
+          MANIFEST="custom_components/tellstick_local/manifest.json"
+          CHANGELOG="tellsticklive/CHANGELOG.md"
+
+          if [[ ! -f "${CHANGELOG}" ]]; then
+            echo "::error::${CHANGELOG} is missing - HAOS then shows 'No changelog found'."
+            exit 1
+          fi
+
+          # Release builds append a timestamp (3.4.1.1.20261119...); the
+          # changelog is curated per four-segment version, so compare those.
+          MANIFEST_VERSION=$(jq -r '.version' "${MANIFEST}")
+          MANIFEST_BASE=$(cut -d. -f1-4 <<< "${MANIFEST_VERSION}")
+          TOP_ENTRY=$(grep -m1 '^## ' "${CHANGELOG}" | sed -E 's/^## +//')
+          TOP_BASE=$(cut -d. -f1-4 <<< "${TOP_ENTRY}")
+
+          echo "manifest version : ${MANIFEST_VERSION} (base ${MANIFEST_BASE})"
+          echo "newest changelog : ${TOP_ENTRY} (base ${TOP_BASE})"
+
+          if [[ "${TOP_BASE}" != "${MANIFEST_BASE}" ]]; then
+            echo "::error::Newest changelog entry is '${TOP_ENTRY}', expected '${MANIFEST_BASE}'."
+            echo "::error::Add a '## ${MANIFEST_BASE}' section to the top of ${CHANGELOG}."
+            exit 1
+          fi
+
+          echo "✅ Newest changelog entry matches ${MANIFEST_BASE}"

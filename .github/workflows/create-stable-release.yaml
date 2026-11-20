@@ -114,9 +114,14 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           REPO: ${{ github.repository }}
         run: |
-          # Find the previous tag to compute a changelog range
-          PREV_TAG=$(git tag --sort=-version:refname \
-            | grep -v "^v${VERSION}$" | head -1 || true)
+          # The app page and the update card read tellsticklive/CHANGELOG.md, so
+          # publish that same section here and the two can never disagree.
+          awk '/^## /{if (found) exit; found=1} found' \
+            tellsticklive/CHANGELOG.md > changelog_section.md || true
+          if [[ ! -s changelog_section.md ]]; then
+            echo "::warning ::No changelog section in tellsticklive/CHANGELOG.md"
+            echo "## ${VERSION}" > changelog_section.md
+          fi
 
           cat > release_notes.md << EOF
           # TellStick Local v${VERSION}
@@ -131,13 +136,9 @@ jobs:
 
           No HACS install needed — the integration is bundled in the app.
 
-          ## Changes
+          ## What's new
 
-          $(if [[ -n "$PREV_TAG" ]]; then
-            git log --oneline "${PREV_TAG}..HEAD" 2>/dev/null || git log --oneline -20
-          else
-            git log --oneline -20
-          fi)
+          $(cat changelog_section.md)
 
           ---
 

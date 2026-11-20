@@ -521,6 +521,31 @@ repository. It needs `repository.json` and `tellsticklive/config.yaml`
 Whenever the schema in `tellsticklive/config.yaml` (stable) changes, mirror
 the same change in the dev repo's `tellsticklive/config.yaml`.
 
+## Changelog (what HAOS users see)
+
+HAOS shows the app's `CHANGELOG.md` — and nothing else — as the app page's
+**Changelog** tab and as the "what's new" of an update. Supervisor serves
+`GET /store/addons/<slug>/changelog` from `tellsticklive/CHANGELOG.md` in this
+repository (also for apps that are not installed yet). Without the file users
+see "No changelog found for app tellsticklive!". There is **no** fallback to
+GitHub release notes — unlike HACS, which uses the release body.
+
+Rules:
+
+- Every version bump adds a new `## <version>` section at the very top, matching
+  the version in `custom_components/tellstick_local/manifest.json`. The
+  `lint-changelog` CI job compares the first four segments, so a timestamped
+  test version still passes.
+- Write for users: what changed, and what to do after updating. Engineering
+  detail stays in `docs/<branch>-<version>.x.md`.
+- Use `### New`, `### Fixed`, `### Changed behaviour` and `### After updating`
+  under each version; newest first; lines 80 characters or less; no tables,
+  images or HTML (the dialog is narrow and renders a markdown subset).
+- `create-stable-release.yaml` publishes the top section as the GitHub release
+  body, and `create-test-release.yaml` and `create-release.yaml` write a
+  one-entry changelog into the dev-channel repository, so app, GitHub and dev
+  channel never disagree.
+
 ## Migration Notes
 
 Users migrating from the deprecated official add-on should:

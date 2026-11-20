@@ -219,6 +219,37 @@ jobs:
           token: ${{ secrets.ROOSFORK_DEPLOY_KEY }}
           persist-credentials: true
 
+      - name: ⤵️ Check out this repository for the changelog
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          path: .changelog-src
+          persist-credentials: false
+
+      - name: 📝 Write changelog for the dev channel
+        env:
+          VERSION: ${{ needs.create-test-release.outputs.version }}
+          BRANCH_NAME: ${{ github.ref_name }}
+        run: |
+          # The dev repo is a thin index: without tellsticklive/CHANGELOG.md its
+          # app page and update card say "No changelog found". One entry for the
+          # build being offered is all a dev user needs.
+          TOP=$(awk '/^## /{if (found) exit; found=1} found' \
+            .changelog-src/tellsticklive/CHANGELOG.md || true)
+          mkdir -p tellsticklive
+          {
+            echo "## ${VERSION}"
+            echo ""
+            echo "Dev-channel build from \`${BRANCH_NAME}\`."
+            echo ""
+            if [ -n "${TOP}" ]; then
+              printf '%s\n' "${TOP}" | tail -n +2 | sed '/./,$!d'
+            else
+              echo "See the stable changelog:"
+              echo "https://github.com/R00S/addon-tellstick-local/blob/main/tellsticklive/CHANGELOG.md"
+            fi
+          } > tellsticklive/CHANGELOG.md
+          head -20 tellsticklive/CHANGELOG.md
+
       - name: 🏷 Update config.yaml with new version and dev channel warning
         env:
           VERSION: ${{ needs.create-test-release.outputs.version }}
@@ -237,7 +268,7 @@ jobs:
         run: |
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
-          git add tellsticklive/config.yaml
+          git add tellsticklive/config.yaml tellsticklive/CHANGELOG.md
           if ! git diff --cached --quiet; then
             git commit -m "🧪 Test release ${VERSION} [skip ci]"
             git push
