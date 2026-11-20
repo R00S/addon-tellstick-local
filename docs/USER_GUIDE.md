@@ -46,6 +46,17 @@ hardware work in Home Assistant OS with no cloud, no Telldus Live account, and n
 file editing. Every device is managed entirely through the HA GUI and the HA companion app
 (Android/iOS).
 
+**Hardware support status:**
+
+| Hardware | Status | What it means |
+|---|---|---|
+| **TellStick Duo** (USB) | **Stable** | Every feature in this guide. |
+| **TellStick Net v2 / ZNet** (LAN) | **Supported, with limitations** | No longer experimental: event reception, sensor decoding and on/off work. The device's own firmware does the RF encoding, so only `arctech` and `comen` can be sent (`everflourish` under test), and arctech dimmers only switch on at full brightness. |
+| **TellStick Net (v1)** (original, C firmware) | **Experimental** | Replays raw RF pulses, so it sends every Duo protocol and dims correctly. Arctech on/off, learn and dim are confirmed on hardware; the other protocols are ported but not yet verified on a v1. |
+
+See [Section 15](#15-known-limitations) for the details behind each limitation.
+Release notes for each version are in the app's **Changelog** tab in HAOS.
+
 **What you get:**
 
 | Capability | Description |
@@ -209,10 +220,12 @@ need to be taught a code before they respond.
 > re-adding the device — put the receiver in learn mode and press the button.
 
 > **Luxorparts / Cleverio 50969, 50970, 50972 (beta + experimental, Duo + Net v1):**
-> Add by brand → "Luxorparts — Recorded + confirmed pairs, one slider (beta, Duo + Net
-> v1)" → pick a pair number on the slider. The untested pairs are the separate
-> "Luxorparts — Generated pairs, untested, one slider (experimental, Duo + Net v1)"
-> type. Put the receiver in learn mode, then press Learn.
+> Works on **TellStick Duo**, verified at a receiver. Add by brand → "Luxorparts —
+> Recorded + confirmed pairs, one slider (beta, Duo + Net v1)" → pick a pair number on
+> the slider. The untested pairs are the separate "Luxorparts — Generated pairs,
+> untested, one slider (experimental, Duo + Net v1)" type. Put the receiver in learn
+> mode, then press Learn. An original **TellStick Net (v1)** sends the same pulse trains
+> from v3.4.0.0, but that path is untested; **ZNet / Net v2** cannot send them at all.
 > See [Section 15](#15-known-limitations) for details.
 
 ### 5.3 Kjell & Company / Tuya-MOES curtain motor (Duo only)
@@ -259,9 +272,9 @@ only one remote, or when the physical remote should stay authoritative.
 
 **Requirements and limits**
 
-- **TellStick Duo, or an original TellStick Net (v1) from v3.4.0.0.** The replay
-  sends raw pulse trains: a Duo via `tdSendRawCommand`, a v1 via an S-only UDP
-  packet. ZNet / Net v2 discard those packets, so the flow stops with an
+- **TellStick Duo, or an original TellStick Net (v1) from v3.4.0.0** (experimental on
+  a v1). The replay sends raw pulse trains: a Duo via `tdSendRawCommand`, a v1 via an
+  S-only UDP packet. ZNet / Net v2 discard those packets, so the flow stops with an
   explanation instead of creating a device.
 - **No feedback.** Nothing receives this remote, so the cover reports an assumed
   state; there is no position and no "it worked" confirmation.
@@ -446,6 +459,10 @@ units received events at a time while the others went silent (GitHub issue #115)
 
 Go to the device page, click the **⋮ menu** (three dots), and select **Delete**.
 
+> **Deleting sticks.** A removed device is really removed — an RF event or a restart does
+> not bring it back. Leave **"Also add to ignore list"** checked (the default) and it also
+> stays hidden from auto-discovery; un-ignore it later under **Manage ignored devices**.
+
 ### Removing multiple devices
 
 1. Go to **Configure** (⚙) → **Remove multiple devices**
@@ -506,13 +523,16 @@ learn-signal options.
 
 > **Arctech dimmer note:** Variable-brightness dimming (`selflearning-dimmer`) works fully
 > on **TellStick Duo**. It also works on an original **TellStick Net (v1)** from v3.3.3.1
-> (dim frames are sent as raw pulse bytes there). On **ZNet / Net v2** the firmware
-> ignores the level, so any brightness above 0 goes to full brightness.
+> (dim frames are sent as raw pulse bytes there — part of the experimental v1 path). On
+> **ZNet / Net v2** the firmware ignores the level, so any brightness above 0 goes to full
+> brightness.
 >
-> **TellStick Net v1 — full protocol support:** from **v3.4.0.0** an original TellStick Net
-> sends *every* TX protocol this integration supports as raw RF pulses, so all Duo devices
-> (blinds, projector screens, Koppla, X10, code switches, …) can be controlled from a v1.
-> ZNet / Net v2 keep the firmware-dict behaviour described above.
+> **TellStick Net v1 — full protocol support (experimental):** from **v3.4.0.0** an
+> original TellStick Net sends *every* TX protocol this integration supports as raw RF
+> pulses, so all Duo devices (blinds, projector screens, Koppla, X10, code switches, …)
+> can be controlled from a v1. Arctech is confirmed on hardware; the other protocols are
+> ported byte for byte but not yet verified on a v1. ZNet / Net v2 keep the firmware-dict
+> behaviour described above.
 
 > **Sartano note:** Sartano/codeswitch auto-detection is **off by default** because
 > `telldusd` often falsely decodes arctech signals as sartano. Enable the
@@ -533,6 +553,11 @@ These devices must be added via **Method B** (Add device → Add by brand or Add
 | `silvanchip` | Switch | Ecosavers, KingPin KP100 |
 | `upm` | Switch | UPM |
 | `yidong` | Switch | Goobay |
+
+> **TellStick Net v2 / ZNet cannot send these.** That hardware encodes commands with its
+> own firmware, which only handles `arctech` and `comen` (`everflourish` under test), so
+> the devices above need a **TellStick Duo** (stable) or an original **TellStick Net (v1)**
+> (experimental). See [Section 15](#15-known-limitations).
 
 ---
 
@@ -692,11 +717,11 @@ the correct one for your device brand. For the false-positive ones, check
 
 ## 15. Known limitations
 
-### Arctech dimmers on ZNet / Net v2 — on/off only
+### Arctech dimmers on ZNet / Net v2 — full brightness only
 
 The **ZNet / TellStick Net v2** Python firmware cannot perform variable-brightness
 dimming for arctech `selflearning-dimmer` devices: the level is ignored, so any
-brightness above 0 goes to full brightness.
+brightness above 0 goes to full brightness while turning off works normally.
 
 An original **TellStick Net (v1, C firmware)** *can* dim — since v3.3.3.1 those
 dimmer frames are sent as raw pulse bytes, and the brightness slider works. If a
@@ -704,10 +729,24 @@ v1 dimmer still does not dim, the unit's product name could not be detected;
 check the log and report it in a GitHub issue.
 
 **Workaround (ZNet / Net v2):** Use a **TellStick Duo** (USB) as your primary device, and add the
-Net/ZNet as a **mirror/range extender** — the Duo handles all dimming while the
+Net/ZNet as a **mirror / range extender** — the Duo handles all dimming while the
 Net/ZNet relays on/off commands.
 
-### TellStick Net v1 — protocol support
+### TellStick Net v2 / ZNet — most protocols cannot be sent
+
+Net v2 / ZNet produce the RF frame with their own firmware. Its send handler only
+forwards `house` and `unit` (and offsets `unit` by one), so protocols that need other
+parameters, extra repeats or pauses encode wrongly or not at all:
+
+- **Works:** `arctech` (on/off/learn/bell) and `comen` (on/off/learn)
+- **Still under test:** `everflourish`
+- **Cannot be sent:** `hasta`, `brateck`, `ikea`, `x10`, `risingsun`, `silvanchip`,
+  `sartano`, `upm`, `waveman`, `fuhaote`, `yidong`
+
+Raw pulse frames do not help — the v2 / ZNet firmware ignores them. Use a TellStick Duo
+(stable) or an original TellStick Net (v1) (experimental) when you need those protocols.
+
+### TellStick Net v1 — experimental
 
 An original TellStick Net (v1) is identified by its discovery name `TellStickNet`.
 From **v3.4.0.0** it sends all supported TX protocols as raw pulse trains, matching
@@ -716,17 +755,26 @@ everflourish, sartano, yidong, waveman, upm, fuhaote, brateck, risingsun, x10,
 hasta (v1 and v2), ikea and silvanchip. `kangtai` is the one exception — it exists
 only in the ZNet firmware and the Duo cannot send it either.
 
-If the unit cannot be identified (for example UDP discovery is blocked by a VM or
-NAT), the integration keeps the old firmware-dict behaviour and the newer protocols
-stay silent. Set the log level to Debug and look for the `raw=v1` / `raw=firmware-dict`
-field in the `Net send:` lines to see which path was used.
+**Confirmed on real hardware:** arctech on/off, learn and dim. Everything else in that
+list is ported byte for byte from telldus-core but has **not** been verified on a v1 yet,
+so treat it as experimental and report what does not work.
 
-### Luxorparts / Cleverio 50969, 50970, 50972 — Beta (Duo + Net v1)
+Two further v1 limits:
+
+- The device accepts at most **199 bytes** per send, so a command carries fewer repeats
+  than the Duo's ten — the Luxorparts code fits three frames.
+- If the unit cannot be identified (for example UDP discovery is blocked by a VM or
+  NAT), the integration keeps the old firmware-dict behaviour and the newer protocols
+  stay silent. Set the log level to Debug and look for the `raw=v1` /
+  `raw=firmware-dict` field in the `Net send:` lines to see which path was used.
+
+### Luxorparts / Cleverio 50969, 50970, 50972 — Beta (Duo verified, Net v1 untested)
 
 These Luxorparts / Cleverio 1000W remote-controlled sockets work on **TellStick Duo**
-and on an original **TellStick Net (v1)** from v3.4.0.0, using raw RF pulse encoding
-with pre-captured Telldus Live codes (LPD 1–24) plus the generated channels of those
-receivers. **Not available on ZNet / Net v2**
+via raw RF pulse encoding with pre-captured Telldus Live codes (LPD 1–24) plus the
+generated channels of those receivers, verified at a receiver. An original
+**TellStick Net (v1)** sends the same bytes from v3.4.0.0, but that path has not been
+tested on hardware. **Not available on ZNet / Net v2**
 (their firmware discards raw pulse packets).
 
 **How to add a Luxorparts device (Duo):**
