@@ -236,3 +236,52 @@ they were offered as TellSticks. The same filter backs the options flow's
 ### Not verified
 
 * The picker in the HA UI — no HA instance here.
+
+## Session — 2026-11-21: "remote Duo without a long cable" in the user guide
+
+### What the user asked
+
+Users want to add a Duo as a mirror without running a very long USB cable —
+via a Raspberry Pi, an ESP32, or a NAS app that puts a network layer in front of
+the stick.
+
+### Findings
+
+* The integration already accepts any Duo endpoint: the backend stores
+  ``CONF_HOST`` plus ``CONF_COMMAND_PORT`` / ``CONF_EVENT_PORT``, so a remote
+  ``telldusd`` needs no code change — only a reachable TCP 50800/50801.
+* Remote USB *does* work on stock HAOS: HAOS ships ``vhci-hcd``, and Supervisor
+  apps can request it. ``cryptedx/ha-usbip-client`` (v1.0.8) declares
+  ``kernel_modules: [vhci-hcd]``, ``devices: [/dev/vhci]``,
+  ``privileged: [NET_ADMIN, SYS_ADMIN, SYS_MODULE, SYS_RAWIO]`` and
+  ``usb: true``, and reattaches automatically with a dependent-app restart list.
+* ESP32 USB/IP servers exist for S3/P4 (pldrobot, yunsmall, DatanoiseTV), so the
+  stick side can be a €10 board instead of a Pi — but it only replaces the
+  *exporter*; the attached device still ends up on the HA machine.
+* An ESP32 cannot emulate a Duo itself (vendor-specific USB, no sane USB-host
+  path for the stick's protocol).
+* VirtualHere is the commercial alternative, with a community client app.
+
+### Changed (docs only)
+
+* ``docs/USER_GUIDE.md``: new **§9 Remote Duo without a long cable (USB/IP)**
+  with §9.1 HA USB/IP Client setup (``usbipd_server_address``, device by bus ID
+  or USB ID ``1781:0c31``, ``dependent_apps``), §9.2 exporter options (Pi, ESP32
+  S3/P4, other Linux/NAS, TCP 3240), §9.3 VirtualHere, §9.4 caveats (exclusive
+  attach, app privileges, wired Ethernet for the RF event stream, restart after
+  re-attach, 5 V supply, no authentication).
+* Old §9–§16 renumbered to §10–§17, including the 12.1/12.2/13.1/13.2
+  subsections; table of contents updated. No other file links to a §9–§16 anchor
+  (checked ``strings.json`` and ``translations/en.json``).
+
+### Verified
+
+* Every table-of-contents anchor resolves to a generated heading slug.
+* Headings run 1–17 with no duplicates or gaps.
+* Mirror directory unchanged; no runtime file touched.
+
+### Not verified
+
+* Not tested with hardware: no Duo, no ESP32 and no HA instance here, so the
+  USB/IP Client app recipe is documented from its own ``config.yaml`` and README,
+  not from a working attach.

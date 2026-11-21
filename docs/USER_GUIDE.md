@@ -24,18 +24,23 @@
    - 7.1 [Grouping multi-probe sensors](#71-grouping-multi-probe-sensors)
    - 7.2 [Grouping any device under a shared HA device](#72-grouping-any-device-under-a-shared-ha-device)
 8. [Mirror / range extender](#8-mirror--range-extender)
-9. [Removing and ignoring devices](#9-removing-and-ignoring-devices)
-10. [Pre-configuring devices in the app YAML](#10-pre-configuring-devices-in-the-app-yaml)
-11. [Supported devices](#11-supported-devices)
-    - 11.1 [Auto-discoverable (press a button → device appears)](#111-auto-discoverable-press-a-button--device-appears)
-    - 11.2 [TX only (add via Add device button)](#112-tx-only-add-via-add-device-button)
-12. [Events for automations](#12-events-for-automations)
-    - 12.1 [Device events (remote button presses)](#121-device-events-remote-button-presses)
-    - 12.2 [Sensor events (temperature, humidity, etc.)](#122-sensor-events-temperature-humidity-etc)
-13. [Debugging](#13-debugging)
-14. [Troubleshooting](#14-troubleshooting)
-15. [Known limitations](#15-known-limitations)
-16. [Migrating from the old add-on (with Telldus Live)](#16-migrating-from-the-old-add-on-with-telldus-live)
+9. [Remote Duo without a long cable (USB/IP)](#9-remote-duo-without-a-long-cable-usbip)
+   - 9.1 [Attach the Duo to Home Assistant](#91-attach-the-duo-to-home-assistant)
+   - 9.2 [The box next to the Duo](#92-the-box-next-to-the-duo)
+   - 9.3 [Paid alternative: VirtualHere](#93-paid-alternative-virtualhere)
+   - 9.4 [Caveats](#94-caveats)
+10. [Removing and ignoring devices](#10-removing-and-ignoring-devices)
+11. [Pre-configuring devices in the app YAML](#11-pre-configuring-devices-in-the-app-yaml)
+12. [Supported devices](#12-supported-devices)
+    - 12.1 [Auto-discoverable (press a button → device appears)](#121-auto-discoverable-press-a-button--device-appears)
+    - 12.2 [TX only (add via Add device button)](#122-tx-only-add-via-add-device-button)
+13. [Events for automations](#13-events-for-automations)
+    - 13.1 [Device events (remote button presses)](#131-device-events-remote-button-presses)
+    - 13.2 [Sensor events (temperature, humidity, etc.)](#132-sensor-events-temperature-humidity-etc)
+14. [Debugging](#14-debugging)
+15. [Troubleshooting](#15-troubleshooting)
+16. [Known limitations](#16-known-limitations)
+17. [Migrating from the old add-on (with Telldus Live)](#17-migrating-from-the-old-add-on-with-telldus-live)
 
 ---
 
@@ -463,7 +468,91 @@ units received events at a time while the others went silent (GitHub issue #115)
 
 ---
 
-## 9. Removing and ignoring devices
+## 9. Remote Duo without a long cable (USB/IP)
+
+A **TellStick Duo** has to be plugged into the machine that runs Home Assistant, and
+USB cables only reach a few metres. If the Duo has to sit somewhere else — a
+central spot in the house, a metal cabinet, another floor — you can attach it
+over the network with **USB/IP**: a small box next to the Duo exports it, and an
+app on Home Assistant makes it look like a locally plugged stick.
+
+Nothing in the integration changes. Once the Duo appears as a USB device on the
+Home Assistant machine, the TellStick Local app finds it exactly like a cabled
+one, and you add the hub as usual — with the **app's** host and ports, not the
+address of the box next to the Duo. A remote Duo can be your primary hub or a
+mirror.
+
+> TellStick Net and ZNet sticks are network devices already and need none of
+> this.
+
+### 9.1 Attach the Duo to Home Assistant
+
+1. Install the community app
+   **[HA USB/IP Client](https://github.com/cryptedx/ha-usbip-client)**: add
+   `https://github.com/cryptedx/ha-usbip-client` as an app repository in
+   **Settings → Apps → ⋮ → Repositories**, then install **USB/IP Client**
+2. Set `usbipd_server_address` to the IP of the box the Duo is plugged into, and
+   add the Duo to `devices` — by bus ID (for example `1-1.1.3`) or by its USB ID
+   **`1781:0c31`**, which works whichever port it is in
+3. Add the **TellStick Local** app to the client's `dependent_apps` list, so it is
+   restarted whenever the Duo is re-attached
+4. Start the client app. It loads `vhci-hcd`, attaches the Duo, and reattaches it
+   automatically if the link drops
+
+### 9.2 The box next to the Duo
+
+Any always-on Linux machine on the same network can export the stick.
+
+- **Raspberry Pi** — install the `usbip` tools (`apt install usbip`), find the bus
+  ID with `usbip list -l`, then `usbipd -D` and `usbip bind -b <busid>`. The bind
+  has to run again after every boot; a small systemd unit is enough.
+- **ESP32-S3 or ESP32-P4** — USB/IP server firmware turns the board into an
+  exporter with no Linux involved:
+  [pldrobot/ESP32S3-USBIP-Server](https://github.com/pldrobot/ESP32S3-USBIP-Server)
+  (Full-Speed, one device — enough for the Duo),
+  [yunsmall/usbipdcpp_esp32](https://github.com/yunsmall/usbipdcpp_esp32) or
+  [DatanoiseTV/usbip-esp32p4](https://github.com/DatanoiseTV/usbip-esp32p4)
+  (Ethernet, hubs, web UI). The board also has to supply 5 V to the Duo.
+- **Another Linux host or NAS** — `usbipd` and `usbip bind` as on the Pi.
+
+The box must be reachable from Home Assistant on **TCP 3240**.
+
+### 9.3 Paid alternative: VirtualHere
+
+[VirtualHere](https://www.virtualhere.com/) does the same job with its own
+protocol and a polished client: run the VirtualHere **server** on the box next to
+the Duo and install the community **VirtualHere Client** app on Home Assistant. It
+is commercial (about $49, node-locked per device) but needs no kernel-module
+setup and reconnects on its own. If you already own a VirtualHere licence for
+Zigbee or Z-Wave sticks, you can reuse it.
+
+### 9.4 Caveats
+
+- **Exclusive attach** — a USB/IP device is held by one client at a time. Detach
+  it from Home Assistant before using it on another machine, and never run two
+  exporters for the same Duo.
+- **Privileges** — the client app requests `SYS_ADMIN`, `SYS_MODULE` and access to
+  `/dev/vhci`, because it has to load a kernel module and create a virtual USB
+  controller. It is a community app, not part of this project; install it only if
+  you trust its source.
+- **Wired Ethernet** — the Duo streams received 433 MHz events over USB. USB/IP
+  over Wi-Fi still sends commands, but that event stream goes quiet whenever the
+  link stutters, until the client reattaches. Use Ethernet for the exporter and
+  for the Home Assistant machine.
+- **Restarts** — after a re-attach the TellStick Local app has to restart to pick
+  the Duo up again; that is what `dependent_apps` is for.
+- **Power** — the Duo needs a solid 5 V supply. A weak charger on a long thin
+  cable browns out during transmit; use the exporter board's own supply or a
+  powered hub.
+- **No authentication** — USB/IP itself is unauthenticated. Keep port 3240 on the
+  local network and never expose it to the internet.
+
+Once the Duo is attached it works as a normal hub, or as a **mirror** of a
+Net/ZNet or of another Duo — see [§8](#8-mirror--range-extender).
+
+---
+
+## 10. Removing and ignoring devices
 
 ### Removing a single device
 
@@ -489,7 +578,7 @@ Devices that were ignored (from the discovery form or during deletion) can be un
 
 ---
 
-## 10. Pre-configuring devices in the app YAML
+## 11. Pre-configuring devices in the app YAML
 
 For TX-only devices that never transmit RF (e.g. Brateck projector screens, Comen switches)
 you can add them via the app's **Configuration** tab in the Supervisor before pressing any buttons.
@@ -511,9 +600,9 @@ learn-signal options.
 
 ---
 
-## 11. Supported devices
+## 12. Supported devices
 
-### 11.1 Auto-discoverable (press a button → device appears)
+### 12.1 Auto-discoverable (press a button → device appears)
 
 | Protocol | Entity type | Brands |
 |---|---|---|
@@ -549,7 +638,7 @@ learn-signal options.
 > **"Detect sartano/codeswitch devices"** toggle in **Configure → Settings** if you
 > have real sartano hardware.
 
-### 11.2 TX only (add via Add device button)
+### 12.2 TX only (add via Add device button)
 
 These devices must be added via **Method B** (Add device → Add by brand or Add by protocol).
 
@@ -571,13 +660,13 @@ These devices must be added via **Method B** (Add device → Add by brand or Add
 
 ---
 
-## 12. Events for automations
+## 13. Events for automations
 
 Every RF signal received by the TellStick fires a **`tellstick_local_event`** on the
 Home Assistant event bus. You can listen to these events in automations, scripts, or in
 **Developer Tools → Events** (enter `tellstick_local_event` and click **Start listening**).
 
-### 12.1 Device events (remote button presses)
+### 13.1 Device events (remote button presses)
 
 Fired whenever a 433 MHz command signal is received — even from devices not yet in HA.
 
@@ -604,7 +693,7 @@ trigger:
       device_uid: arctech_selflearning_2673666_1
 ```
 
-### 12.2 Sensor events (temperature, humidity, etc.)
+### 13.2 Sensor events (temperature, humidity, etc.)
 
 Fired when a wireless sensor sends a reading.
 
@@ -619,7 +708,7 @@ Fired when a wireless sensor sends a reading.
 
 ---
 
-## 13. Debugging
+## 14. Debugging
 
 ### Listen for RF events in Developer Tools
 
@@ -643,7 +732,7 @@ buttons are pressed. Look for `TellStick Local is ready!` at startup.
 
 ---
 
-## 14. Troubleshooting
+## 15. Troubleshooting
 
 ### "A notification appeared saying restart is required"
 
@@ -725,7 +814,7 @@ the correct one for your device brand. For the false-positive ones, check
 
 ---
 
-## 15. Known limitations
+## 16. Known limitations
 
 ### Arctech dimmers on ZNet / Net v2 — full brightness only
 
@@ -857,7 +946,7 @@ produced those results have been removed.
 
 ---
 
-## 16. Migrating from the old add-on (with Telldus Live)
+## 17. Migrating from the old add-on (with Telldus Live)
 
 If you were using the previous TellStick add-on that required a Telldus Live account:
 
