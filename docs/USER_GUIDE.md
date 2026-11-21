@@ -435,6 +435,7 @@ registered devices and forwards received RF events back to the primary.
 3. Go to **Settings → Devices & Services → TellStick Local** and click **Add Hub**
 4. Choose the hardware type and enter its connection details
 5. On the **"Mirror / range extender"** step, select the primary TellStick from the dropdown
+   — it lists TellStick hubs only, never your 433 MHz devices
 6. Click **Submit** — the mirror is set up
 
 The mirror entry appears as _"TellStick (mirror of Primary)"_. It has no devices of its

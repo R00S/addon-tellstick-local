@@ -594,6 +594,20 @@ async def _validate_connection(host: str, command_port: int, event_port: int) ->
         await ctrl.disconnect()
 
 
+def _is_hub_entry(entry: ConfigEntry) -> bool:
+    """Return True only for a real TellStick hub entry (Duo or Net/ZNet).
+
+    Home Assistant creates extra config entries in this domain that are not
+    hubs: ignoring a discovered 433 MHz device leaves an entry with
+    ``source=SOURCE_IGNORE`` and ``unique_id="rf_<device_uid>"``, and those
+    carry no host.  Every hub entry stores ``CONF_HOST`` (``__init__`` reads it
+    as a required key), so that is the discriminator.  Without this filter the
+    "add as mirror" picker and the "move device" target list offered the
+    user's devices as if they were TellSticks.
+    """
+    return bool(entry.data.get(CONF_HOST))
+
+
 class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for TellStick Local."""
 
@@ -617,11 +631,11 @@ class TellStickLocalConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._pending_options: dict[str, Any] = {}
 
     def _get_existing_primary_entries(self) -> list[ConfigEntry]:
-        """Return existing non-mirror TellStick entries (any backend type)."""
+        """Return existing non-mirror TellStick hub entries (any backend type)."""
         return [
             e
             for e in self._async_current_entries()
-            if not e.data.get(CONF_MIRROR_OF)
+            if _is_hub_entry(e) and not e.data.get(CONF_MIRROR_OF)
         ]
 
     async def _async_create_or_mirror(
@@ -1558,6 +1572,7 @@ class TellStickLocalOptionsFlow(config_entries.OptionsFlow):
             e
             for e in self.hass.config_entries.async_entries(DOMAIN)
             if e.entry_id != self.config_entry.entry_id
+            and _is_hub_entry(e)
             and not e.data.get(CONF_MIRROR_OF)
         ]
 

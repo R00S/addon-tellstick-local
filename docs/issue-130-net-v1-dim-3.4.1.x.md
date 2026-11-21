@@ -198,3 +198,41 @@ was.
 
 * No real ZNet here: whether the receiver now pairs and whether Core stops
   restarting has to be confirmed by the reporter.
+
+## Session — 2026-11-21: mirror picker lists devices (3.4.1.3)
+
+### What the user reported
+
+Removing the ZNet hub and re-adding it as a mirror listed not only the real
+TellStick hubs in the "select the primary TellStick" dropdown, but also the
+user's 433 MHz devices.
+
+### Cause
+
+Both pickers filtered with nothing but ``not entry.data.get(CONF_MIRROR_OF)``.
+Home Assistant keeps extra config entries in this domain that are not hubs —
+ignoring a discovered device leaves an entry with ``source=SOURCE_IGNORE`` and
+``unique_id="rf_<device_uid>"`` — and those have no ``mirror_of`` either, so
+they were offered as TellSticks. The same filter backs the options flow's
+**Move device to another hub** target list.
+
+### Changed
+
+* `config_flow.py`: new module-level `_is_hub_entry()` — a hub is an entry with
+  `CONF_HOST` in its data, which every real Duo/Net/ZNet entry has and no device
+  or ignored entry does. Used by `_get_existing_primary_entries()` (mirror
+  step) and `_get_other_primary_entries()` (move device).
+* Both manifests and `tellsticklive/config.yaml`: 3.4.1.2 → **3.4.1.3**.
+* `tellsticklive/CHANGELOG.md`: new 3.4.1.3 section.
+* `docs/USER_GUIDE.md` §8: the dropdown lists hubs only.
+
+### Verified
+
+* Table check of `_is_hub_entry()`: Duo hub, ZNet hub and mirror → True; ignored
+  device entry and a device-like entry → False.
+* `tests/test_ha_integration.py`, pyflakes, `py_compile`.
+* Byte-identical mirror, `strings.json` == `translations/en.json`.
+
+### Not verified
+
+* The picker in the HA UI — no HA instance here.
