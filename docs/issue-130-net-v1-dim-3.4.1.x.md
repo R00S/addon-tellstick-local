@@ -151,3 +151,50 @@ the manifests and the bundled mirror stay as they are.
 
 * The HAOS app page and update card, which need a Supervisor reading the
   repository — not available here.
+
+## Session — 2026-11-21: Net v2 / ZNet learn sends the ON frame (3.4.1.2)
+
+### What the user reported
+
+Issue #131: on a TellStick ZNet Lite v2 (firmware 1.3.2) with integration
+3.4.1.1, pressing **Send learn signal** while adding a Nexa or Proove
+self-learning switch left Home Assistant Core unresponsive (the Supervisor
+restarted it) and the receiver never paired. Sensors kept updating and the
+TellStick LED flashed, so reception and TX over local UDP both worked.
+
+### Cause
+
+The learn step asked the Net v2 / ZNet firmware for a native LEARN frame.
+`handleSend()` builds every frame with `stringForMethod(msg['method'], None)` —
+the level is hardcoded `None`, and the DIM path is documented to throw there.
+A self-learning receiver stores any valid code it hears while in learn mode, so
+the ordinary ON frame is what teaches it; that is what the Duo Luxorparts and
+Tuya curtain paths already do. Reproduced offline against a fake Net v2: the
+flow itself never blocks (0.00 s, 1 ms event-loop stall, also with a 400-packet
+echo flood), so the send path was not the crash reason — the requested frame
+was.
+
+### Changed
+
+* `net_client.py` (`TellStickNetController._send_rf`): for `arctech`/`comen`
+  on anything that is not an original TellStick Net, `learn` is sent as
+  `turnon`. TellStick Net v1 keeps its raw learn pulse train (confirmed on
+  hardware).
+* Both manifests and `tellsticklive/config.yaml`: 3.4.1.1 → **3.4.1.2**.
+* `tellsticklive/CHANGELOG.md`: new 3.4.1.2 section.
+* `tools/repro_issue131.py`: fake Net v2 + add-flow harness used for the
+  verification below (dev tool, not shipped with the app).
+
+### Verified
+
+* `tools/repro_issue131.py`: the add-flow confirm step returns immediately,
+  stores one device, 1 ms max event-loop stall (also with 400 echo packets).
+* Wire check: v2 `learn` → `methodi1s`; v1 `learn` → raw `S` pulses unchanged.
+* `tests/test_net_protocol_encoding.py`, `tests/test_net_udp_hub.py`,
+  `tests/test_ha_integration.py`, pyflakes, `py_compile`.
+* Byte-identical mirror, `strings.json` == `translations/en.json`.
+
+### Not verified
+
+* No real ZNet here: whether the receiver now pairs and whether Core stops
+  restarting has to be confirmed by the reporter.

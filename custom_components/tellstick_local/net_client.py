@@ -3905,6 +3905,24 @@ class TellStickNetController:
         unit = device.get("unit", "0")
         encoding = device.get("encoding", "")
 
+        # Net v2 / ZNet: there is no usable native LEARN frame.  The firmware
+        # builds every frame with ``stringForMethod(method, None)`` (the level
+        # is hardcoded to None), and asking it for LEARN is what issue #131
+        # hit: the receiver stayed in learn mode and the unit's own handling of
+        # that packet was not something we want to depend on.  A self-learning
+        # receiver stores whatever valid code it hears while in learn mode, so
+        # the ordinary ON frame teaches it — the same trick the Duo Luxorparts
+        # and Tuya paths already use.  TellStick Net v1 keeps its raw learn
+        # pulse train (confirmed on hardware), so it is excluded here.
+        if method_name == "learn" and protocol in ("arctech", "comen"):
+            if (await self._ensure_product()) != "TellStickNet":
+                _LOGGER.debug(
+                    "Net: learn for %s/%s sent as ON instead of a native "
+                    "learn frame (not usable on v2/ZNet)",
+                    protocol, model,
+                )
+                method_name = "turnon"
+
         # TellStick Net v1 (C firmware): raw-first.  Its native handler only
         # understands arctech selflearning on/off, so every other protocol —
         # and arctech dim/learn — has to go out as an S-only pulse train.
