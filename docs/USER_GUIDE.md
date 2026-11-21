@@ -218,6 +218,13 @@ need to be taught a code before they respond.
 > **Re-teaching a device:** Each switch/light device has a **"Send learn signal"**
 > button on its device page. Use it to re-pair a receiver without deleting and
 > re-adding the device — put the receiver in learn mode and press the button.
+>
+> **What the pairing signal is:** on a TellStick Duo and on an original TellStick
+> Net (v1) it is a dedicated learn frame. On **TellStick Net v2 / ZNet** (from
+> 3.4.1.2) it is the **normal ON code** — that firmware builds a learn frame
+> poorly, and a self-learning receiver stores the ON code its own remote would
+> send anyway. Either way: receiver into learn mode, press **Send learn signal**,
+> then switch the device once from HA.
 
 > **Luxorparts / Cleverio 50969, 50970, 50972 (beta + experimental, Duo + Net v1):**
 > Works on **TellStick Duo**, verified at a receiver. Add by brand → "Luxorparts —
