@@ -231,12 +231,18 @@ def _next_free_params(
     unit = next(
         (s for s in address_specs if s["name"] in ("unit", "units")), None
     )
+    # Walk the address space lazily.  Widget 8 (arctech selflearning) spans
+    # 1..67 108 863, and materialising that as a list cost ~2.6 GB and ~5 s on
+    # the event loop every time the parameter form was built — enough for the
+    # Supervisor to see an unresponsive Core and SIGKILL it (issue #131).  At
+    # most ``len(used) + 1`` houses can be taken, so the loop below finds the
+    # first free combination after a handful of steps.
     if address["type"] == "letter":
-        addresses: list[Any] = [
+        addresses: Any = (
             chr(c) for c in range(ord(address["min"]), ord(address["max"]) + 1)
-        ]
+        )
     else:
-        addresses = list(range(address["min"], address["max"] + 1))
+        addresses = range(address["min"], address["max"] + 1)
     units = (
         list(range(unit["min"], unit["max"] + 1)) if unit is not None else [None]
     )

@@ -285,3 +285,55 @@ the stick.
 * Not tested with hardware: no Duo, no ESP32 and no HA instance here, so the
   USB/IP Client app recipe is documented from its own ``config.yaml`` and README,
   not from a working attach.
+
+## Session — 2026-11-22: Core killed while adding a device (3.4.1.4)
+
+### Report
+
+* Issue #131 gained the missing logs.  The user pinned the failure down to
+  **Confirm** in the "Add by brand" dialog — before the device was added and
+  before any learn signal — and attached Supervisor, Core and app logs.
+* Supervisor: Core websocket closed 17:19:52, Matter Server got SIGTERM at
+  17:19:57, then ``Watchdog found Home Assistant exited with code 137`` at
+  17:19:59.  The earlier crash in the same log was exit code 143, and a
+  ``Watchdog missed an Home Assistant Core API response`` from 15:53 shows the
+  event loop had been stalling for a while before it died.
+
+### Root cause
+
+* ``_next_free_params()`` in ``config_flow.py`` built its candidate addresses
+  with ``list(range(min, max + 1))``.  Widget 8 — the default for arctech
+  selflearning, i.e. Nexa/Proove — spans 1..67 108 863, so **every** render of
+  the parameter form allocated a 67-million-entry list before it could return
+  the first free code.
+* Measured on the unmodified helper: **2.58 GB peak RSS and 5.23 s** for one
+  call.  On the user's VM that is an OOM/SIGKILL (137), and the multi-second
+  event-loop stall alone is enough for the Supervisor watchdog to declare Core
+  dead and shoot it, which also explains the code 143/137 split between the
+  two restarts and the missed API response earlier.
+* The list was pure waste: the loop returns on the first free combination, at
+  most ``len(used) + 1`` houses in.
+
+### Changed
+
+* ``_next_free_params()`` iterates ``range`` / a generator instead of
+  materialising a list; behaviour is unchanged for every widget.
+* Version 3.4.1.4 (manifest 4th digit), ``tellsticklive/config.yaml``,
+  ``CHANGELOG.md`` and the rootfs mirror.
+
+### Verified
+
+* Patched helper, widget 8 with nothing stored: ``{house: 1, unit: 1}`` in
+  0.000 s.  With three codes taken: ``{house: 1, unit: 3}``, also 0.000 s.
+  Process peak RSS 23 MB.
+* Letter widget (1) still starts on ``A``/``1``.
+* ``python3 -m py_compile`` on ``config_flow.py``; mirror directory identical;
+  changelog top section matches manifest 3.4.1.4.
+
+### Not verified
+
+* No HA instance, no ZNet and no hardware here: the kill was not reproduced on
+  the user's VM, the fix was confirmed by measuring the helper itself.
+* The attached Core log starts at 17:20:22 (after the restart) and the app log
+  holds only container startups, so neither covers the crash window — the
+  diagnosis rests on the Supervisor timeline plus the measured allocation.
