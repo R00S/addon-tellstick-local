@@ -337,3 +337,49 @@ the stick.
 * The attached Core log starts at 17:20:22 (after the restart) and the app log
   holds only container startups, so neither covers the crash window — the
   diagnosis rests on the Supervisor timeline plus the measured allocation.
+
+## CHORES — 2026-11-22 (no version bump)
+
+### Version
+
+* **No further bump.** The 4th digit is bumped when the branch's code changes,
+  and this branch already carries that bump: 3.4.1.3 → **3.4.1.4** for the
+  config-flow allocation fix, in both ``manifest.json`` files. A CHORES pass
+  that only touches documentation before 3.4.1.4 has been released must not
+  mint another version: the top ``## `` section of ``CHANGELOG.md`` is what
+  ``create-stable-release.yaml`` publishes as the release body, so a
+  maintenance-only 3.4.1.5 section would replace the fix notes users need to
+  read with a note saying nothing changed.
+* ``manifest.json`` (both copies) and ``tellsticklive/config.yaml`` are at
+  ``3.4.1.4``; the changelog's top section matches.
+
+### Branch history
+
+* This file — the 2026-11-22 session above plus this CHORES record. Nothing
+  from the branch was missing; the earlier sessions (raw v1 dim path, the
+  pairing-signal note, the mirror picker, the repro harness, the USB/IP guide)
+  were already logged.
+
+### User guide
+
+* ``docs/USER_GUIDE.md`` §15 gained **"Home Assistant restarts or freezes when
+  I press Confirm in Add device"**: what the bug was up to v3.4.1.3, that the
+  Supervisor kills Core with 137, and that v3.4.1.4 fixes it. Users on older
+  versions who search the guide for the crash now find the answer.
+* No heading was renamed, so the 13 ``docs/USER_GUIDE.md#…`` links in
+  ``strings.json`` all still resolve — checked by extracting every anchor and
+  matching it against the guide's headings (0 missing).
+* Net status wording is unchanged and still correct: Duo **Stable**,
+  Net v2 / ZNet **Supported, with limitations**, Net v1 **Experimental**.
+
+### Mirrors
+
+* ``diff -r custom_components/tellstick_local
+  tellsticklive/rootfs/usr/share/tellstick_local`` → identical (after removing
+  ``__pycache__`` left by ``py_compile``).
+* ``strings.json`` ≡ ``translations/en.json`` (``diff`` is empty).
+
+### Not verified
+
+* No Home Assistant instance here, so the guide text was not rendered in the
+  help dialog; only the Markdown and anchor targets were checked.

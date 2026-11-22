@@ -765,6 +765,15 @@ and run the manual setup flow.
 >
 > **Thermometers / wireless sensors** broadcast on a timer — just wait a few minutes.
 
+### "Home Assistant restarts or freezes when I press Confirm in Add device"
+
+Fixed in **v3.4.1.4**. Up to v3.4.1.3, the Add-device form worked out every
+possible house code — over 67 million numbers — before it could show the
+sliders. That needed gigabytes of memory and stalled Core for seconds, so the
+Supervisor watchdog killed it (exit code **137**) and Home Assistant restarted.
+The device was never added. Update to v3.4.1.4 or later, restart Home Assistant
+and add the device again; already-added devices need no change.
+
 ### "Receiver did not learn the code during teach"
 
 1. Make sure the receiver was in learn mode _before_ clicking Submit
