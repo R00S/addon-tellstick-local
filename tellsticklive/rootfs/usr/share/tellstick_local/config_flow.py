@@ -243,8 +243,11 @@ def _next_free_params(
         )
     else:
         addresses = range(address["min"], address["max"] + 1)
-    units = (
-        list(range(unit["min"], unit["max"] + 1)) if unit is not None else [None]
+    # The unit axis gets the same treatment: a ``range`` can be walked again
+    # for every house candidate, so no widget spec — however wide — can put a
+    # list of codes in memory here (the widest unit span today is 126).
+    units: Any = (
+        range(unit["min"], unit["max"] + 1) if unit is not None else [None]
     )
 
     for house in addresses:

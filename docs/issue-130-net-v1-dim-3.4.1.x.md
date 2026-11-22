@@ -383,3 +383,63 @@ the stick.
 
 * No Home Assistant instance here, so the guide text was not rendered in the
   help dialog; only the Markdown and anchor targets were checked.
+
+## Session — 2026-11-22: sweep for the same allocation bug (3.4.1.5)
+
+### What the user asked for
+
+* "Make sure the same or similar problems is not present elsewhere in the
+  code" — i.e. does anything else build a list of every possible value, or
+  otherwise block/allocate on the Core event loop the way the house-code range
+  did in 3.4.1.4.
+
+### Audit
+
+* ``grep`` for ``list(range(``, ``list(map(``, ``list(filter(`` across
+  ``custom_components/tellstick_local/``: one hit left — the **unit** list in
+  ``_next_free_params()``.  Its widest span today is widget 19 at 1..126, so it
+  cannot OOM; the pattern, however, was identical.
+* Every ``range(...)`` in the tree was inspected.  All others are bounded by
+  bit counts (≤26), channel counts (≤16), pulse counts or the 280-entry
+  Luxorparts pair table — nothing iterates a widget range.
+* ``WIDGET_PARAMS`` was enumerated programmatically: only the *address* axis is
+  wide (67M for widget 8, 33M for 12, 16M for 17, 1M for 14/15, 65k for
+  16/18/19).  ``_next_free_params()`` is the only consumer of those bounds, and
+  since 3.4.1.4 it walks them lazily.
+* No ``SelectSelector`` / dropdown is built from a range — every wide field is
+  a ``NumberSelector`` slider, which is O(1) to render.
+* No blocking work on the event loop: file reads go through
+  ``hass.async_add_executor_job`` (``__init__.py``), sockets are non-blocking
+  with ``loop.sock_recvfrom`` (``net_client.py``), Duo I/O is asyncio streams
+  (``client.py``).  No ``time.sleep``, ``subprocess``, ``getaddrinfo`` or
+  ``socket.connect`` in library code.
+* ``_used_rf_identities()`` / ``_conflicting_devices()`` /
+  ``_unique_device_uid()`` are all O(number of stored devices), not O(code
+  space).
+* Note: the ``"random": True`` flags in ``WIDGET_PARAMS`` are dead — nothing
+  reads them.  Left alone; not a correctness or memory issue.
+
+### Changed
+
+* ``_next_free_params()`` no longer copies the unit range either: ``range`` is
+  re-iterable, so the per-house loop still works and no widget spec can put a
+  list of codes in memory.  Behaviour is identical for every widget.
+* Version 3.4.1.5 (manifest 4th digit, both copies), ``tellsticklive/
+  config.yaml``, ``CHANGELOG.md`` and the rootfs mirror.
+
+### Verified
+
+* Helper harness (source extracted from ``config_flow.py``): widget 8 with
+  nothing stored → ``{house: 1, unit: 1}``; with two codes taken →
+  ``{house: 1, unit: 3}``; with a whole house (16 units) taken →
+  ``{house: 2, unit: 1}``, which proves the unit axis is walked again for the
+  next house rather than exhausted; letter widget 1 → ``A``/``1``; widget 19
+  (widest unit axis, 126) → ``{house: 1, unit: 1}``.
+* ``python3 -m py_compile``; mirror directory identical; ``strings.json`` ≡
+  ``translations/en.json``; manifest, mirror manifest, ``config.yaml`` and the
+  changelog top section all read 3.4.1.5; changelog lines ≤80 characters.
+
+### Not verified
+
+* No Home Assistant instance or TellStick hardware here, so this is a code
+  audit plus a helper-level harness — the sliders themselves were not rendered.
