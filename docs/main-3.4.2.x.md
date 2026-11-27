@@ -43,6 +43,35 @@ entries already disabled by 3.4.2.0 is unit-tested only.
 What is still unproven is a transmission: that needs a consumer integration
 (Novy / Honeywell / third-party) and something that listens.
 
+### Consumer side verified live (3.4.2.1)
+
+Home Assistant's own Novy Cooker Hood integration was added through its config
+flow, driven over the REST config-flow API:
+
+- The `transmitter` selector was built from `async_get_transmitters(433.92 MHz,
+  OOK)` and contained exactly one entry: our
+  `radio_frequency.tellstick_duo_<host>_rf_transmitter`. That is the proof the
+  provider is selectable, which a disabled entity never is.
+- Picking it and submitting ran Novy's own `test_light` step, which sends the
+  LIGHT command twice with 1.5 s in between. The flow landed on the
+  `test_light` menu (not `test_failed`), so both transmissions returned without
+  an error.
+- Finishing created the entry: `fan.novy_cooker_hood` and
+  `light.novy_cooker_hood_light`.
+- `light.turn_on` and `fan.turn_on` were then called: both answered 200 and the
+  transmitter's state advanced to each send's timestamp
+  (`2026-11-27T01:24:04.584`, `…01:24:10.320`), i.e. every command went through
+  `TellStickRadioFrequency.async_send_command` and came back 0 from telldusd.
+  No `frame_too_long`, `no_timings` or `transmit_failed` anywhere in
+  `system_log`.
+
+So: a protocol that lives entirely outside this project (Novy's, from
+`rf_protocols`) can be added, bound to a device, and sent through our hardware.
+
+Still not proven: that the pulses leave the antenna. Nothing in this setup
+listens on 433 MHz, so the evidence stops at "telldusd accepted and transmitted
+the frame". A real Novy hood — or any receiver — is needed for that last step.
+
 ### Version
 
 3.4.2.0 → **3.4.2.1**.
