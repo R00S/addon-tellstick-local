@@ -76,8 +76,8 @@ def codes(house: int, unit: int) -> dict[str, int]:
     sends.  The result keeps the 25-bit code left-aligned in 32 bits, which is
     what ``timings()`` consumes.
     """
-    address = house & 0xFFFF
-    proto_unit = max(0, unit - 1) & 0x1F
+    address = int(house) & 0xFFFF
+    proto_unit = max(0, int(unit) - 1) & 0x1F
 
     def payload(state: int) -> tuple[int, int, int]:
         return (

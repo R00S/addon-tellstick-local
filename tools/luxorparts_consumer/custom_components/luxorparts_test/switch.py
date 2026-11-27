@@ -41,7 +41,6 @@ class LuxorpartsSwitch(SwitchEntity):
             name=entry.title,
             manufacturer="Luxorparts",
             model="50969 / 50970 / 50972",
-            suggested_area="Test",
         )
 
     async def async_turn_on(self, **kwargs: Any) -> None:

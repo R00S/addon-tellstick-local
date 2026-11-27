@@ -44,13 +44,18 @@ class LuxorpartsConfigFlow(ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="no_transmitters")
 
         if user_input is not None:
+            # NumberSelector hands back floats (11.0); the protocol is integer.
+            data = {
+                **user_input,
+                "house": int(user_input["house"]),
+                "unit": int(user_input["unit"]),
+            }
             await self.async_set_unique_id(
-                f"{user_input['transmitter']}_{user_input['house']}"
-                f"_{user_input['unit']}"
+                f"{data['transmitter']}_{data['house']}_{data['unit']}"
             )
             self._abort_if_unique_id_configured()
-            title = f"Luxorparts {user_input['house']}/{user_input['unit']}"
-            return self.async_create_entry(title=title, data=user_input)
+            title = f"Luxorparts {data['house']}/{data['unit']}"
+            return self.async_create_entry(title=title, data=data)
 
         schema = vol.Schema(
             {
