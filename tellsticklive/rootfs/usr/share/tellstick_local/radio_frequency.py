@@ -22,8 +22,9 @@ import logging
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
@@ -103,7 +104,48 @@ async def async_setup_entry(
         )
         return
 
+    _async_register_transmitter(hass, entry)
     async_add_entities([TellStickRadioFrequency(entry, controller)])
+
+
+@callback
+def _async_register_transmitter(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Register the transmitter entity enabled, before it is added.
+
+    Home Assistant registers an entity of a config entry that has
+    ``pref_disable_new_entities`` set as ``disabled_by=integration``.  A
+    disabled entity is not added to the state machine, so no consumer
+    integration could ever pick it — the feature would silently do nothing.
+    Claiming the registry entry ourselves with ``disabled_by=None`` keeps it
+    enabled regardless of that preference, and an entry left disabled by an
+    earlier build is switched back on and picked up by a single reload.
+    """
+    ent_reg = er.async_get(hass)
+    unique_id = f"{entry.entry_id}_rf_transmitter"
+    entity_id = ent_reg.async_get_entity_id("radio_frequency", DOMAIN, unique_id)
+    if entity_id is None:
+        ent_reg.async_get_or_create(
+            "radio_frequency",
+            DOMAIN,
+            unique_id,
+            config_entry=entry,
+            disabled_by=None,
+            has_entity_name=True,
+            suggested_object_id=f"{entry.title} rf transmitter",
+        )
+        return
+
+    registry_entry = ent_reg.async_get(entity_id)
+    if (
+        registry_entry is not None
+        and registry_entry.disabled_by is er.RegistryEntryDisabler.INTEGRATION
+    ):
+        _LOGGER.info(
+            "Re-enabling disabled RF transmitter %s and reloading to add it",
+            entity_id,
+        )
+        ent_reg.async_update_entity(entity_id, disabled_by=None)
+        hass.config_entries.async_schedule_reload(entry.entry_id)
 
 
 class TellStickRadioFrequency(RadioFrequencyTransmitterEntity):

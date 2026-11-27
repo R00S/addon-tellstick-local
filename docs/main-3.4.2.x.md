@@ -1,5 +1,42 @@
 # main — 3.4.2.x timeline
 
+## 3.4.2.1 — the transmitter entity was registered disabled
+
+**Branch:** `main` · **Date:** 2026-11-27 · **Type:** bug fix
+
+Found by testing 3.4.2.0 on a real instance: the platform ran, the config
+entry had `backend=duo`, the controller answered `supports_raw_pulses() ==
+True`, and still no entity existed — and the log was empty.
+
+### Cause
+
+The entity *was* created, but the registry entry came out with
+`disabled_by: integration`. Home Assistant does that when the config entry has
+`pref_disable_new_entities` set: `async_get_or_create()` overrides its
+`disabled_by=UNDEFINED` with `RegistryEntryDisabler.INTEGRATION`. A disabled
+entity is never added to the component, so it is invisible in the UI **and**
+invisible to `async_get_transmitters()` — the feature could never have worked
+on such an entry.
+
+### Fix
+
+`radio_frequency.async_setup_entry()` now claims the registry entry itself
+before adding the entity, with `disabled_by=None`, which bypasses the
+preference. An entry already disabled by 3.4.2.0 is switched back on and the
+config entry reloads once, which picks the entity up in the same start.
+
+### Verified live
+
+On the instance: enabling the entity by hand and reloading the entry produced
+`radio_frequency.tellstick_duo_<host>_rf_transmitter` with
+`device_class=transmitter` and state `unknown` — the platform, the `duo`
+backend and the entity all work. What is still unproven is a transmission:
+that needs a consumer integration and something that listens.
+
+### Version
+
+3.4.2.0 → **3.4.2.1**.
+
 ## 3.4.2.0 — TellStick as a `radio_frequency` transmitter
 
 **Branch:** `main` · **Date:** 2026-11-27 · **Type:** new feature
