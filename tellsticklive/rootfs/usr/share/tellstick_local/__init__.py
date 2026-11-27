@@ -72,7 +72,18 @@ from .const import (
     SIGNAL_NEW_DEVICE,
     SIGNAL_RTL433_READING,
     build_device_uid,
+    timings_to_raw_frame,
 )
+try:  # Home Assistant 2026.5+: the radio_frequency consumer API
+    from homeassistant.components.radio_frequency import (
+        async_send_command as rf_async_send_command,
+    )
+    from rf_protocols.commands.ook import OOKCommand
+
+    RF_CONSUMER_AVAILABLE = True
+except ImportError:  # older Core — the PoC service says so when called
+    RF_CONSUMER_AVAILABLE = False
+
 from .tuya_curtain import (
     BURST_FRAMES,
     BURST_GAP_MS,
@@ -1271,6 +1282,23 @@ async def _async_setup_rtl433_mqtt(
 # names are historical and kept for existing automations.
 # ---------------------------------------------------------------------------
 
+SERVICE_POC_RF_COMMAND = "poc_rf_command"
+
+_POC_RF_COMMAND_SCHEMA = vol.Schema(
+    {
+        vol.Required("timings"): vol.All(
+            [vol.Coerce(int)], vol.Length(min=2, max=4000)
+        ),
+        vol.Optional("repeat", default=10): vol.All(
+            int, vol.Range(min=1, max=255)
+        ),
+        vol.Optional("frequency", default=433_920_000): vol.All(
+            int, vol.Range(min=1)
+        ),
+        vol.Optional("transmitter"): str,
+    }
+)
+
 _POC_SEND_BLIND_SCHEMA = vol.Schema(
     {
         vol.Required("button"): vol.In(sorted(REFERENCE_PAYLOADS)),
@@ -1326,6 +1354,8 @@ def _async_register_poc_services(hass: HomeAssistant) -> None:
         _register_poc_send_service(hass)
     if not hass.services.has_service(DOMAIN, SERVICE_POC_SWEEP_BLIND):
         _register_poc_sweep_service(hass)
+    if not hass.services.has_service(DOMAIN, SERVICE_POC_RF_COMMAND):
+        _register_poc_rf_command_service(hass)
 
 
 def _register_poc_send_service(hass: HomeAssistant) -> None:
@@ -1385,6 +1415,87 @@ def _register_poc_send_service(hass: HomeAssistant) -> None:
         "PoC service %s.%s registered (issue #100 blind replay, Duo only)",
         DOMAIN,
         SERVICE_POC_SEND_BLIND,
+    )
+
+
+def _poc_pick_transmitter(hass: HomeAssistant) -> str | None:
+    """Return the entity id of a TellStick radio_frequency transmitter."""
+    ent_reg = er.async_get(hass)
+    for entry in ent_reg.entities.values():
+        if entry.platform != DOMAIN:
+            continue
+        if not str(entry.unique_id).endswith("_rf_transmitter"):
+            continue
+        if entry.disabled_by is not None:
+            continue
+        return entry.entity_id
+    return None
+
+
+def _register_poc_rf_command_service(hass: HomeAssistant) -> None:
+    """Register ``tellstick_local.poc_rf_command``.
+
+    A throwaway *consumer*: it builds an ``rf_protocols`` OOK command from raw
+    µs timings and sends it through ``radio_frequency.async_send_command()``,
+    exactly as a real device integration does.  Nothing about the protocol
+    lives here — the timings arrive with the call.
+    """
+
+    async def _async_send_rf_command(call: ServiceCall) -> dict[str, Any]:
+        """Transmit one OOK command through our own radio_frequency entity."""
+        if not RF_CONSUMER_AVAILABLE:
+            raise HomeAssistantError(
+                "poc_rf_command needs Home Assistant 2026.5 or newer, "
+                "the release that added radio_frequency"
+            )
+
+        timings = [int(value) for value in call.data["timings"]]
+        repeat = int(call.data["repeat"])
+        frequency = int(call.data["frequency"])
+        transmitter = call.data.get("transmitter") or _poc_pick_transmitter(hass)
+        if transmitter is None:
+            raise HomeAssistantError(
+                "poc_rf_command found no TellStick radio_frequency transmitter; "
+                "only a Duo or an original TellStick Net (v1) has one"
+            )
+
+        command = OOKCommand(
+            frequency=frequency, timings=timings, repeat_count=repeat
+        )
+        # Report the frame our provider will emit, so the bytes can be
+        # compared with a reference capture.
+        frame = timings_to_raw_frame(timings, repeat)
+        await rf_async_send_command(hass, transmitter, command)
+        _LOGGER.info(
+            "PoC RF command: transmitter=%s timings=%d repeat=%d frequency=%d "
+            "frame_bytes=%d frame_hex=%s",
+            transmitter,
+            len(timings),
+            repeat,
+            frequency,
+            len(frame),
+            frame.hex(),
+        )
+        return {
+            "transmitter": transmitter,
+            "timings": len(timings),
+            "repeat": repeat,
+            "frequency": frequency,
+            "frame_bytes": len(frame),
+            "frame_hex": frame.hex(),
+        }
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_POC_RF_COMMAND,
+        _async_send_rf_command,
+        schema=_POC_RF_COMMAND_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+    _LOGGER.warning(
+        "PoC service %s.%s registered (raw OOK through radio_frequency)",
+        DOMAIN,
+        SERVICE_POC_RF_COMMAND,
     )
 
 

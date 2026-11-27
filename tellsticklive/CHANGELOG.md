@@ -8,6 +8,21 @@ belongs in `docs/`.
 Newest first. The newest `## ` heading matches the version in
 `custom_components/tellstick_local/manifest.json` (CI checks it).
 
+## 3.4.2.2
+
+### New
+
+- A diagnostic action, `tellstick_local.poc_rf_command`, that sends raw
+  433 MHz timings through the TellStick the same way another integration
+  does. It exists so a transmitter can be tested without installing a
+  consumer integration first. Nothing is stored and nothing changes for
+  your own devices.
+
+### After updating
+
+- Requires Home Assistant 2026.5 or later. Safe to ignore unless you are
+  testing.
+
 ## 3.4.2.1
 
 ### Fixed

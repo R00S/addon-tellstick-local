@@ -1,4 +1,44 @@
 ---
+poc_rf_command:
+  name: PoC RF command
+  description: >-
+    Transmit raw OOK timings through this integration's radio_frequency
+    transmitter, exactly as a device integration would (Developer Tools →
+    Actions). Diagnosis only: the timings are the whole protocol, nothing is
+    stored. Needs Home Assistant 2026.5 or newer and a TellStick Duo or an
+    original TellStick Net (v1).
+  fields:
+    timings:
+      name: Timings
+      description: >-
+        Alternating durations in microseconds, starting with a mark (pulse).
+        Negative values are gaps. Durations above 2550 µs are split.
+      required: true
+      example: "[390, -1110, 1150, -350]"
+      selector:
+        object:
+    repeat:
+      name: Repeats
+      description: How many times the firmware repeats the packet.
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 255
+    frequency:
+      name: Frequency
+      description: Carrier frequency in Hz.
+      default: 433920000
+      selector:
+        number:
+          min: 1
+    transmitter:
+      name: Transmitter
+      description: Transmitter entity id; defaults to the TellStick's own.
+      selector:
+        entity:
+          domain: radio_frequency
+
 debug_connection:
   name: Debug connection
   description: >-

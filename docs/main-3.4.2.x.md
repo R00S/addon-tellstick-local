@@ -1,5 +1,28 @@
 # main — 3.4.2.x timeline
 
+## 3.4.2.2 — PoC service that sends raw OOK through radio_frequency
+
+**Branch:** `main` · **Date:** 2026-11-27 · **Type:** diagnostic
+
+Needed to test split frames against a real Luxorparts socket without
+installing a consumer integration, and without putting the protocol into this
+project.
+
+### What it does
+
+`tellstick_local.poc_rf_command` takes `timings` (signed µs), `repeat` and
+`frequency`, builds an `rf_protocols.commands.ook.OOKCommand` and calls
+`homeassistant.components.radio_frequency.async_send_command()` — the exact
+call Novy and Honeywell make. The protocol lives in the service call, not in
+the code. It returns the frame bytes our provider emitted, so they can be
+diffed against a reference capture.
+
+Guarded by `RF_CONSUMER_AVAILABLE` so an older Core only loses this action.
+
+### Version
+
+3.4.2.1 → **3.4.2.2**.
+
 ## 3.4.2.1 — the transmitter entity was registered disabled
 
 **Branch:** `main` · **Date:** 2026-11-27 · **Type:** bug fix
