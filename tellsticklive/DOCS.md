@@ -496,6 +496,21 @@ decoder is missing or the deduplication window is suppressing repeated signals.
 
 ---
 
+## Using the TellStick as an RF transmitter
+
+Home Assistant 2026.5 added **Radio frequency** as a building block: one
+integration owns the transmitter hardware, and device integrations send their
+commands through it. A **TellStick Duo** or the original **TellStick Net (v1)**
+appears in that transmitter list automatically, so integrations such as Novy
+Cooker Hood or Honeywell String Lights can send through your TellStick.
+
+A Net v2 / ZNet and mirror entries never appear: a ZNet cannot replay raw pulse
+frames, and a mirror is not a send target (the primary replicates to it). The
+device integration supplies the signal — this project implements no protocols
+on that path. Requires Home Assistant 2026.5 or later.
+
+---
+
 ## Support
 
 - [Open an issue on GitHub][issue]

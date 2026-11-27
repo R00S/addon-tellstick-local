@@ -116,6 +116,7 @@ Live account, and no YAML file editing.
 | **Automations**              | Device triggers on any 433 MHz button press, usable directly in HA automations                                      |
 | **HA bus events**            | Every RF signal fires a `tellstick_local_event` on the HA bus — use in automations or Developer Tools               |
 | **Mirror / range extender**  | Use a second TellStick as a mirror to extend RF coverage — all commands are replicated automatically                |
+| **RF transmitter**           | Other integrations (Novy, Honeywell, third-party) can send their 433 MHz commands through a Duo or Net v1            |
 | **RTL-433 / Generic RF**     | Not available in the GUI yet — recording and rtl_433 discovery are paused in this release                            |
 | **Debug connection**         | Service action `tellstick_local.debug_connection` logs connection state and last events                             |
 | **Companion app**            | Identical UX in the HA Android/iOS app                                                                              |
@@ -126,7 +127,7 @@ Live account, and no YAML file editing.
 ## Prerequisites
 
 - **Hardware:** TellStick Duo (USB), TellStick Net, or TellStick ZNet connected or reachable
-- **Software:** Home Assistant OS with **HA Core 2025.2 or later**
+- **Software:** Home Assistant OS with **HA Core 2026.5 or later**
 
 > **Why 2025.2?** The "Add device" button on the integration card uses the
 > ConfigSubentryFlow API introduced in HA 2025.2. Older HA versions still work

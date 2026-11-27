@@ -47,6 +47,8 @@ BACKEND_NET = "net"   # TellStick Net / ZNet — UDP protocol direct to device
 NET_DISCOVERY_PORT = 30303    # broadcast "D" → device replies with IP/MAC/firmware
 NET_COMMAND_PORT = 42314      # "reglistener" + "send" commands; Net/ZNet pushes events here
 NET_REGISTRATION_INTERVAL_MINUTES = 10  # re-send "reglistener" every 10 minutes
+# A TellStick Net v1 "S" payload is one byte per pulse, capped at 199 bytes.
+NET_V1_MAX_PULSES = 199
 
 # Config keys (CONF_HOST from homeassistant.const is used for host)
 CONF_COMMAND_PORT = "command_port"
@@ -112,7 +114,9 @@ SENSOR_TYPE_NAMES: dict[int, str] = {
 }
 
 # HA platforms
-PLATFORMS = ["button", "cover", "switch", "light", "sensor"]
+# ``radio_frequency`` (HA 2026.5+) exposes raw-capable sticks as generic RF
+# transmitters; the platform itself decides whether an entry qualifies.
+PLATFORMS = ["button", "cover", "switch", "light", "sensor", "radio_frequency"]
 
 # Entry data keys
 ENTRY_TELLSTICK_CONTROLLER = "controller"
@@ -1630,6 +1634,82 @@ def timings_to_tellstick_bytes(timings: list[int]) -> bytes:
         tick = min(255, max(1, round(abs(us) / 10)))
         out.append(tick)
     return bytes(out)
+
+
+# TellStick timing bytes are in 10 µs ticks and saturate at 255 (2550 µs).
+_RF_TICK_US = 10
+_RF_MAX_TICK = 255
+
+
+def _timing_ticks(us: int) -> list[int]:
+    """Convert one µs duration to tick bytes, splitting anything too long.
+
+    A single timing byte cannot exceed 255 ticks (2550 µs), so a longer pulse
+    or gap is emitted as several chunks separated by a one-tick seam.  This is
+    the same construct already used for the ~4.9 ms start mark of a replayed
+    blind remote (``2550 + 10 + 2340``); the 10 µs seam is far below the
+    slicer resolution of a 433 MHz OOK receiver.
+
+    Polarity is inferred from the byte position (alternating high/low starting
+    with a pulse), so splitting keeps the alternation intact without needing
+    the sign.  That is why the sign is discarded here, exactly as in
+    :func:`timings_to_tellstick_bytes`.
+    """
+    ticks = max(1, round(abs(us) / _RF_TICK_US))
+    if ticks <= _RF_MAX_TICK:
+        return [ticks]
+    chunks: list[int] = []
+    remaining = ticks
+    while remaining > _RF_MAX_TICK:
+        chunks.extend((_RF_MAX_TICK, 1))
+        remaining -= _RF_MAX_TICK
+    chunks.append(max(1, remaining))
+    return chunks
+
+
+def timings_to_raw_frame(
+    timings: list[int],
+    repeat_count: int = 1,
+    *,
+    pause_ms: int = 2,
+    max_pulses: int | None = None,
+) -> bytes:
+    """Build a ``P<pause> R<repeats> S<pulses>+`` frame from µs timings.
+
+    Unlike :func:`timings_to_tellstick_bytes` this is for *foreign* commands
+    (a ``radio_frequency`` consumer asking us to transmit), so durations that
+    do not fit one firmware timing byte are split instead of clamped.
+
+    Args:
+        timings: Signed alternating µs values (positive = pulse/mark).  The
+            list must alternate, which every ``rf_protocols`` command does.
+        repeat_count: Firmware repeats (1-255).
+        pause_ms: Pause between repeats in ms (1-255).
+        max_pulses: Optional payload limit (TellStick Net v1 = 199).  Repeats
+            are trimmed to fit; a single frame that is still too long raises
+            ``ValueError``.
+
+    Raises:
+        ValueError: no timings, or the frame cannot fit ``max_pulses``.
+    """
+    if not timings:
+        raise ValueError("no timings")
+
+    data = bytearray()
+    for us in timings:
+        data.extend(_timing_ticks(us))
+
+    repeat = min(255, max(1, int(repeat_count or 1)))
+    if max_pulses is not None:
+        if len(data) > max_pulses:
+            raise ValueError(
+                f"frame of {len(data)} pulses exceeds the {max_pulses} allowed"
+            )
+        repeat = min(repeat, max(1, max_pulses // len(data)))
+
+    # 0 would truncate the IPC chain, so the pause floor is 1 ms.
+    pause = min(255, max(1, int(pause_ms)))
+    return bytes([ord("P"), pause, ord("R"), repeat]) + b"S" + bytes(data) + b"+"
 
 
 def generic_rf_build_raw_command(

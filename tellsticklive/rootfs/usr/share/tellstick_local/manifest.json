@@ -5,8 +5,11 @@
     "@R00S"
   ],
   "config_flow": true,
+  "dependencies": [
+    "radio_frequency"
+  ],
   "documentation": "https://github.com/R00S/addon-tellstick-local/blob/main/docs/USER_GUIDE.md",
-  "homeassistant": "2025.2.0",
+  "homeassistant": "2026.5.0",
   "integration_type": "hub",
   "iot_class": "local_push",
   "requirements": [],
@@ -18,5 +21,5 @@
       "macaddress": "ACCA54*"
     }
   ],
-  "version": "3.4.1.5"
+  "version": "3.4.2.0"
 }

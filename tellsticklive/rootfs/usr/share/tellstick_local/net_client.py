@@ -43,6 +43,7 @@ from .const import (
     NET_COMMAND_PORT,
     NET_DISCOVERY_PORT,
     NET_REGISTRATION_INTERVAL_MINUTES,
+    NET_V1_MAX_PULSES,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -2664,7 +2665,7 @@ from .const import (  # noqa: E402 — grouped with the block that uses them
 # present and raises KeyError when it is absent.
 # ---------------------------------------------------------------------------
 
-_NET_V1_MAX_PULSES = 199
+_NET_V1_MAX_PULSES = NET_V1_MAX_PULSES  # single source of truth: const.py
 
 
 # arctech code-switch framing (telldus-core ProtocolNexa::getCodeSwitchTuple).
@@ -3794,6 +3795,15 @@ class TellStickNetController:
 
     async def learn(self, device: Any) -> int:
         return await self._send_rf(device, "learn")
+
+    async def supports_raw_pulses(self) -> bool:
+        """Return True if this unit replays raw pulse trains.
+
+        Only the original TellStick Net (v1) does: a v2/ZNet drops ``S``
+        packets in its firmware before the RF chip, so it can never act as a
+        generic transmitter for other integrations.
+        """
+        return (await self._ensure_product()) == "TellStickNet"
 
     async def send_raw_command(
         self, command: bytes, reserved: int = 0, *, quiet: bool = False

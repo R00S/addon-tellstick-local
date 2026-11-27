@@ -284,6 +284,10 @@ class TellStickController:
             "tdStop", [_encode_int(device_id)]
         )
 
+    async def supports_raw_pulses(self) -> bool:
+        """A Duo always replays raw pulse trains."""
+        return True
+
     async def send_raw_command(
         self, command: bytes, reserved: int = 0, quiet: bool = False
     ) -> int:

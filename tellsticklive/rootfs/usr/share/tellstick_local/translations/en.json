@@ -13,6 +13,22 @@
       "ef_test_native_sequence": {
         "name": "Test ALL native EF variants (sequence)"
       }
+    },
+    "radio_frequency": {
+      "rf_transmitter": {
+        "name": "RF transmitter"
+      }
+    }
+  },
+  "exceptions": {
+    "no_timings": {
+      "message": "The RF command carried no timings, so nothing was sent."
+    },
+    "frame_too_long": {
+      "message": "This RF frame is {pulses} pulses long, but this TellStick can send at most {limit} per transmission."
+    },
+    "transmit_failed": {
+      "message": "The TellStick did not accept the RF command (result {result})."
     }
   },
   "issues": {

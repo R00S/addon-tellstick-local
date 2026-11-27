@@ -41,6 +41,7 @@
 15. [Troubleshooting](#15-troubleshooting)
 16. [Known limitations](#16-known-limitations)
 17. [Migrating from the old add-on (with Telldus Live)](#17-migrating-from-the-old-add-on-with-telldus-live)
+18. [TellStick as an RF transmitter (for other integrations)](#18-tellstick-as-an-rf-transmitter-for-other-integrations)
 
 ---
 
@@ -968,3 +969,37 @@ If you were using the previous TellStick add-on that required a Telldus Live acc
 > configurations in `configuration.yaml`. The new integration uses HA's config entry
 > storage — it cannot automatically import from YAML. Re-pairing takes only a few
 > minutes per device.
+
+---
+
+## 18. TellStick as an RF transmitter (for other integrations)
+
+Home Assistant 2026.5 added **Radio frequency** as a building block: one
+integration owns the 433 MHz transmitter hardware, and device integrations (for
+example **Novy Cooker Hood**, **Honeywell String Lights**, or third-party RF
+integrations) send their commands through it. You pick the transmitter when you
+set the device up.
+
+A **TellStick Duo** or an original **TellStick Net (v1)** shows up as one of
+those transmitters. Nothing to enable: after updating, it appears in the
+transmitter dropdown of any such integration.
+
+> **What it means:** the TellStick sends commands it did not build itself. The
+> integration that owns the device supplies the signal; the TellStick only
+> transmits it. This project still implements no protocols on that path.
+
+**Limits to know about:**
+
+- **TellStick Net v2 / ZNet** never appears in the list. Its firmware discards raw
+  pulse packets, so it cannot act as a generic transmitter.
+- **Mirror entries** never appear either. Send to the primary — its transmitter
+  already replicates every command to the mirror, exactly like your own devices.
+- **433 MHz only.** A 315 or 868 MHz device integration never offers the
+  TellStick, because the hardware cannot transmit there.
+- **Very long pulses are split.** A TellStick timing byte holds at most 2550 µs,
+  so longer pulses and gaps are emitted as several chunks with a 10 µs seam. On a
+  Duo this is unnoticeable in practice; on a **Net v1** a very long or very
+  repetitive frame can exceed the 199-byte packet limit, and the command is
+  refused with a message in the log instead of being half-sent.
+- **Do not add the same physical device twice.** If a device exists both as a
+  TellStick device here and through another integration, both will transmit.
