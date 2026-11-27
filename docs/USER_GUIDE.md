@@ -997,9 +997,12 @@ transmitter dropdown of any such integration.
 - **433 MHz only.** A 315 or 868 MHz device integration never offers the
   TellStick, because the hardware cannot transmit there.
 - **Very long pulses are split.** A TellStick timing byte holds at most 2550 µs,
-  so longer pulses and gaps are emitted as several chunks with a 10 µs seam. On a
-  Duo this is unnoticeable in practice; on a **Net v1** a very long or very
-  repetitive frame can exceed the 199-byte packet limit, and the command is
-  refused with a message in the log instead of being half-sent.
+  so longer pulses and gaps are emitted as several chunks joined by a 10 µs
+  seam. The seam is inaudible to a receiver that expects a long silence, but a
+  receiver that expects a *short* one may not answer at all: measured on a
+  Luxorparts socket, an inter-packet gap of 2600 µs or more stopped it
+  responding, while the natural ~2250 µs worked. On a **Net v1** a very long or
+  very repetitive frame can also exceed the 199-byte packet limit; the command
+  is then refused with a message in the log instead of being half-sent.
 - **Do not add the same physical device twice.** If a device exists both as a
   TellStick device here and through another integration, both will transmit.

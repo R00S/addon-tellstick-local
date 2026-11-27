@@ -54,6 +54,18 @@ sends the 24 verified pairs through `radio_frequency.async_send_command()`:
   longer pause as the end of the message. The same split gap is worth testing
   with a protocol that has genuinely long durations, not with this one.
 
+### Release documentation (CHORES)
+
+- `README.md` gained an **RF transmitter** section pointing at User Guide §18.
+- `docs/USER_GUIDE.md` §18: the splitting bullet now carries the measurement —
+  a receiver that expects the natural short silence stops answering at 2600 µs
+  and above, so "split" is not a free win on every device.
+- `tellsticklive/DOCS.md`: one sentence of the same in the transmitter section.
+- `tellsticklive/CHANGELOG.md` 3.4.2.2: notes that this is the first stable
+  release since 3.3.3.0, so readers know where the 3.4.0.x/3.4.1.x sections
+  come from.
+- Version unchanged at **3.4.2.2** — documentation only, no code changed.
+
 ## 3.4.2.1 — the transmitter entity was registered disabled
 
 **Branch:** `main` · **Date:** 2026-11-27 · **Type:** bug fix

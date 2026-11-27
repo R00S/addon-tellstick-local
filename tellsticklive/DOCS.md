@@ -507,7 +507,9 @@ Cooker Hood or Honeywell String Lights can send through your TellStick.
 A Net v2 / ZNet and mirror entries never appear: a ZNet cannot replay raw pulse
 frames, and a mirror is not a send target (the primary replicates to it). The
 device integration supplies the signal — this project implements no protocols
-on that path. Requires Home Assistant 2026.5 or later.
+on that path. Very long pulses are split into several chunks; a receiver that
+expects the natural short silence may not answer a much longer one. Requires
+Home Assistant 2026.5 or later.
 
 ---
 

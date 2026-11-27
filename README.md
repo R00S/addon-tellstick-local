@@ -463,6 +463,28 @@ These devices must be added via **Method B** (Add device → Add by brand or Add
 
 ---
 
+## RF transmitter (for other integrations)
+
+Home Assistant 2026.5 added **Radio frequency** as a building block: one
+integration owns the transmitter hardware, and device integrations send their
+commands through it. A **TellStick Duo** or an original **TellStick Net (v1)**
+appears in that list automatically, so integrations such as **Novy Cooker
+Hood**, **Honeywell String Lights** or third-party RF integrations can send
+through your TellStick.
+
+- Nothing to enable — the transmitter shows up in the sender dropdown of any
+  such integration after you update and restart.
+- The device integration supplies the signal; this project implements no
+  protocols on that path.
+- **Net v2 / ZNet** and **mirror entries** never appear (a ZNet cannot replay
+  raw pulse frames, and a mirror is fed by the primary).
+- 433 MHz only, and requires Home Assistant 2026.5 or later.
+
+Full details, limits and the splitting caveat:
+**[→ User Guide §18](docs/USER_GUIDE.md#18-tellstick-as-an-rf-transmitter-for-other-integrations)**
+
+---
+
 ## RTL-433 / Generic RF (not in this release)
 
 **RTL-433 sensor auto-discovery** and **Generic RF record/replay** are not enabled in
