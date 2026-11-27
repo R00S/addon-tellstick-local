@@ -1,0 +1,12 @@
+{
+  "domain": "luxorparts_test",
+  "name": "Luxorparts Socket (test consumer)",
+  "codeowners": [],
+  "config_flow": true,
+  "dependencies": ["radio_frequency"],
+  "documentation": "https://github.com/R00S/addon-tellstick-local",
+  "integration_type": "device",
+  "iot_class": "assumed_state",
+  "requirements": [],
+  "version": "0.1.0"
+}

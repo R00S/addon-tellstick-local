@@ -1,0 +1,19 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Luxorparts socket",
+        "description": "Pick the transmitter that should send to the socket, then the house and unit code you want to pair it with.",
+        "data": {
+          "transmitter": "Transmitter",
+          "house": "House",
+          "unit": "Unit"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "That house and unit are already set up.",
+      "no_transmitters": "No radio_frequency transmitter found. Add one first, for example the TellStick Local integration."
+    }
+  }
+}
