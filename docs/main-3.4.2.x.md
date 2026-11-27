@@ -1,5 +1,19 @@
 # main — 3.4.2.x timeline
 
+## 3.4.2.3 — version bump for the documentation release
+
+**Branch:** `main` · **Date:** 2026-11-27 · **Type:** release housekeeping
+
+The documentation work was committed and released as 3.4.2.2 without bumping
+the fourth digit, which is the one mistake that always causes trouble: the
+app's `cont-init.d/integration.sh` copies the bundled integration into
+`/config/custom_components/tellstick_local` only when the manifest versions
+differ. A rebuilt image whose version equals the installed one therefore keeps
+the old files on disk — silently.
+
+3.4.2.2 → **3.4.2.3** in `manifest.json` (both copies), `tellsticklive/config.yaml`
+and the changelog. No code changed; the previous 3.4.2.2 sections stay below.
+
 ## 3.4.2.2 — PoC service that sends raw OOK through radio_frequency
 
 **Branch:** `main` · **Date:** 2026-11-27 · **Type:** diagnostic
