@@ -13,14 +13,10 @@ A minimal Home Assistant integration that owns one Luxorparts 433 MHz socket:
 It exists to prove the transmitter end to end from the consumer side, with the
 protocol inside the consumer rather than in the transmitter provider.
 
-Every packet is sent with a 6000 µs inter-packet gap. One duration holds at
-most 2550 µs, so that silence cannot fit in a single value and the provider has
-to split it (`255+1+255+1+90`) — the frame is 60 bytes instead of 56. That is
-on purpose: it makes every send exercise the split path.
-
-If the split ever needs to go back to the plain
-single-value frame, set `INTER_PACKET_US` in `luxorparts.py` to 250 (the TellStick
-Duo adds a ~2 ms pause of its own, so 250 + 2000 = the remote's 2250 µs).
+Every packet is sent with a 250 µs inter-packet gap, which the TellStick Duo's
+own ~2 ms pause turns into the ~2250 µs silence a real remote leaves. Longer
+gaps were measured on hardware and the socket stops responding, so the split
+path cannot be exercised from here (see `docs/main-3.4.2.x.md`).
 
 ## Install
 

@@ -27,17 +27,13 @@ GAP_SHORT_US = 35 * TICK_US     # 350 us
 GAP_LONG_US = 111 * TICK_US     # 1110 us
 
 # Silence after each packet, in us.  A real remote leaves about 2250 us.
+# The TellStick Duo adds its own ~2 ms pause before every repeat, so 250 us
+# here reproduces the exact bytes proven on hardware (250 + 2000 = 2250 us).
 #
-# This is deliberately set past 2550 us: one duration can hold at most 255
-# ticks (2550 us), so a longer silence must be split into several values.
-# 6000 us is 600 ticks -> [255, 1, 255, 1, 90], which makes every packet use
-# the provider's split path instead of the single-value path.  The TellStick
-# Duo adds its own ~2 ms pause before each repeat on top of this, so the
-# receiver hears one continuous silence either way.
-#
-# NATURAL_INTER_PACKET_US is the value a real remote leaves.  Providers that
-# add no pause of their own want that one; see the module docstring.
-INTER_PACKET_US = 6000
+# Anything longer breaks reception on a Luxorparts receiver, so this cannot be
+# used to force the provider's split path — see the hardware note in
+# docs/main-3.4.2.x.md.  6000 us and 2600 us were both tried and both failed.
+INTER_PACKET_US = 250
 NATURAL_INTER_PACKET_US = 2250
 
 FREQUENCY_HZ = 433_920_000
@@ -102,8 +98,7 @@ def timings(code: int, inter_packet_us: int = INTER_PACKET_US) -> list[int]:
 
     Negative values are gaps.  The packet's own trailing gap is replaced by
     ``inter_packet_us``, the silence a receiver needs before the next packet.
-    With the default of 6000 us that value cannot fit in one byte, so the
-    frame carries several values for it — the split path, every time.
+    Keep it at the default: a longer silence stops the receiver responding.
     """
     packet: list[int] = []
     for bit in range(BIT_COUNT - 1, -1, -1):

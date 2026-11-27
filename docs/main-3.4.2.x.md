@@ -23,6 +23,37 @@ Guarded by `RF_CONSUMER_AVAILABLE` so an older Core only loses this action.
 
 3.4.2.1 → **3.4.2.2**.
 
+### Hardware result — what the radio_frequency path can and cannot do
+
+Measured on the test instance against three real Luxorparts sockets, using a
+throwaway consumer integration (`tools/luxorparts_consumer/`, not shipped) that
+sends the 24 verified pairs through `radio_frequency.async_send_command()`:
+
+- **The provider path works.** A consumer integration with no TellStick code
+  in it switches real sockets on and off: consumer → `rf_protocols.OOKCommand`
+  → `async_send_command()` → our transmitter → telldusd → Duo → air.
+- **The Homey cipher never works.** Every generated code was tried over months
+  of use and none has ever switched a socket. Only the 24 pairs recorded from
+  Telldus Live (`LX_LPD_LIST`) do. The consumer carries that table.
+- **Every frame is byte-identical to the proven encoder.** All 24 pairs, ON and
+  OFF: `timings_to_raw_frame()` output equals
+  `luxorparts_build_raw_command(code, "lx_live")`.
+- **Split frames cannot be validated with a Luxorparts receiver.** The protocol
+  has no duration above 2550 µs, so the only way to force a split is a longer
+  inter-packet gap, and that is exactly what the receiver rejects:
+
+  | gap | frame | wire value | socket reacts |
+  |---|---|---|---|
+  | 250 µs | 56 B | `…19` (2250 µs with the Duo pause) | yes |
+  | 2600 µs | 58 B | `…ff 01 05` (255+5) | no |
+  | 3000 µs | 58 B | `…ff 01 2d` (255+45) | no |
+  | 6000 µs | 60 B | `…ff 01 ff 01 5a` | no |
+
+  The split logic itself is correct — the bytes are what they should be — but a
+  receiver that expects ~2.25 ms of silence before the next packet treats the
+  longer pause as the end of the message. The same split gap is worth testing
+  with a protocol that has genuinely long durations, not with this one.
+
 ## 3.4.2.1 — the transmitter entity was registered disabled
 
 **Branch:** `main` · **Date:** 2026-11-27 · **Type:** bug fix
