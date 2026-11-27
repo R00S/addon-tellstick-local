@@ -11,27 +11,28 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.selector import (
     EntitySelector,
     EntitySelectorConfig,
-    NumberSelector,
-    NumberSelectorConfig,
-    NumberSelectorMode,
+    SelectOptionDict,
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
 )
 
+from . import luxorparts
 from .const import DOMAIN
 
 
 def _transmitters(hass) -> list[str]:
-    """Return every radio_frequency entity that looks like a transmitter."""
+    """Return every radio_frequency entity that can send."""
     ent_reg = er.async_get(hass)
-    found: list[str] = []
-    for entry in ent_reg.entities.values():
-        if entry.domain != "radio_frequency" or entry.disabled_by is not None:
-            continue
-        found.append(entry.entity_id)
-    return sorted(found)
+    return sorted(
+        entry.entity_id
+        for entry in ent_reg.entities.values()
+        if entry.domain == "radio_frequency" and entry.disabled_by is None
+    )
 
 
 class LuxorpartsConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Ask for a transmitter and the house/unit code to pair with."""
+    """Ask for a transmitter and one of the 24 verified devices."""
 
     VERSION = 1
 
@@ -44,19 +45,21 @@ class LuxorpartsConfigFlow(ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="no_transmitters")
 
         if user_input is not None:
-            # NumberSelector hands back floats (11.0); the protocol is integer.
             data = {
-                **user_input,
-                "house": int(user_input["house"]),
-                "unit": int(user_input["unit"]),
+                "transmitter": user_input["transmitter"],
+                "device": int(user_input["device"]),
             }
             await self.async_set_unique_id(
-                f"{data['transmitter']}_{data['house']}_{data['unit']}"
+                f"{data['transmitter']}_{data['device']}"
             )
             self._abort_if_unique_id_configured()
-            title = f"Luxorparts {data['house']}/{data['unit']}"
+            title = f"Luxorparts LPD {data['device']}"
             return self.async_create_entry(title=title, data=data)
 
+        options = [
+            SelectOptionDict(value=str(number), label=label)
+            for number, label in luxorparts.LABELS.items()
+        ]
         schema = vol.Schema(
             {
                 vol.Required("transmitter", default=transmitters[0]): (
@@ -67,14 +70,10 @@ class LuxorpartsConfigFlow(ConfigFlow, domain=DOMAIN):
                         )
                     )
                 ),
-                vol.Required("house", default=1): NumberSelector(
-                    NumberSelectorConfig(
-                        min=1, max=65535, step=1, mode=NumberSelectorMode.BOX
-                    )
-                ),
-                vol.Required("unit", default=1): NumberSelector(
-                    NumberSelectorConfig(
-                        min=1, max=16, step=1, mode=NumberSelectorMode.BOX
+                vol.Required("device", default="11"): SelectSelector(
+                    SelectSelectorConfig(
+                        options=options,
+                        mode=SelectSelectorMode.DROPDOWN,
                     )
                 ),
             }

@@ -2,8 +2,11 @@
 
 A minimal Home Assistant integration that owns one Luxorparts 433 MHz socket:
 
-- `luxorparts.py` — the protocol (25-bit OOK-PWM, timings in µs).
-- `config_flow.py` — pick a `radio_frequency` transmitter and a house/unit.
+- `luxorparts.py` — the protocol (25-bit OOK-PWM timings) and the 24 verified
+  ON/OFF pairs captured from Telldus Live and confirmed at a receiver.
+- `config_flow.py` — pick a `radio_frequency` transmitter and one of the 24
+  devices. One parameter, no house/unit matrix: the recorded number *is* the
+  address, so LPD 11 sends exactly what `switch.server` sends.
 - `switch.py` — ON/OFF through `radio_frequency.async_send_command()`.
 - `button.py` — **Learn**: the 48-repeat burst that pairs a socket.
 
@@ -18,8 +21,9 @@ restart Home Assistant. Then **Settings → Devices & services → Add integrati
 
 ## Pair a socket
 
-1. Put the socket in learn mode (hold its button until the LED blinks).
-2. Press the entry's **Learn** button within the learn window.
-3. Toggle the switch.
+1. Pick the number whose socket you are testing (LPD 11 = house 11, unit 1).
+2. If the socket already answers that pair, toggle the switch — no pairing.
+3. For a socket paired to something else, hold its button until the LED
+   blinks, then press the entry's **Learn** button within the learn window.
 
 Remove the folder to uninstall.

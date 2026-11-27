@@ -42,7 +42,7 @@ class LuxorpartsLearnButton(ButtonEntity):
     async def async_press(self) -> None:
         """Send the ON code with the long learn burst."""
         data = self._entry.data
-        code = luxorparts.codes(data["house"], data["unit"])["on"]
+        code = luxorparts.codes(data["device"])["on"]
         command = OOKCommand(
             frequency=luxorparts.FREQUENCY_HZ,
             timings=luxorparts.timings(code),

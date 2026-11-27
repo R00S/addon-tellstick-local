@@ -54,7 +54,7 @@ class LuxorpartsSwitch(SwitchEntity):
     async def _async_send(self, action: str) -> None:
         data = self._entry.data
         try:
-            code = luxorparts.codes(data["house"], data["unit"])[action]
+            code = luxorparts.codes(data["device"])[action]
             command = OOKCommand(
                 frequency=luxorparts.FREQUENCY_HZ,
                 timings=luxorparts.timings(code),
