@@ -30,8 +30,18 @@ config entry reloads once, which picks the entity up in the same start.
 On the instance: enabling the entity by hand and reloading the entry produced
 `radio_frequency.tellstick_duo_<host>_rf_transmitter` with
 `device_class=transmitter` and state `unknown` — the platform, the `duo`
-backend and the entity all work. What is still unproven is a transmission:
-that needs a consumer integration and something that listens.
+backend and the entity all work.
+
+Then 3.4.2.1 was installed on the same instance (dev channel, the app updated
+and restarted Core itself) with the registry entry deleted first, so the
+entity had to be registered from scratch while the entry still carried
+`pref_disable_new_entities: true`. Result: the entity came back on its own,
+`disabled_by: None`, `hidden_by: None`, `device_class: transmitter`, state
+`unknown`. The fix holds for a fresh registration; the re-enable path for
+entries already disabled by 3.4.2.0 is unit-tested only.
+
+What is still unproven is a transmission: that needs a consumer integration
+(Novy / Honeywell / third-party) and something that listens.
 
 ### Version
 
